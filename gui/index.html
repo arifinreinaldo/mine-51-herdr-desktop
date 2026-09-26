@@ -6,15 +6,69 @@
     <title>herdr</title>
   </head>
   <body>
-    <div id="banner" class="connection-banner" hidden></div>
-    <div id="app">
-      <aside id="sidebar"></aside>
+    <div id="titlebar" data-tauri-drag-region>
+      <div class="titlebar-logo" data-tauri-drag-region><i class="codicon codicon-terminal-tmux"></i></div>
+      <nav id="menubar">
+        <span class="menu-title" data-menu="workspace" tabindex="0">Workspace</span>
+        <span class="menu-title" data-menu="tab" tabindex="0">Tab</span>
+        <span class="menu-title" data-menu="pane" tabindex="0">Pane</span>
+        <span class="menu-title" data-menu="agents" tabindex="0">Agents</span>
+        <span class="menu-title" data-menu="view" tabindex="0">View</span>
+        <span class="menu-title" data-menu="herdr" tabindex="0"
+          >herdr<b class="menu-dot" id="herdr-menu-dot" hidden></b
+        ></span>
+        <span class="menu-title" data-menu="help" tabindex="0">Help</span>
+      </nav>
+      <div id="titlebar-center" data-tauri-drag-region></div>
+      <div id="window-controls">
+        <button id="win-minimize" class="win-btn" aria-label="Minimize" tabindex="-1">
+          <i class="codicon codicon-chrome-minimize"></i>
+        </button>
+        <button id="win-maximize" class="win-btn" aria-label="Maximize" tabindex="-1">
+          <i class="codicon codicon-chrome-maximize"></i>
+        </button>
+        <button id="win-close" class="win-btn win-btn--close" aria-label="Close" tabindex="-1">
+          <i class="codicon codicon-chrome-close"></i>
+        </button>
+      </div>
+    </div>
+
+    <div id="main">
+      <aside id="sidebar">
+        <div class="sidebar-header">
+          <i class="codicon codicon-chevron-down sidebar-header__chevron"></i>
+          <span class="sidebar-header__label">WORKSPACES</span>
+          <span class="sidebar-header__spacer"></span>
+          <button
+            id="sidebar-new-workspace-btn"
+            class="icon-btn"
+            title="New Workspace… (Ctrl+Shift+N)"
+          >
+            <i class="codicon codicon-new-folder"></i>
+          </button>
+        </div>
+        <div id="sidebar-list" role="listbox" aria-label="Workspaces"></div>
+        <div class="sidebar-footer" id="sidebar-footer" tabindex="0" role="button">
+          <i class="codicon codicon-add"></i>
+          <span>New Workspace…</span>
+          <span class="sidebar-footer__hint">Ctrl+Shift+N</span>
+        </div>
+      </aside>
       <div id="sidebar-resize-handle"></div>
-      <main id="workspace">
-        <div id="tab-strip"></div>
-        <div id="toolbar"></div>
+
+      <section id="editor">
+        <div id="tab-strip">
+          <div id="tab-list" role="tablist"></div>
+          <div id="tab-plus" class="tab-plus" title="New Tab (Ctrl+Shift+T)" tabindex="0">
+            <i class="codicon codicon-add"></i>
+          </div>
+          <div id="tab-overflow" class="tab-overflow" title="All tabs" tabindex="0">
+            <i class="codicon codicon-chevron-down"></i>
+          </div>
+        </div>
         <div id="terminal-wrap">
-          <canvas id="terminal" tabindex="0"></canvas>
+          <div id="banner" class="connection-banner" hidden></div>
+          <canvas id="terminal" tabindex="-1"></canvas>
           <textarea
             id="keyboard-capture"
             autocomplete="off"
@@ -23,10 +77,19 @@
             spellcheck="false"
             aria-hidden="true"
           ></textarea>
+          <div id="perf-hud" hidden></div>
         </div>
-      </main>
+      </section>
     </div>
-    <footer id="usage-bar"></footer>
+
+    <footer id="statusbar">
+      <div id="status-agent-counts"></div>
+      <div class="statusbar-spacer"></div>
+      <div id="status-connection" class="status-item"></div>
+      <div id="status-usage" class="status-item" tabindex="0"></div>
+    </footer>
+
+    <div id="overlay-root"></div>
     <div id="error-notices"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

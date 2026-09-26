@@ -4,6 +4,7 @@ dist/
 
 # Rust
 /target/
+/target-agent/
 
 # Tauri
 src-tauri/gen/schemas

@@ -1,0 +1,271 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>herdr GUI mockup</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.36/dist/codicon.css">
+<style>
+:root{
+  --titleBar-activeBackground:#181818; --titleBar-activeForeground:#cccccc;
+  --menu-background:#1f1f1f; --menu-foreground:#cccccc; --menu-selectionBackground:#0078d4; --menu-separatorBackground:#454545; --menu-border:#454545;
+  --sideBar-background:#181818; --sideBar-border:#2b2b2b; --sideBarSectionHeader-foreground:#cccccc;
+  --list-hoverBackground:#2a2d2e; --list-activeSelectionBackground:#04395e; --list-activeSelectionForeground:#ffffff;
+  --descriptionForeground:#9d9d9d; --foreground:#cccccc; --icon-foreground:#cccccc;
+  --tab-inactiveBackground:#181818; --tab-inactiveForeground:#9d9d9d; --tab-activeBackground:#1f1f1f; --tab-activeForeground:#ffffff;
+  --tab-activeBorderTop:#0078d4; --tab-border:#2b2b2b; --tab-hoverBackground:#1f1f1f; --editorGroupHeader-tabsBackground:#181818;
+  --terminal-background:#1f1f1f; --terminal-foreground:#cccccc;
+  --statusBar-background:#181818; --statusBar-foreground:#cccccc; --statusBar-border:#2b2b2b; --statusBarItem-hoverBackground:#2b2b2b;
+  --editorHoverWidget-background:#202020; --editorHoverWidget-border:#454545;
+  --status-working:#3794ff; --status-blocked:#f0883e; --status-done:#89d185; --status-idle:#9d9d9d;
+  --ansi-blue:#3b8eea; --ansi-green:#23d18b; --ansi-yellow:#e5e510; --ansi-dim:#8b8b8b;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1400px;height:860px;background:var(--terminal-background);color:var(--foreground);
+  font:13px/1.4 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;overflow:hidden;display:grid;
+  grid-template-rows:30px 1fr 22px;border:1px solid #2b2b2b}
+.codicon{font-size:16px;color:var(--icon-foreground)}
+/* title bar */
+#title{display:flex;align-items:center;background:var(--titleBar-activeBackground);color:var(--titleBar-activeForeground);border-bottom:1px solid var(--sideBar-border)}
+#title .logo{width:36px;display:grid;place-items:center;color:var(--tab-activeBorderTop)}
+#title .menus{display:flex;height:100%}
+#title .menus span{padding:0 8px;display:flex;align-items:center;border-radius:4px;margin:4px 0}
+#title .menus span.open{background:#2b2b2b}
+#title .center{flex:1;text-align:center;color:var(--descriptionForeground);font-size:12px}
+#title .win{display:flex;height:100%}
+#title .win i{width:46px;display:grid;place-items:center;font-size:14px}
+/* main */
+#main{display:grid;grid-template-columns:260px 1fr;min-height:0}
+#side{background:var(--sideBar-background);border-right:1px solid var(--sideBar-border);display:flex;flex-direction:column;min-height:0}
+.sec{height:22px;display:flex;align-items:center;padding:0 8px 0 4px;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--sideBarSectionHeader-foreground)}
+.sec .codicon{font-size:14px;margin-right:2px}
+.sec .sp{flex:1}
+.sec .act{opacity:.9;margin-left:4px}
+.ws{position:relative;height:44px;padding:4px 12px 4px 10px;display:grid;grid-template-columns:18px 1fr;align-content:center;column-gap:6px}
+.ws .x{display:none !important;position:absolute;right:8px;top:12px;width:20px;height:20px;place-items:center;border-radius:4px;background:transparent;color:var(--descriptionForeground);opacity:.7;font-size:14px;transition:color .12s,background .12s,opacity .12s}
+.ws .x.hot{opacity:1;color:#fff;background:#c72e0f}
+.ws.hoverx{background:var(--list-hoverBackground)} .ws.hoverx .x{display:grid !important}
+.ws:hover{background:var(--list-hoverBackground)}
+.ws.sel{background:var(--list-activeSelectionBackground);color:var(--list-activeSelectionForeground)}
+.ws.blocked::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;background:var(--status-blocked)}
+.dot{width:8px;height:8px;border-radius:50%;align-self:center;justify-self:center;grid-row:1}
+.dot.working{background:var(--status-working)} .dot.blocked{background:var(--status-blocked)}
+.dot.done{background:var(--status-done)} .dot.idle{border:1.5px solid var(--status-idle)}
+.ws .name{grid-column:2;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws.sel .name{font-weight:600}
+.ws .meta{grid-column:2;font-size:12px;color:var(--descriptionForeground);display:flex;align-items:center;gap:4px}
+.ws.sel .meta{color:#c5d9ec}
+.ws .meta .codicon{font-size:12px;color:inherit}
+.ws .ab{margin-left:6px;font-variant-numeric:tabular-nums}
+.side-foot{margin-top:auto;border-top:1px solid var(--sideBar-border);height:30px;display:flex;align-items:center;gap:6px;padding:0 12px;color:var(--descriptionForeground)}
+/* editor */
+#editor{display:grid;grid-template-rows:35px 1fr;min-width:0;min-height:0}
+#tabs{display:flex;background:var(--editorGroupHeader-tabsBackground);border-bottom:1px solid var(--tab-border)}
+.tab{height:35px;min-width:96px;max-width:220px;padding:0 6px 0 12px;display:flex;align-items:center;gap:8px;
+  background:var(--tab-inactiveBackground);color:var(--tab-inactiveForeground);border-right:1px solid var(--tab-border);white-space:nowrap}
+.tab .lbl{flex:1;overflow:hidden;text-overflow:ellipsis}
+.tab .slot{width:20px;height:20px;display:grid;place-items:center;border-radius:4px}
+.tab .slot .dot{width:8px;height:8px}
+.tab.active{background:var(--tab-activeBackground);color:var(--tab-activeForeground);box-shadow:inset 0 1px 0 var(--tab-activeBorderTop);margin-bottom:-1px}
+.tab.active .lbl{font-weight:600}
+.tab.hover{background:var(--tab-hoverBackground)}
+.tab.hover .slot{background:#2b2b2b}
+.tab.blocked{box-shadow:inset 0 2px 0 var(--status-blocked)}
+.tab.drag{opacity:.5}
+.drop{width:2px;background:var(--tab-activeBorderTop);margin-left:-1px;z-index:2}
+.tabs-right{margin-left:auto;display:flex;align-items:center;gap:2px;padding:0 8px}
+.tabs-right i{width:26px;height:26px;display:grid;place-items:center;border-radius:4px}
+.plus{width:35px;display:grid;place-items:center}
+/* terminal */
+#term{background:var(--terminal-background);padding:6px 10px;font:14px/17px "Cascadia Mono",Consolas,monospace;white-space:pre;color:var(--terminal-foreground);overflow:hidden;position:relative}
+.b{font-weight:700;color:#e5e5e5}.c{color:var(--ansi-blue)}.g{color:var(--ansi-green)}.d{color:var(--ansi-dim)}.y{color:var(--ansi-yellow)}.i{font-style:italic}
+.cur{background:#cccccc;color:#1f1f1f}
+.rule{color:#555}
+/* status bar */
+#status{display:flex;align-items:center;background:var(--statusBar-background);color:var(--statusBar-foreground);border-top:1px solid var(--statusBar-border);font-size:12px}
+.si{height:100%;padding:0 8px;display:flex;align-items:center;gap:6px}
+.si.hover{background:var(--statusBarItem-hoverBackground)}
+.si .dot{width:7px;height:7px}
+.si .codicon{font-size:14px}
+.sp2{flex:1}
+.meter{width:64px;height:4px;border-radius:2px;background:rgba(55,148,255,.25);overflow:hidden}
+.meter i{display:block;height:100%;background:var(--status-working)}
+/* popovers & menus */
+.pop{position:absolute;background:var(--editorHoverWidget-background);border:1px solid var(--editorHoverWidget-border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.45);font-size:12px}
+.menu{position:absolute;background:var(--menu-background);border:1px solid var(--menu-border);border-radius:6px;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,.45);min-width:240px;font-size:13px}
+.menu .it{display:flex;align-items:center;height:24px;padding:0 10px 0 26px;border-radius:4px;gap:12px}
+.menu .it .k{margin-left:auto;color:var(--descriptionForeground);font-size:12px}
+.menu .it.hl{background:var(--menu-selectionBackground);color:#fff}
+.menu .it.hl .k{color:#e0e0e0}
+.menu .it.danger{color:#f48771}
+.menu hr{border:0;border-top:1px solid var(--menu-separatorBackground);margin:4px 6px}
+.mdot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--status-blocked);margin-left:5px;vertical-align:middle}
+@keyframes glow{0%{box-shadow:inset 0 0 0 1px var(--status-done),0 0 0 0 rgba(137,209,133,.55)}100%{box-shadow:inset 0 0 0 1px var(--status-done),0 0 0 8px rgba(137,209,133,0)}}
+
+.chip{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:7px;vertical-align:-1px;flex:none}
+body.wscolor .tab{box-shadow:inset 0 2px 0 var(--ws)}
+body.wscolor .tab.active{box-shadow:inset 0 3px 0 var(--ws)}
+body.wscolor .tab.blocked .lbl{color:var(--status-blocked)}
+body.wscolor #tabs{border-bottom:1px solid color-mix(in srgb,var(--ws) 45%,var(--tab-border))}
+.caption{position:absolute;font:600 11px "Segoe UI";color:#1f1f1f;background:#ffd166;padding:2px 6px;border-radius:3px}
+</style></head>
+<body>
+<div id="title">
+  <div class="logo"><i class="codicon codicon-terminal-tmux"></i></div>
+  <div class="menus"><span class="m-ws">Workspace</span><span>Tab</span><span>Pane</span><span>Agents</span><span>View</span><span class="m-herdr">herdr<b class="mdot"></b></span><span>Help</span></div>
+  <div class="center">camera — flutter_rad_pvmi — herdr</div>
+  <div class="win"><i class="codicon codicon-chrome-minimize"></i><i class="codicon codicon-chrome-maximize"></i><i class="codicon codicon-chrome-close"></i></div>
+</div>
+
+<div id="main">
+  <aside id="side">
+    <div class="sec"><i class="codicon codicon-chevron-down"></i>WORKSPACES<span class="sp"></span><i class="codicon codicon-new-folder act"></i><i class="codicon codicon-collapse-all act"></i></div>
+    <div class="ws"><span class="dot idle"></span><span class="name">simplr-23-sfa</span><span class="meta"><i class="codicon codicon-git-branch"></i>master</span></div>
+    <div class="ws sel"><span class="dot working"></span><span class="name">flutter_rad_pvmi</span><span class="meta"><i class="codicon codicon-git-branch"></i>pvmigt-ui<span class="ab">↑2 ↓0</span></span></div>
+    <div class="ws blocked r-ctx"><span class="dot blocked"></span><span class="name">mine-15-dispatch</span><i class="codicon codicon-close x"></i><span class="meta"><i class="codicon codicon-git-branch"></i>main</span></div>
+    <div class="ws"><span class="dot done"></span><span class="name">stockbit-portfolio</span><span class="meta"><i class="codicon codicon-git-branch"></i>master<span class="ab">↑0 ↓3</span></span></div>
+    <div class="ws"><span class="dot working"></span><span class="name">tg-signal-bot</span><span class="meta"><i class="codicon codicon-git-branch"></i>main</span></div>
+    <div class="ws"><span class="dot idle"></span><span class="name">Reinaldo</span><span class="meta"><i class="codicon codicon-folder"></i>no git</span></div>
+    <div class="ws"><span class="dot idle"></span><span class="name">mine-25-hauling</span><span class="meta"><i class="codicon codicon-git-branch"></i>main</span></div>
+    <div class="ws"><span class="dot working"></span><span class="name">cloudflare-notifier</span><span class="meta"><i class="codicon codicon-git-branch"></i>master</span></div>
+    <div class="ws"><span class="dot idle"></span><span class="name">congress-tracker</span><span class="meta"><i class="codicon codicon-git-branch"></i>main</span></div>
+    <div class="ws"><span class="dot idle"></span><span class="name">nusantara-erp</span><span class="meta"><i class="codicon codicon-git-branch"></i>master</span></div>
+    <div class="side-foot"><i class="codicon codicon-add"></i>New Workspace…<span style="margin-left:auto;font-size:11px">Ctrl+Shift+N</span></div>
+  </aside>
+
+  <section id="editor">
+    <div id="tabs">
+      <div class="tab"><span class="lbl">syscon-designer</span><span class="slot"><span class="dot idle"></span></span></div>
+      <div class="tab blocked"><span class="lbl">build-apk-tab</span><span class="slot"><span class="dot blocked"></span></span></div>
+      <div class="tab hover"><span class="lbl">voice_ai</span><span class="slot"><i class="codicon codicon-close"></i></span></div>
+      <div class="tab"><span class="lbl">utils</span><span class="slot"><span class="dot done"></span></span></div>
+      <div class="tab active"><span class="lbl">camera</span><span class="slot"><i class="codicon codicon-close"></i></span></div>
+      <div class="plus"><i class="codicon codicon-add"></i></div>
+      <div class="tabs-right"><i class="codicon codicon-chevron-down"></i></div>
+    </div>
+    <div id="term"><span class="b">Review fixes applied (nothing committed):</span>
+- <span class="b">OCRGALLERY on Windows:</span> it no longer deletes the original picture you picked. It only deletes on Android and iOS.
+- <span class="b">iOS:</span> Vision now replies in one place only.
+- <span class="b">Android:</span> one completion listener instead of three. A canceled task no longer leaves the spinner stuck.
+- <span class="b">Dart:</span> the "OCR failed." paths are merged into one.
+- <span class="c">photo.md</span>: the step order, line numbers and wording are fixed.
+
+All four of your internal flavors (<span class="c">devLocal</span>, <span class="c">demoSales</span>, <span class="c">directApp</span>, <span class="c">directWms</span>) are non-Play, so each one gets the
+bundled model: about +4 MB per architecture, working offline. The <span class="c">play</span> setup is in the code but unused for now.
+
+To finish the release builds when memory allows (about 10 to 15 minutes each):
+1. Close other heavy apps (emulators, Android Studio).
+2. Run <span class="c">flutter build apk --flavor demoSales --release</span>, then the same with <span class="c">directApp</span> and <span class="c">directWms</span>.
+
+<span class="d">✻ Cogitated for 55s · done 9:00 AM</span>
+
+<span class="d">※</span> <span class="b">recap:</span> <span class="i">We're adding the OCR text-recognition action; the review fixes are applied, tests pass and the devLocal</span>
+<span class="i">debug build works. Next, the demoSales, directApp and directWms release builds need running.</span>
+
+<span class="rule">────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+<span class="b">❯</span> <span class="cur"> </span>
+<span class="rule">────────────────────────────────────────────────────────────────────────────────────────────────────────────</span>
+  <span class="y">⏵⏵ auto mode on</span> <span class="d">(shift+tab to cycle) · ← 1 agent</span></div>
+  </section>
+</div>
+
+<div id="status">
+  <div class="si hover"><span class="dot working"></span>3 working</div>
+  <div class="si"><span class="dot blocked"></span>1 blocked</div>
+  <div class="si"><span class="dot done"></span>1 done</div>
+  <div class="si"><span class="dot idle"></span>5 idle</div>
+  <div class="sp2"></div>
+  <div class="si"><i class="codicon codicon-plug"></i>herdr connected</div>
+  <div class="si u5 hover"><i class="codicon codicon-pulse"></i>5h<span class="meter"><i style="width:15%"></i></span>15% · 1h39m left</div>
+</div>
+
+<!-- overlays, positioned per state -->
+<div id="overlays"></div>
+<script>
+
+const THEMES={
+ herdr:{bg:'#0c0c0c',side:'#121212',border:'#262626',fg:'#d4d4d4',desc:'#8a8a8a',accent:'#f4b183',accentFg:'#1a1a1a',sel:'#2a2320',hover:'#1c1c1c',menu:'#161616',tabActiveBg:'#f4b183',tabActiveFg:'#1a1a1a',work:'#7fb4ff',block:'#f4b183',done:'#9ccc65',blue:'#6cb6ff',green:'#9ccc65',yellow:'#e6c07b',hoverW:'#161616'},
+ catppuccin:{bg:'#1e1e2e',side:'#181825',border:'#11111b',fg:'#cdd6f4',desc:'#a6adc8',accent:'#cba6f7',accentFg:'#1e1e2e',sel:'#313244',hover:'#262637',menu:'#181825',work:'#89b4fa',block:'#fab387',done:'#a6e3a1',blue:'#89b4fa',green:'#a6e3a1',yellow:'#f9e2af',hoverW:'#181825'},
+ tokyonight:{bg:'#1a1b26',side:'#16161e',border:'#101014',fg:'#a9b1d6',desc:'#565f89',accent:'#7aa2f7',accentFg:'#16161e',sel:'#283457',hover:'#1f2030',menu:'#16161e',work:'#7aa2f7',block:'#ff9e64',done:'#9ece6a',blue:'#7aa2f7',green:'#9ece6a',yellow:'#e0af68',hoverW:'#16161e'},
+ onedark:{bg:'#282c34',side:'#21252b',border:'#181a1f',fg:'#abb2bf',desc:'#7f848e',accent:'#61afef',accentFg:'#21252b',sel:'#2c313a',hover:'#2c313a',menu:'#21252b',work:'#61afef',block:'#d19a66',done:'#98c379',blue:'#61afef',green:'#98c379',yellow:'#e5c07b',hoverW:'#21252b'},
+ dracula:{bg:'#282a36',side:'#21222c',border:'#191a21',fg:'#f8f8f2',desc:'#6272a4',accent:'#bd93f9',accentFg:'#282a36',sel:'#44475a',hover:'#343746',menu:'#21222c',work:'#8be9fd',block:'#ffb86c',done:'#50fa7b',blue:'#8be9fd',green:'#50fa7b',yellow:'#f1fa8c',hoverW:'#21222c'},
+};
+const tn=new URLSearchParams(location.search).get('theme');
+if(THEMES[tn]){const t=THEMES[tn],r=document.documentElement.style,set=(k,v)=>r.setProperty(k,v);
+ [['--titleBar-activeBackground',t.side],['--menu-background',t.menu],['--menu-selectionBackground',t.accent],['--menu-border',t.border],
+  ['--sideBar-background',t.side],['--sideBar-border',t.border],['--list-hoverBackground',t.hover],['--list-activeSelectionBackground',t.sel],
+  ['--descriptionForeground',t.desc],['--foreground',t.fg],['--icon-foreground',t.fg],['--titleBar-activeForeground',t.fg],['--menu-foreground',t.fg],['--sideBarSectionHeader-foreground',t.fg],
+  ['--tab-inactiveBackground',t.side],['--tab-inactiveForeground',t.desc],['--tab-activeBackground',t.tabActiveBg||t.bg],['--tab-activeForeground',t.tabActiveFg||t.fg],
+  ['--tab-activeBorderTop',t.accent],['--tab-border',t.border],['--tab-hoverBackground',t.bg],['--editorGroupHeader-tabsBackground',t.side],
+  ['--terminal-background',t.bg],['--terminal-foreground',t.fg],['--statusBar-background',t.side],['--statusBar-foreground',t.fg],['--statusBar-border',t.border],
+  ['--statusBarItem-hoverBackground',t.hover],['--editorHoverWidget-background',t.hoverW],['--editorHoverWidget-border',t.border],
+  ['--status-working',t.work],['--status-blocked',t.block],['--status-done',t.done],['--ansi-blue',t.blue],['--ansi-green',t.green],['--ansi-yellow',t.yellow]
+ ].forEach(([k,v])=>set(k,v));
+ document.body.style.background=t.bg;
+ document.querySelectorAll('.ws.sel,.ws.sel .meta').forEach(e=>e.style.color=t.fg);
+ document.querySelector('#title .logo').style.color=t.accent;
+ document.querySelector('.center').textContent='camera — flutter_rad_pvmi — herdr   ·   theme: '+tn;
+}
+const s = new URLSearchParams(location.search).get('state') || 'a';
+const o = document.getElementById('overlays');
+const add = h => o.insertAdjacentHTML('beforeend', h);
+
+if (s === 'd') {
+  const PAL=['#60a5fa','#a78bfa','#2dd4bf','#f472b6','#facc15','#22d3ee','#fb7185','#a3e635','#818cf8','#e879f9'];
+  document.body.classList.add('wscolor');
+  document.querySelectorAll('.ws').forEach((w,i)=>{const n=w.querySelector('.name');n.insertAdjacentHTML('afterbegin',`<span class="chip" style="background:${PAL[i%10]}"></span>`);});
+  document.documentElement.style.setProperty('--ws', PAL[1]);
+  document.querySelectorAll('.tab.hover').forEach(t=>t.classList.remove('hover'));
+  add(`<div class="menu" style="left:150px;top:196px;min-width:190px">
+    <div class="it">Rename…</div><div class="it hl">Change Color ▸</div></div>`);
+  add(`<div class="menu" style="left:343px;top:222px;min-width:0;padding:6px;display:grid;grid-template-columns:repeat(5,22px);gap:6px">
+    ${PAL.map((c,i)=>`<span style="width:22px;height:22px;border-radius:5px;background:${c};${i==1?'outline:2px solid #fff;outline-offset:1px':''}"></span>`).join('')}</div>`);
+}
+if (s === 'a') {
+  document.querySelector('.m-ws').classList.add('open');
+  add(`<div class="menu" style="left:36px;top:30px">
+    <div class="it hl"><i class="codicon codicon-folder-opened" style="position:absolute;margin-left:-20px;color:#fff"></i>New Workspace…<span class="k">Ctrl+Shift+N</span></div>
+    <hr>
+    <div class="it">Next Workspace<span class="k">Ctrl+Shift+↓</span></div>
+    <div class="it">Previous Workspace<span class="k">Ctrl+Shift+↑</span></div></div>`);
+  add(`<div class="pop" style="right:8px;bottom:30px;width:250px;padding:10px 12px">
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>Claude usage</b><span style="color:var(--descriptionForeground)">as of 1m ago</span></div>
+    <div style="display:flex;justify-content:space-between">5-hour<span>15% · resets in 1h39m</span></div>
+    <div class="meter" style="width:100%;margin:4px 0 10px"><i style="width:15%"></i></div>
+    <div style="display:flex;justify-content:space-between">Weekly<span>6% · resets Sat 08:00</span></div>
+    <div class="meter" style="width:100%;margin-top:4px"><i style="width:6%"></i></div></div>`);
+} else if (s === 'c') {
+  document.querySelector('.m-herdr').classList.add('open');
+  add(`<div class="menu" style="left:292px;top:30px">
+    <div class="it">Settings…<span class="k">Ctrl+,</span></div>
+    <div class="it">Keyboard Shortcuts<span class="k">Ctrl+K Ctrl+S</span></div>
+    <div class="it">Reload Config</div><hr>
+    <div class="it hl">What's New in 0.9.2<span class="mdot" style="margin-left:auto;background:#fff"></span></div>
+    <div class="it">Update Ready — Restart Server…</div><hr>
+    <div class="it">Detach (keep agents running)</div></div>`);
+  document.querySelectorAll('.si')[2].classList.add('hover');
+  add(`<div class="pop" style="left:6px;bottom:30px;width:340px;padding:6px 0">
+    <div style="display:flex;align-items:center;padding:2px 12px 6px;font-size:11px;font-weight:600;color:var(--descriptionForeground)">AGENTS<span style="margin-left:auto">priority ▾</span></div>
+    <div style="margin:0 6px 4px;padding:6px 8px;border-radius:5px;background:rgba(137,209,133,.12);animation:glow 1.4s ease-out infinite;display:grid;grid-template-columns:18px 1fr auto;row-gap:1px">
+      <span class="dot done"></span><span><b>stockbit-portfolio · report</b></span><span style="color:var(--status-done);font-size:11px;font-weight:600">DONE · just now</span>
+      <span></span><span style="color:var(--descriptionForeground)">claude — finished: portfolio rebalance report</span><span style="color:var(--descriptionForeground);font-size:11px">Enter ↵ jump</span></div>
+    ${[['blocked','mine-15-dispatch · build','claude — waiting for approval'],['working','flutter_rad_pvmi · camera','claude — running tests'],['working','tg-signal-bot · main','claude']]
+      .map(([st,a,b])=>`<div style="display:grid;grid-template-columns:18px 1fr;padding:4px 14px"><span class="dot ${st}"></span><span>${a}</span><span></span><span style="color:var(--descriptionForeground)">${b}</span></div>`).join('')}
+    <div style="padding:4px 14px 2px;font-size:11px;color:var(--descriptionForeground)">auto-hides in 8s · hover to keep open</div></div>`);
+} else {
+  document.querySelector('.tab.hover').classList.add('drag');
+  const utils = [...document.querySelectorAll('.tab')][3];
+  utils.insertAdjacentHTML('afterend','<div class="drop"></div>');
+  add(`<div class="menu" style="left:835px;top:62px">
+    <div class="it hl"><i class="codicon codicon-split-horizontal" style="position:absolute;margin-left:-20px;color:#fff"></i>Split Right<span class="k">Alt+Shift+=</span></div>
+    <div class="it"><i class="codicon codicon-split-vertical" style="position:absolute;margin-left:-20px"></i>Split Down<span class="k">Alt+Shift+-</span></div><hr>
+    <div class="it">Rename<span class="k">F2</span></div>
+    <div class="it">Toggle Zoom<span class="k">Alt+Shift+Z</span></div></div>`);
+  const ws=document.querySelector('.ws.r-ctx'); ws.classList.add('hoverx'); ws.querySelector('.x').classList.add('hot');
+  const w2=[...document.querySelectorAll('.ws')][4]; w2.insertAdjacentHTML('beforeend','<i class="codicon codicon-close x"></i>'); w2.classList.add('hoverx');
+  add(`<div class="pop" style="left:264px;top:140px;width:240px;padding:10px 12px">
+    Close <b>mine-15-dispatch</b>?<div style="color:var(--descriptionForeground);margin:4px 0 8px">1 agent is blocked and will be stopped.</div>
+    <div style="display:flex;gap:6px;justify-content:flex-end"><span style="padding:3px 10px;border:1px solid #454545;border-radius:4px">Cancel</span><span style="padding:3px 10px;background:#c72e0f;color:#fff;border-radius:4px">Close</span></div></div>`);
+  add(`<div class="pop" style="left:6px;bottom:30px;width:330px;padding:6px 0">
+    <div style="display:flex;padding:0 12px 6px;color:var(--descriptionForeground);font-size:11px;font-weight:600">AGENTS<span style="margin-left:auto">priority ▾</span></div>
+    ${[['blocked','mine-15-dispatch · build','claude — waiting for approval'],['working','flutter_rad_pvmi · camera','claude — running tests'],['working','tg-signal-bot · main','claude'],['working','cloudflare-notifier · api','claude'],['done','stockbit-portfolio · report','claude — done 2m ago']]
+      .map(([st,a,b],i)=>`<div style="display:grid;grid-template-columns:18px 1fr;padding:4px 12px;${i==0?'background:var(--list-activeSelectionBackground)':''}"><span class="dot ${st}"></span><span>${a}</span><span></span><span style="color:var(--descriptionForeground)">${b}</span></div>`).join('')}</div>`);
+}
+</script>
+</body></html>

@@ -26,6 +26,26 @@ interprocess = { version = "2.4.2", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+# Folder picker (Workspace > New Workspace...) and the VS Code theme file
+# picker (View > Import VS Code Theme...), both called from Rust only (spec
+# §1, §2.3): the webview gets no `dialog:*` permission.
+tauri-plugin-dialog = "2"
+# Desktop toasts for the agent-done notification (spec §7 "Agent done
+# notification"), called from Rust only.
+tauri-plugin-notification = "2"
+# Settings... opens config.toml with `open_path`; a missing config.toml
+# instead reveals its directory with `reveal_item_in_dir` (spec §4).
+tauri-plugin-opener = "2"
+# Stops WebView2 from swallowing F5/F3/Ctrl+F/Ctrl+P/Ctrl+R/Ctrl+Shift+I so
+# they reach the terminal instead of reloading/printing/opening devtools
+# (spec §1 "WebView2 browser keys are disabled").
+tauri-plugin-prevent-default = { version = "4", features = ["platform-windows"] }
+# `.vsix` theme import (spec §2.3): a `.vsix` is a zip archive.
+zip = "2"
+# JSONC-tolerant parser for VS Code theme files (comments + trailing commas,
+# spec §2.3 "Theme JSON is JSONC").
+json5 = "0.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs", "test-util"] }

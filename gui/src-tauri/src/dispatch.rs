@@ -55,12 +55,23 @@ fn initial_hello(inner: &Inner) -> EndpointClientHello {
 
 /// Emits the `connection-status` event and caches it on `inner` so
 /// `commands::sync_state` (spec §4 v3) can re-emit it for a frontend that
-/// registered its listener after this fired (finding #1).
-fn emit_connection_status(app: &AppHandle, inner: &Inner, status: &str, socket_path: &str) {
-    inner.record_connection_status(status, socket_path);
+/// registered its listener after this fired (finding #1). `server_version`
+/// (finding #14 "About shows the server version") is `Some` only for the
+/// "connected" status, from the welcome handshake.
+fn emit_connection_status(
+    app: &AppHandle,
+    inner: &Inner,
+    status: &str,
+    socket_path: &str,
+    server_version: Option<&str>,
+) {
+    // spec phase1.5 §9.1 "Empty log file": connect/disconnect/handshake
+    // results belong in the log at `info` level.
+    tracing::info!(status, socket_path, "connection status changed");
+    inner.record_connection_status(status, socket_path, server_version);
     let _ = app.emit(
         "connection-status",
-        serde_json::json!({ "status": status, "socketPath": socket_path }),
+        serde_json::json!({ "status": status, "socketPath": socket_path, "serverVersion": server_version }),
     );
 }
 
@@ -70,7 +81,7 @@ pub async fn run_reconnect_loop(app: AppHandle, inner: Arc<Inner>) {
     loop {
         let socket_path = crate::socket::client_socket_path();
         let socket_path_str = socket_path.to_string_lossy().to_string();
-        emit_connection_status(&app, &inner, "connecting", &socket_path_str);
+        emit_connection_status(&app, &inner, "connecting", &socket_path_str, None);
 
         // Recorded once, on the very first connection attempt: `attach_ms`
         // (spec §4 `main.rs`: "from connect start to the first `PaneSurface`
@@ -81,15 +92,21 @@ pub async fn run_reconnect_loop(app: AppHandle, inner: Arc<Inner>) {
             Ok(conn) => {
                 let conn = Arc::new(conn);
                 *inner.connection.write().await = Some(conn.clone());
-                emit_connection_status(&app, &inner, "connected", &socket_path_str);
+                emit_connection_status(
+                    &app,
+                    &inner,
+                    "connected",
+                    &socket_path_str,
+                    Some(&conn.server_version),
+                );
 
                 run_dispatch_loop(&app, &inner, &conn).await;
 
                 *inner.connection.write().await = None;
-                emit_connection_status(&app, &inner, "disconnected", &socket_path_str);
+                emit_connection_status(&app, &inner, "disconnected", &socket_path_str, None);
             }
             Err(_) => {
-                emit_connection_status(&app, &inner, "unavailable", &socket_path_str);
+                emit_connection_status(&app, &inner, "unavailable", &socket_path_str, None);
             }
         }
 
@@ -176,6 +193,7 @@ fn handle_snapshot(app: &AppHandle, inner: &Arc<Inner>, data: &str) {
 /// stale) size, so the server clears `last_surface` and sends a fresh full
 /// `PaneSurface` (spec §1 "Resync on reject", finding #2).
 async fn resync(inner: &Inner, conn: &Connection) {
+    tracing::info!("resyncing surface after a rejected patch/frame");
     let (cols, rows, cell_width_px, cell_height_px) = inner.last_size();
     let _ = conn
         .send(&ClientMessage::ClientShellResize {

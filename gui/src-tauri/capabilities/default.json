@@ -1,7 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Restricted to what the frontend actually calls: core:event's allow-listen, for the `listen()` calls that receive the `snapshot`/`usage`/`connection-status` events (src/main.ts). No core:window permission is granted: `window.show()` is called from Rust, inside the report_ready command (commands.rs), not through IPC from the webview, so it needs no ACL entry. No fs, shell, dialog, or http plugin permissions are granted either -- this app depends on none of those plugins. The app's own #[tauri::command] functions in commands.rs (including the raw-bytes Channel used for surface frames) are callable from the webview without a separate ACL entry.",
+  "description": "Restricted to what the frontend actually calls: core:event's allow-listen, for the `listen()` calls that receive the `snapshot`/`usage`/`connection-status` events (src/main.ts), plus the two window permissions the custom title bar needs (spec phase1.5 §3 \"Window\"): allow-start-dragging for the `data-tauri-drag-region` title bar, and allow-internal-toggle-maximize for its double-click-to-maximize. Window min/max/close themselves are Rust commands (window_minimize/window_toggle_maximize/window_close in commands.rs), not core:window JS permissions. No fs, shell, or http plugin permissions are granted. The dialog, notification, and opener plugins are called from Rust only (folder/theme-file pickers, desktop toasts, and Settings.../config.toml), so the webview gets no `dialog:*`/`notification:*`/`opener:*` permission either. The app's own #[tauri::command] functions in commands.rs (including the raw-bytes Channel used for surface frames) are callable from the webview without a separate ACL entry.",
   "windows": ["main"],
-  "permissions": ["core:event:allow-listen"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize"
+  ]
 }

@@ -206,6 +206,10 @@ pub struct Connection {
     request_gate: AsyncMutex<()>,
     next_request_id: AtomicU64,
     reader_task: tokio::task::JoinHandle<()>,
+    /// The server's own version string from the welcome handshake (finding
+    /// #14 "About shows the server version": spec §4 "About herdr GUI" ->
+    /// "version + server version from the welcome message").
+    pub server_version: String,
 }
 
 impl Drop for Connection {
@@ -229,7 +233,7 @@ impl Connection {
         socket_path: &Path,
         hello: &EndpointClientHello,
     ) -> Result<Self, ConnError> {
-        let (recv, send) = match tokio::time::timeout(
+        let (recv, send, welcome) = match tokio::time::timeout(
             CONNECT_TIMEOUT,
             Self::handshake(socket_path, hello),
         )
@@ -251,13 +255,14 @@ impl Connection {
             request_gate: AsyncMutex::new(()),
             next_request_id: AtomicU64::new(0),
             reader_task,
+            server_version: welcome.server_version,
         })
     }
 
     async fn handshake(
         socket_path: &Path,
         hello: &EndpointClientHello,
-    ) -> Result<(RecvHalf, SendHalf), ConnError> {
+    ) -> Result<(RecvHalf, SendHalf, EndpointServerWelcome), ConnError> {
         let name = local_socket_name(socket_path)?;
         let stream = LocalSocketStream::connect(name).await?;
         let (mut recv, mut send) = stream.split();
@@ -284,7 +289,7 @@ impl Connection {
                     if let Some(err) = welcome.error {
                         return Err(ConnError::HandshakeRejected(err.message));
                     }
-                    return Ok((recv, send));
+                    return Ok((recv, send, welcome));
                 }
                 // Any other message (including an unrecognized
                 // EndpointControl kind) before the welcome is ignored.
@@ -365,6 +370,16 @@ impl Connection {
     /// Writes one `ClientMessage` frame.
     pub async fn send(&self, msg: &ClientMessage) -> Result<(), ConnError> {
         self.write_frame(msg).await
+    }
+
+    /// Aborts the reader task (spec phase1.5 §4 "Reconnect": "a new Rust
+    /// command `reconnect` ... Drop aborts the reader"). Dropping the reader
+    /// task's future drops its `mpsc::UnboundedSender`, so any in-flight
+    /// `read_message()` call observes the channel close and returns
+    /// `Err(ConnError::Closed)` immediately, regardless of how many other
+    /// `Arc<Connection>` clones are still outstanding elsewhere.
+    pub fn close(&self) {
+        self.reader_task.abort();
     }
 
     async fn write_frame(&self, msg: &ClientMessage) -> Result<(), ConnError> {

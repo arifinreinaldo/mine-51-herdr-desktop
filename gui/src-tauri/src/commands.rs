@@ -65,7 +65,20 @@ pub struct Inner {
     /// registered its `listen` calls after they first fired (finding #1).
     last_snapshot: StdMutex<Option<serde_json::Value>>,
     last_usage: StdMutex<Option<usage::UsageState>>,
-    last_connection_status: StdMutex<Option<(String, String)>>,
+    /// `(status, socket_path, server_version)`. `server_version` (finding
+    /// #14 "About shows the server version") is `Some` only once
+    /// `status == "connected"`, from the welcome handshake
+    /// (`conn::Connection::server_version`).
+    last_connection_status: StdMutex<Option<(String, String, Option<String>)>>,
+    /// The agent-done desktop toast rate limiter (spec phase1.5 §7): "one
+    /// toast per 5s, with extra transitions coalesced into 'and N more'".
+    pub toast_limiter: StdMutex<crate::notify::ToastRateLimiter>,
+    /// Serializes `settings_set` writes (finding #7): several near-
+    /// simultaneous saves (e.g. a sidebar-resize drag-end racing a theme
+    /// change) must never interleave their write-tmp-then-rename steps.
+    /// A `tokio` mutex, not `StdMutex`, because the lock is held across the
+    /// blocking file write inside an `async fn` command.
+    pub settings_save_lock: tokio::sync::Mutex<()>,
 }
 
 impl Inner {
@@ -83,6 +96,8 @@ impl Inner {
             last_snapshot: StdMutex::new(None),
             last_usage: StdMutex::new(None),
             last_connection_status: StdMutex::new(None),
+            toast_limiter: StdMutex::new(crate::notify::ToastRateLimiter::default()),
+            settings_save_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -114,9 +129,17 @@ impl Inner {
         *lock_or_recover(&self.last_size) = (cols, rows, cell_w, cell_h);
     }
 
-    pub fn record_connection_status(&self, status: &str, socket_path: &str) {
-        *lock_or_recover(&self.last_connection_status) =
-            Some((status.to_string(), socket_path.to_string()));
+    pub fn record_connection_status(
+        &self,
+        status: &str,
+        socket_path: &str,
+        server_version: Option<&str>,
+    ) {
+        *lock_or_recover(&self.last_connection_status) = Some((
+            status.to_string(),
+            socket_path.to_string(),
+            server_version.map(str::to_string),
+        ));
     }
 
     pub fn record_snapshot(&self, value: serde_json::Value) {
@@ -349,10 +372,12 @@ pub async fn sync_state(state: tauri::State<'_, AppState>, app: AppHandle) -> Re
     if let Some(usage_state) = lock_or_recover(&inner.last_usage).clone() {
         let _ = app.emit("usage", usage_state);
     }
-    if let Some((status, socket_path)) = lock_or_recover(&inner.last_connection_status).clone() {
+    if let Some((status, socket_path, server_version)) =
+        lock_or_recover(&inner.last_connection_status).clone()
+    {
         let _ = app.emit(
             "connection-status",
-            serde_json::json!({ "status": status, "socketPath": socket_path }),
+            serde_json::json!({ "status": status, "socketPath": socket_path, "serverVersion": server_version }),
         );
     }
 

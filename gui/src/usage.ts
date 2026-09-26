@@ -112,3 +112,42 @@ export function worstActivePct(state: UsageState, now: number): number {
   if (active.length === 0) return 0;
   return Math.max(...active.map((window) => window.used_pct));
 }
+
+// ---------------------------------------------------------------------------
+// Status bar usage item + popover formatting (spec phase1.5 §7 "Usage
+// component"/"popovers"). These format one row/label each, distinct from
+// `formatUsage`'s single joined string above (kept for the status bar's
+// always-visible 5-hour item), so the popover can lay each row out with its
+// own meter.
+// ---------------------------------------------------------------------------
+
+/** The always-visible status bar item's percent + remaining time, e.g.
+ * `"15% · 1h39m left"` (spec §7 "Left side": "5h, a 64x4px meter, then
+ * `15% · 1h39m left`"), or `null` with no five-hour window. */
+export function formatFiveHourStatusBarLabel(window: UsageWindow | null, now: number): string | null {
+  if (!window) return null;
+  if (window.resets_at < now) return "-- (reset)";
+  return `${formatPct(window.used_pct)}% · ${formatDuration(window.resets_at - now)} left`;
+}
+
+/** The usage popover's 5-hour row, e.g. `"15% · resets in 1h39m"` (spec
+ * §7 "Usage popover"). */
+export function formatFiveHourPopoverRow(window: UsageWindow | null, now: number): string | null {
+  if (!window) return null;
+  if (window.resets_at < now) return "-- (reset)";
+  return `${formatPct(window.used_pct)}% · resets in ${formatDuration(window.resets_at - now)}`;
+}
+
+/** The usage popover's weekly row, e.g. `"6% · resets Sat 08:00"` (local
+ * time, spec §7 "Usage popover"). */
+export function formatWeeklyPopoverRow(window: UsageWindow | null, now: number): string | null {
+  if (!window) return null;
+  if (window.resets_at < now) return "-- (reset)";
+  return `${formatPct(window.used_pct)}% · resets ${formatClockTime(window.resets_at)}`;
+}
+
+/** `"as of N m ago"` (spec §7 "the title 'Claude usage' + 'as of N m ago'"). */
+export function formatAsOfLabel(capturedAt: number | null, now: number): string | null {
+  if (capturedAt === null) return null;
+  return `as of ${formatAgo(now - capturedAt)}`;
+}

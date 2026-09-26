@@ -14,14 +14,18 @@
     "e2e": "wdio run tests/e2e/wdio.conf.ts",
     "bench:startup": "node scripts/bench-startup.mjs"
   },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.36"
+  },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
     "@tauri-apps/api": "^2",
-    "vitest": "^3",
-    "typescript": "^5.9",
-    "vite": "^6",
+    "@tauri-apps/cli": "^2",
     "@wdio/cli": "^9",
     "@wdio/local-runner": "^9",
-    "@wdio/mocha-framework": "^9"
+    "@wdio/mocha-framework": "^9",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9",
+    "vite": "^6",
+    "vitest": "^3"
   }
 }

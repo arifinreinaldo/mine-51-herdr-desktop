@@ -17,7 +17,12 @@
         "title": "herdr",
         "width": 1100,
         "height": 720,
-        "visible": false
+        "minWidth": 640,
+        "minHeight": 400,
+        "visible": false,
+        "decorations": false,
+        "backgroundColor": "#1f1f1f",
+        "zoomHotkeysEnabled": false
       }
     ],
     "security": {

@@ -4,15 +4,21 @@
 pub mod commands;
 pub mod conn;
 pub mod dispatch;
+pub mod folder_picker;
 pub mod mirror;
+pub mod notify;
+pub mod settings;
 pub mod socket;
 pub mod surface_encode;
+pub mod theme_import;
 pub mod usage;
+pub mod window_chrome;
 
 use std::time::{Duration, Instant};
 
 use commands::AppState;
 use tauri::Emitter;
+use tracing_subscriber::EnvFilter;
 
 /// Initializes logging to `%LOCALAPPDATA%\herdr-gui\logs` (spec §4
 /// "Logging"), builds the Tauri app, and runs it.
@@ -23,12 +29,22 @@ use tauri::Emitter;
 /// startup bench output.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(start: Instant) {
-    init_logging();
+    // `None` (log dir uncreatable) silently disables file logging, matching
+    // the prior behavior's own best-effort fallback. Held (as `Some`) until
+    // `RunEvent::Exit` below flushes it explicitly -- see that comment
+    // (finding #15 "`_log_guard` flushed on exit").
+    let log_guard = init_logging();
 
     let app_state = AppState::new(start);
     let inner = app_state.inner.clone();
 
-    tauri::Builder::default()
+    let prevent_default_plugin = build_prevent_default_plugin();
+
+    let app = tauri::Builder::default()
+        .plugin(prevent_default_plugin)
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::send_input,
@@ -38,6 +54,17 @@ pub fn run(start: Instant) {
             commands::subscribe_surface,
             commands::pane_at,
             commands::sync_state,
+            window_chrome::window_minimize,
+            window_chrome::window_toggle_maximize,
+            window_chrome::window_close,
+            window_chrome::open_settings,
+            window_chrome::reconnect,
+            settings::settings_get,
+            settings::settings_set,
+            folder_picker::pick_workspace_folder,
+            theme_import::import_vscode_theme,
+            theme_import::list_imported_themes,
+            notify::notify_agent_done,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -48,8 +75,56 @@ pub fn run(start: Instant) {
             tauri::async_runtime::spawn(run_usage_poll_loop(app_handle, inner.clone()));
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running the herdr GUI");
+        .build(tauri::generate_context!())
+        .expect("error while building the herdr GUI");
+
+    // Finding #15: `run()` blocks until the app exits, but Tauri's default
+    // window-close path can end the process before a plain top-level local
+    // ever gets to run its `Drop` -- `RunEvent::Exit` is guaranteed to fire
+    // first, so the flushing appender's guard is dropped explicitly there
+    // instead of relying on an implicit end-of-function drop.
+    let mut log_guard = Some(log_guard);
+    app.run(move |_app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            log_guard.take();
+        }
+    });
+}
+
+/// Stops WebView2 from swallowing F5/F3/Ctrl+F/Ctrl+P/Ctrl+R/Ctrl+Shift+I so
+/// they reach the terminal instead of reloading/printing/finding/opening
+/// devtools (spec phase1.5 §1 "WebView2 browser keys are disabled"). The
+/// `platform-windows` feature's `PlatformOptions` only takes effect on
+/// Windows; elsewhere the plugin is registered with no platform options
+/// (the JS-injection `Flags` path is not needed here since the GUI wants
+/// these keys to *reach* JS, just not trigger WebView2's own handling).
+fn build_prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    // Finding #15: `Builder::new()`'s default flag set is `Flags::all()`,
+    // which includes `FOCUS_MOVE` -- the plugin's own JS injection then
+    // calls `preventDefault()` on every `Shift+Tab`, silently breaking
+    // backward focus navigation through the chrome (sidebar rows, tabs,
+    // menu items, status bar items). `FOCUS_MOVE` guards a browser-only
+    // affordance (moving focus into the URL bar) this app has no use for
+    // anyway, so it is dropped from the claimed flag set everywhere, not
+    // just on Windows.
+    let flags = tauri_plugin_prevent_default::Flags::all()
+        .difference(tauri_plugin_prevent_default::Flags::FOCUS_MOVE);
+    #[cfg(target_os = "windows")]
+    {
+        tauri_plugin_prevent_default::Builder::new()
+            .with_flags(flags)
+            .platform(
+                tauri_plugin_prevent_default::PlatformOptions::new()
+                    .browser_accelerator_keys(false),
+            )
+            .build()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        tauri_plugin_prevent_default::Builder::new()
+            .with_flags(flags)
+            .build()
+    }
 }
 
 /// Polls `~/.claude/herdr-usage.json`'s `mtime` every 2s (spec §4
@@ -77,23 +152,31 @@ async fn run_usage_poll_loop(app: tauri::AppHandle, inner: std::sync::Arc<comman
     }
 }
 
-fn init_logging() {
+/// Initializes `tracing` with a **flushing** non-blocking file writer (spec
+/// phase1.5 §9.1 "Empty log file"): the prior synchronous writer left the
+/// log empty in practice because `EnvFilter::from_default_env()` with no
+/// `RUST_LOG` set filters out everything below `ERROR`, so the app's
+/// `warn!`/`debug!` calls (connect, disconnect, handshake result, resyncs,
+/// decode skips) never reached it. This defaults to `info` and honors
+/// `HERDR_GUI_LOG` to override, and returns the `WorkerGuard` that must be
+/// held for the process lifetime to flush buffered lines on exit.
+fn init_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let log_dir = log_dir();
     if std::fs::create_dir_all(&log_dir).is_err() {
-        return;
+        return None;
     }
-    let log_path = log_dir.join("herdr-gui.log");
-    let Ok(file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    else {
-        return;
-    };
+    let file_appender = tracing_appender::rolling::never(&log_dir, "herdr-gui.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    let filter = std::env::var("HERDR_GUI_LOG")
+        .ok()
+        .and_then(|directive| EnvFilter::try_new(directive).ok())
+        .unwrap_or_else(|| EnvFilter::new("info"));
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_writer(std::sync::Mutex::new(file))
+        .with_env_filter(filter)
+        .with_writer(non_blocking)
+        .with_ansi(false)
         .try_init();
+    Some(guard)
 }
 
 /// `%LOCALAPPDATA%\herdr-gui\logs` (spec §4 "Logging").
