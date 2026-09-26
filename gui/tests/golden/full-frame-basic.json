@@ -1,0 +1,67 @@
+{
+  "cursor": {
+    "visible": true,
+    "x": 1,
+    "y": 0
+  },
+  "height": 2,
+  "kind": "full",
+  "rows": [
+    {
+      "cells": [
+        {
+          "bg": 0,
+          "fg": 2,
+          "modifier": 0,
+          "skip": false,
+          "symbol": "h"
+        },
+        {
+          "bg": 0,
+          "fg": 3,
+          "modifier": 1,
+          "skip": false,
+          "symbol": "i"
+        },
+        {
+          "bg": 0,
+          "fg": 0,
+          "modifier": 0,
+          "skip": true,
+          "symbol": ""
+        }
+      ],
+      "x": 0,
+      "y": 0
+    },
+    {
+      "cells": [
+        {
+          "bg": 0,
+          "fg": 0,
+          "modifier": 0,
+          "skip": false,
+          "symbol": "!"
+        },
+        {
+          "bg": 5,
+          "fg": 4,
+          "modifier": 0,
+          "skip": false,
+          "symbol": "🦀"
+        },
+        {
+          "bg": 0,
+          "fg": 0,
+          "modifier": 0,
+          "skip": false,
+          "symbol": "."
+        }
+      ],
+      "x": 0,
+      "y": 1
+    }
+  ],
+  "surfaceRevision": 7,
+  "width": 3
+}

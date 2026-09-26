@@ -1,0 +1,27 @@
+{
+  "name": "herdr-gui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "check": "cargo fmt --check && cargo clippy --workspace -- -D warnings && cargo test --workspace && tsc --noEmit && vitest run",
+    "test:rust": "cargo test --workspace",
+    "test:ts": "vitest run",
+    "e2e": "wdio run tests/e2e/wdio.conf.ts",
+    "bench:startup": "node scripts/bench-startup.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@tauri-apps/api": "^2",
+    "vitest": "^3",
+    "typescript": "^5.9",
+    "vite": "^6",
+    "@wdio/cli": "^9",
+    "@wdio/local-runner": "^9",
+    "@wdio/mocha-framework": "^9"
+  }
+}

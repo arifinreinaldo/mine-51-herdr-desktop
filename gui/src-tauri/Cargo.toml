@@ -1,0 +1,31 @@
+[package]
+name = "herdr-gui"
+version = "0.1.0"
+description = "herdr GUI: a Tauri 2 client for the herdr terminal multiplexer server"
+edition = "2021"
+build = "build.rs"
+publish = false
+
+[lib]
+# The `_lib` suffix keeps the lib crate name distinct from the `herdr-gui`
+# bin target; without it, Cargo's default name mangling collides on Windows
+# (see the `npm create tauri-app` scaffold comment for this exact issue).
+name = "herdr_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+herdr-wire = { path = "../crates/herdr-wire" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = { version = "2", features = ["serde"] }
+interprocess = { version = "2.4.2", features = ["tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs", "test-util"] }

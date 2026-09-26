@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Core window/event access for the main window. No fs, shell, dialog, or http plugin permissions are granted -- this app depends on none of those plugins. The app's own #[tauri::command] functions in commands.rs are callable from the webview without a separate ACL entry.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
