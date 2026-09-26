@@ -59,6 +59,39 @@ describe("applyDecodedFrame", () => {
     expect(dirtyRows).toEqual([0]);
   });
 
+  it("a row patch with cursor: null clears the cursor, rather than keeping the old one", () => {
+    // herdr's own semantics: PaneSurfacePatch.cursor: Option<CursorState>
+    // replaces the surface's cursor; `None` means "no cursor", not
+    // "unchanged" (surface_patch.rs:50, code review finding #7).
+    const { grid: base } = applyDecodedFrame(createEmptyGrid(), fullFrame());
+    expect(base.cursor).toEqual({ x: 0, y: 0, visible: true });
+    const patch: DecodedSurfaceFrame = {
+      kind: "rows",
+      surfaceRevision: 2,
+      width: 2,
+      height: 1,
+      cursor: null,
+      rows: [{ y: 0, x: 1, cells: [{ symbol: "z", fg: 3, bg: 0, modifier: 0, skip: false }] }],
+    };
+    const { grid } = applyDecodedFrame(base, patch);
+    expect(grid.cursor).toBeNull();
+  });
+
+  it("ignores an oversize frame header rather than allocating a huge cells array", () => {
+    const huge: DecodedSurfaceFrame = {
+      kind: "full",
+      surfaceRevision: 1,
+      width: 60000,
+      height: 60000,
+      cursor: null,
+      rows: [],
+    };
+    const before = createEmptyGrid();
+    const { grid, dirtyRows } = applyDecodedFrame(before, huge);
+    expect(grid).toBe(before);
+    expect(dirtyRows).toEqual([]);
+  });
+
   it("a row patch touching only row 3 of a taller grid reports dirtyRows [3]", () => {
     const tall: DecodedSurfaceFrame = {
       kind: "full",

@@ -106,11 +106,7 @@ fn write_cell(out: &mut Vec<u8>, cell: &Cell) {
     if cell.skip || cell.symbol.is_empty() {
         out.push(0);
     } else {
-        let bytes = cell.symbol.as_bytes();
-        debug_assert!(
-            bytes.len() <= u8::MAX as usize,
-            "grapheme cluster too long for sym_len"
-        );
+        let bytes = truncate_symbol_to_255_bytes(&cell.symbol);
         out.push(bytes.len() as u8);
         out.extend_from_slice(bytes);
     }
@@ -118,6 +114,22 @@ fn write_cell(out: &mut Vec<u8>, cell: &Cell) {
     out.extend_from_slice(&cell.bg.to_le_bytes());
     out.extend_from_slice(&cell.modifier.to_le_bytes());
     out.push(u8::from(cell.skip));
+}
+
+/// Truncates `symbol` to at most 255 UTF-8 bytes, on a char boundary, so
+/// `sym_len` (a `u8`) never wraps and this never panics on a pathological
+/// grapheme cluster from server data (code review finding #3: the old
+/// `debug_assert!` panicked in a debug build, and `bytes.len() as u8`
+/// silently wrapped in release).
+fn truncate_symbol_to_255_bytes(symbol: &str) -> &[u8] {
+    if symbol.len() <= u8::MAX as usize {
+        return symbol.as_bytes();
+    }
+    let mut end = usize::from(u8::MAX);
+    while !symbol.is_char_boundary(end) {
+        end -= 1;
+    }
+    &symbol.as_bytes()[..end]
 }
 
 #[cfg(test)]
@@ -202,5 +214,28 @@ mod tests {
         let row_start = 20 + 6;
         assert_eq!(bytes[row_start], 4);
         assert_eq!(&bytes[row_start + 1..row_start + 5], "\u{1F980}".as_bytes());
+    }
+
+    #[test]
+    fn symbol_over_255_bytes_is_truncated_on_a_char_boundary() {
+        // A pathological cell symbol (never sent by real herdr, but not
+        // trusted either, per finding #3): 100 repetitions of a 4-byte
+        // grapheme is 400 bytes, well over the u8 sym_len's 255-byte cap.
+        let long_symbol = "\u{1F980}".repeat(100);
+        assert_eq!(long_symbol.len(), 400);
+        let cells = vec![cell(&long_symbol, 0, 0, 0, false)];
+        let bytes = encode_full_frame(1, 1, 1, None, &cells);
+        let row_start = 20 + 6;
+        let sym_len = bytes[row_start] as usize;
+        assert!(sym_len <= 255, "sym_len must never exceed u8::MAX");
+        let symbol_bytes = &bytes[row_start + 1..row_start + 1 + sym_len];
+        // Truncated on a char boundary: the bytes must still decode as
+        // valid UTF-8 (a mid-grapheme cut would produce invalid UTF-8).
+        let decoded = std::str::from_utf8(symbol_bytes).expect("truncated on a char boundary");
+        assert_eq!(decoded.len(), sym_len);
+        assert!(
+            sym_len.is_multiple_of(4),
+            "truncated to whole 4-byte graphemes"
+        );
     }
 }

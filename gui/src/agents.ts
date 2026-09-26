@@ -30,6 +30,11 @@ export const AGENT_STATUS_PRIORITY: Record<AgentStatus, number> = {
  * (most recently changed first) within the same status. Stubbed:
  * ordering logic is left for the implementer.
  */
-export function sortAgents<T extends AgentRow>(_agents: T[]): T[] {
-  throw new Error("not implemented: sortAgents");
+export function sortAgents<T extends AgentRow>(agents: T[]): T[] {
+  return [...agents].sort((a, b) => {
+    const priorityDiff =
+      AGENT_STATUS_PRIORITY[a.agent_status] - AGENT_STATUS_PRIORITY[b.agent_status];
+    if (priorityDiff !== 0) return priorityDiff;
+    return b.state_change_seq - a.state_change_seq;
+  });
 }

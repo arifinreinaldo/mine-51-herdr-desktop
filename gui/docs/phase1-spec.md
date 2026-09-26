@@ -1,7 +1,8 @@
 # herdr GUI — Phase 1 spec
 
-Status: v2 (Opus, revised after Fable review: 1 blocker, 7 major, 6 minor applied).
-Pending: user OK.
+Status: v3. v2 applied the Fable plan review. v3 adds `sync_state`, `pane_at`,
+last-size resync (§4), and defers the context menu to Phase 2 (§6), after the Opus
+code review.
 
 ## 0. Goal and success criterion
 
@@ -285,6 +286,16 @@ Modules (one file each unless noted):
   cell_w, cell_h)` (debounce 50 ms in TS), `api(method, params) -> Result<Value,
   ApiError>` (wraps `ClientShellEndpointRequest`, correlates `request_id`, 5 s
   timeout), `report_ready(ms)`, and `subscribe_surface(channel: Channel)`.
+  - **(v3) `sync_state()`.** The frontend calls it once, after it registers every
+    listener and subscribes to the surface. It re-emits the last `snapshot`, `usage`,
+    and connection status (all cached in backend state), and pushes an encoded full
+    frame of the mirror to the channel. Events emitted before the webview listens
+    are lost, so this is the only reliable startup path.
+  - **(v3) `pane_at(col, row) -> Option<String>`.** Hit-tests `mirror.panes[].inner_rect`
+    and returns the pane id. Click-to-focus uses it. §5 carries no pane geometry.
+  - **(v3) `resize` stores the last requested `(cols, rows, cell_w, cell_h)`.** The
+    hello after a (re)connect and the resync resize both use it. The fallback before
+    the first resize is 80×24 at 8×16. Never resync with the mirror's size.
 - `main.rs` — capture `Instant::now()` first thing. The window is `visible: false`
   and is shown in `report_ready`. With `HERDR_GUI_BENCH=1`, print one JSON line
   `{"first_paint_ms":..,"attach_ms":..}` to stdout and exit after `report_ready`.
@@ -323,7 +334,7 @@ workspace, the center terminal canvas, and a bottom usage bar (24 px).
   shows a status dot colour and a label; `Blocked` rows use an accent highlight.
   Clicking a tab → `api("tab.focus", …)`. Clicking an agent → focus its
   workspace, tab, and pane.
-- **Actions** (toolbar + context menu): new workspace, new tab, split right, split
+- **Actions** (toolbar; the context menu moves to Phase 2): new workspace, new tab, split right, split
   down, close pane, close tab, close workspace. Close actions confirm in an inline
   popover, never `window.confirm`.
 - **Terminal canvas.** Measure the monospace cell size once from the font and on DPR

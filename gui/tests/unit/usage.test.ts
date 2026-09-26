@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UsageState } from "../../src/usage";
-import { formatUsage, usageColor } from "../../src/usage";
+import { formatUsage, usageColor, worstActivePct } from "../../src/usage";
 
 const NOW = 1_790_400_000; // arbitrary fixed "now" for deterministic tests
 
@@ -63,5 +63,39 @@ describe("formatUsage", () => {
   it("status Invalid shows the unreadable-file message", () => {
     const state: UsageState = { five_hour: null, seven_day: null, captured_at: null, status: "invalid" };
     expect(formatUsage(state, NOW)).toBe("Claude usage: unreadable file");
+  });
+});
+
+describe("worstActivePct", () => {
+  it("is the higher of two active (not-yet-reset) windows", () => {
+    const state: UsageState = {
+      five_hour: { used_pct: 40, resets_at: NOW + 3600 },
+      seven_day: { used_pct: 95, resets_at: NOW + 3600 },
+      captured_at: NOW,
+      status: "ok",
+    };
+    expect(worstActivePct(state, NOW)).toBe(95);
+  });
+
+  it("excludes a window that has already reset from the worst-case colour", () => {
+    // Code review finding #11: a window past its resets_at displays as
+    // "-- (reset)" and must not still drive the danger/warning colour.
+    const state: UsageState = {
+      five_hour: { used_pct: 99, resets_at: NOW - 1 }, // reset, ignored
+      seven_day: { used_pct: 20, resets_at: NOW + 3600 }, // active
+      captured_at: NOW,
+      status: "ok",
+    };
+    expect(worstActivePct(state, NOW)).toBe(20);
+  });
+
+  it("is 0 when every window is absent or has reset", () => {
+    const state: UsageState = {
+      five_hour: { used_pct: 99, resets_at: NOW - 1 },
+      seven_day: null,
+      captured_at: NOW,
+      status: "ok",
+    };
+    expect(worstActivePct(state, NOW)).toBe(0);
   });
 });

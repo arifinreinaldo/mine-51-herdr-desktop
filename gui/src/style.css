@@ -1,0 +1,260 @@
+/* Minimal Phase 1 chrome layout (spec §6). Visual polish is out of scope;
+   this only establishes the sidebar/tab-strip/canvas/usage-bar regions. */
+
+:root {
+  color-scheme: dark;
+  --bg: #1e1e1e;
+  --fg: #d4d4d4;
+  --border: #3c3c3c;
+  --accent: #d1382e;
+  --sidebar-width: 240px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+
+#app {
+  display: flex;
+  height: calc(100% - 24px - 0px);
+  width: 100%;
+}
+
+.connection-banner {
+  height: 24px;
+  line-height: 24px;
+  padding: 0 8px;
+  background: #7a3b00;
+  color: #ffe6c7;
+  font-size: 12px;
+}
+
+.connection-banner[hidden] {
+  display: none;
+}
+
+#sidebar {
+  width: var(--sidebar-width);
+  min-width: 180px;
+  max-width: 400px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+/* Sidebar drag handle (spec §6 "Sidebar": resizable 180-400px). */
+#sidebar-resize-handle {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--border);
+  touch-action: none;
+}
+
+#sidebar-resize-handle:hover {
+  background: var(--accent);
+}
+
+.sidebar-group {
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-group__header {
+  padding: 4px 8px;
+  cursor: pointer;
+  font-weight: 600;
+  display: flex;
+  justify-content: space-between;
+}
+
+.sidebar-tab,
+.sidebar-agent {
+  padding: 3px 8px 3px 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-tab.is-focused,
+.sidebar-agent.is-focused {
+  background: #2a2d2e;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot--idle {
+  background: #6a6a6a;
+}
+.status-dot--working {
+  background: #3794ff;
+}
+.status-dot--blocked {
+  background: var(--accent);
+}
+.status-dot--done {
+  background: #4caf50;
+}
+.status-dot--unknown {
+  background: #9c9c9c;
+}
+
+.sidebar-agent.is-blocked {
+  outline: 1px solid var(--accent);
+  background: #3a1f1c;
+}
+
+#workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#tab-strip {
+  display: flex;
+  height: 28px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.tab-chip {
+  padding: 0 10px;
+  line-height: 28px;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.tab-chip.is-focused {
+  background: #2a2d2e;
+}
+
+#toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.toolbar-btn {
+  background: #2d2d2d;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.toolbar-btn:hover {
+  background: #3a3a3a;
+}
+
+.confirm-popover {
+  position: absolute;
+  top: 100%;
+  z-index: 10;
+  background: #2d2d2d;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.confirm-popover__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+#terminal-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+#terminal {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #0c0c0c;
+  outline: none;
+}
+
+#keyboard-capture {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  padding: 0;
+  border: none;
+  resize: none;
+  overflow: hidden;
+}
+
+#usage-bar {
+  height: 24px;
+  line-height: 24px;
+  padding: 0 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#usage-bar.usage--warning {
+  color: #e2a03f;
+}
+
+#usage-bar.usage--danger {
+  color: #f14c4c;
+}
+
+/* Transient inline error notices (spec, code review finding #15): never
+   alert()/confirm() -- a non-modal, auto-hiding notice instead. */
+#error-notices {
+  position: fixed;
+  bottom: 32px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.error-notice {
+  background: #5a1d1d;
+  color: #ffd7d7;
+  border: 1px solid #7a2d2d;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  max-width: 360px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}

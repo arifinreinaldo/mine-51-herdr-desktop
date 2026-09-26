@@ -9,12 +9,25 @@
     <div id="banner" class="connection-banner" hidden></div>
     <div id="app">
       <aside id="sidebar"></aside>
+      <div id="sidebar-resize-handle"></div>
       <main id="workspace">
         <div id="tab-strip"></div>
-        <canvas id="terminal"></canvas>
+        <div id="toolbar"></div>
+        <div id="terminal-wrap">
+          <canvas id="terminal" tabindex="0"></canvas>
+          <textarea
+            id="keyboard-capture"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+            aria-hidden="true"
+          ></textarea>
+        </div>
       </main>
     </div>
     <footer id="usage-bar"></footer>
+    <div id="error-notices"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

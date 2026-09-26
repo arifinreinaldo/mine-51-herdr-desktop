@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core window/event access for the main window. No fs, shell, dialog, or http plugin permissions are granted -- this app depends on none of those plugins. The app's own #[tauri::command] functions in commands.rs are callable from the webview without a separate ACL entry.",
+  "description": "Restricted to what the frontend actually calls: core:event's allow-listen, for the `listen()` calls that receive the `snapshot`/`usage`/`connection-status` events (src/main.ts). No core:window permission is granted: `window.show()` is called from Rust, inside the report_ready command (commands.rs), not through IPC from the webview, so it needs no ACL entry. No fs, shell, dialog, or http plugin permissions are granted either -- this app depends on none of those plugins. The app's own #[tauri::command] functions in commands.rs (including the raw-bytes Channel used for surface frames) are callable from the webview without a separate ACL entry.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:event:allow-listen"]
 }

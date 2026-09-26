@@ -4,16 +4,11 @@
 //!
 //! This module never reads `~/.claude/.credentials.json`.
 //!
-//! `parse_usage_json`/`read_usage_file` are stubbed with `todo!()`: usage
-//! parsing is application logic, not scaffolding, and is left for the
-//! implementer. `default_usage_path` is plain, deterministic path
-//! construction (like `socket::client_socket_path`) and is implemented for
-//! real. The tests in this module encode the expected behavior from spec §5
-//! and are expected to fail (red) until the parser lands.
+//! The tests in this module encode the expected behavior from spec §5.
 
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Window {
     /// Clamped to `0.0..=100.0`.
     pub used_pct: f64,
@@ -21,7 +16,10 @@ pub struct Window {
     pub resets_at: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Serializes lowercase (`ok`/`missing`/`invalid`), matching the frontend's
+/// `UsageState.status` union (`src/usage.ts`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum UsageStatus {
     Ok,
     /// The file does not exist (yet): no Claude Code session has ever run.
@@ -31,7 +29,7 @@ pub enum UsageStatus {
     Invalid,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct UsageState {
     pub five_hour: Option<Window>,
     pub seven_day: Option<Window>,
@@ -76,22 +74,62 @@ fn home_dir() -> PathBuf {
     std::env::temp_dir()
 }
 
+#[derive(serde::Deserialize)]
+struct RawWindow {
+    used_percentage: f64,
+    resets_at: i64,
+}
+
+#[derive(serde::Deserialize)]
+struct RawRateLimits {
+    five_hour: Option<RawWindow>,
+    seven_day: Option<RawWindow>,
+    // `spend_limit` (if present) is ignored per spec §1: it is not
+    // deserialized into any field here.
+}
+
+#[derive(serde::Deserialize)]
+struct RawUsage {
+    captured_at: Option<i64>,
+    rate_limits: RawRateLimits,
+}
+
+fn clamp_pct(used_pct: f64) -> f64 {
+    used_pct.clamp(0.0, 100.0)
+}
+
 /// Parses the statusline hook's JSON shape into a `UsageState`. `spend_limit`
 /// (if present) is ignored per spec §1. `used_percentage` may be a float or
 /// an int and is clamped to `0.0..=100.0`. Any window may be absent.
 /// Malformed JSON, or JSON that doesn't match the expected shape, produces
 /// `UsageState::invalid()`.
 pub fn parse_usage_json(json: &str) -> UsageState {
-    let _ = json;
-    todo!("parse_usage_json: parse rate_limits.{{five_hour,seven_day}}.{{used_percentage,resets_at}}, clamp used_percentage to 0..=100, ignore spend_limit, Invalid on malformed/mismatched JSON")
+    let Ok(raw) = serde_json::from_str::<RawUsage>(json) else {
+        return UsageState::invalid();
+    };
+    UsageState {
+        five_hour: raw.rate_limits.five_hour.map(|w| Window {
+            used_pct: clamp_pct(w.used_percentage),
+            resets_at: w.resets_at,
+        }),
+        seven_day: raw.rate_limits.seven_day.map(|w| Window {
+            used_pct: clamp_pct(w.used_percentage),
+            resets_at: w.resets_at,
+        }),
+        captured_at: raw.captured_at,
+        status: UsageStatus::Ok,
+    }
 }
 
 /// Reads and parses `path`. A missing file yields `UsageState::missing()`
 /// (not `Invalid` -- absence is expected before the first Claude Code
 /// session runs).
 pub fn read_usage_file(path: &Path) -> UsageState {
-    let _ = path;
-    todo!("read_usage_file: std::fs::read_to_string, Missing on NotFound, else parse_usage_json")
+    match std::fs::read_to_string(path) {
+        Ok(contents) => parse_usage_json(&contents),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => UsageState::missing(),
+        Err(_) => UsageState::invalid(),
+    }
 }
 
 #[cfg(test)]

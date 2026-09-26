@@ -20,7 +20,10 @@ const ATTACH_MS_LIMIT = 300;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const guiRoot = path.resolve(here, "..");
-const releaseBinary = path.join(guiRoot, "src-tauri", "target", "release", "herdr-gui.exe");
+// `gui/` is the Cargo workspace root (Cargo.toml's `[workspace] members =
+// ["src-tauri", "crates/herdr-wire"]`), so the build artifacts land under
+// `gui/target/`, not `gui/src-tauri/target/` (code review finding #5).
+const releaseBinary = path.join(guiRoot, "target", "release", "herdr-gui.exe");
 
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);

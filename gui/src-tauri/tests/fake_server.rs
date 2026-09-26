@@ -14,6 +14,7 @@
 //! regression tests for that implementation once it lands.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use herdr_wire::{
@@ -30,14 +31,23 @@ use herdr_gui_lib::mirror::{Delta, SurfaceMirror};
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Disambiguates concurrent test runs beyond pid+nanos alone: the two tests
+/// in this file run in parallel by default (`cargo test` spawns each
+/// `#[tokio::test]` on its own thread), and pid+nanos alone was observed to
+/// collide often enough to make the socket bind flaky
+/// (`Os { code: 5, PermissionDenied }`, code review finding #4).
+static SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 fn unique_socket_path() -> PathBuf {
+    let counter = SOCKET_COUNTER.fetch_add(1, Ordering::SeqCst);
     let unique = format!(
-        "herdr-gui-fake-server-{}-{}",
+        "herdr-gui-fake-server-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_nanos()
+            .as_nanos(),
+        counter,
     );
     std::env::temp_dir().join(unique)
 }
@@ -343,7 +353,7 @@ async fn fake_server_drives_handshake_and_patch_resync() {
     });
 
     let client = async {
-        let mut conn = Connection::connect(&socket_path, &expected_hello())
+        let conn = Connection::connect(&socket_path, &expected_hello())
             .await
             .expect("connect to fake server");
 
@@ -359,7 +369,10 @@ async fn fake_server_drives_handshake_and_patch_resync() {
                     // ignored per spec §1.
                 }
                 ServerMessage::PaneSurface(frame) => {
-                    assert_eq!(mirror.apply_full(frame), Delta::Full);
+                    assert_eq!(
+                        mirror.apply_full(frame).expect("valid full frame"),
+                        Delta::Full
+                    );
                     break;
                 }
                 other => panic!("unexpected message before PaneSurface: {other:?}"),

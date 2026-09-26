@@ -54,6 +54,97 @@ export interface DecodedSurfaceFrame {
  *     u32 fg, u32 bg, u16 modifier, u8 flags (bit0 = skip)
  * ```
  */
-export function decodeSurfaceFrame(_bytes: Uint8Array): DecodedSurfaceFrame {
-  throw new Error("not implemented: decodeSurfaceFrame");
+class ByteReader {
+  private offset = 0;
+  private readonly view: DataView;
+
+  constructor(private readonly bytes: Uint8Array) {
+    this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  }
+
+  u8(): number {
+    const value = this.view.getUint8(this.offset);
+    this.offset += 1;
+    return value;
+  }
+
+  u16(): number {
+    const value = this.view.getUint16(this.offset, true);
+    this.offset += 2;
+    return value;
+  }
+
+  u32(): number {
+    const value = this.view.getUint32(this.offset, true);
+    this.offset += 4;
+    return value;
+  }
+
+  u64(): number {
+    const value = this.view.getBigUint64(this.offset, true);
+    this.offset += 8;
+    return Number(value);
+  }
+
+  bytes_(len: number): Uint8Array {
+    const slice = this.bytes.subarray(this.offset, this.offset + len);
+    this.offset += len;
+    return slice;
+  }
+}
+
+const textDecoder = new TextDecoder();
+
+export function decodeSurfaceFrame(bytes: Uint8Array): DecodedSurfaceFrame {
+  const reader = new ByteReader(bytes);
+  const kindByte = reader.u8();
+  const kind: "full" | "rows" = kindByte === 1 ? "full" : "rows";
+  const surfaceRevision = reader.u64();
+  const width = reader.u16();
+  const height = reader.u16();
+  const cursorX = reader.u16();
+  const cursorY = reader.u16();
+  const cursorVisible = reader.u8() !== 0;
+  const rowCount = reader.u16();
+
+  // A full frame always defines a concrete cursor. A row patch's cursor is
+  // optional (`PaneSurfacePatch.cursor: Option<CursorState>`); in herdr's
+  // own semantics `None` *replaces* the surface's cursor with "no cursor"
+  // (`surface_patch.rs:50`), it does not mean "unchanged" (code review
+  // finding #7). The wire format has no separate present/absent bit, so a
+  // patch's all-zero sentinel (the encoder's representation of `None`,
+  // spec §5) decodes back to `null` here; `grid.ts` must treat that `null`
+  // as "clear the cursor", not "keep the previous one".
+  const cursor: DecodedCursor | null =
+    kind === "rows" && cursorX === 0 && cursorY === 0 && !cursorVisible
+      ? null
+      : { x: cursorX, y: cursorY, visible: cursorVisible };
+
+  const rows: DecodedRow[] = [];
+  for (let i = 0; i < rowCount; i++) {
+    const y = reader.u16();
+    const x = reader.u16();
+    const cellCount = reader.u16();
+    const cells: DecodedCell[] = [];
+    for (let c = 0; c < cellCount; c++) {
+      const symLen = reader.u8();
+      const symbol = symLen === 0 ? "" : textDecoder.decode(reader.bytes_(symLen));
+      const fg = reader.u32();
+      const bg = reader.u32();
+      const modifier = reader.u16();
+      const flags = reader.u8();
+      const skip = (flags & 1) === 1;
+      cells.push({ symbol, fg, bg, modifier, skip });
+    }
+    rows.push({ y, x, cells });
+  }
+
+  return {
+    kind,
+    surfaceRevision,
+    width,
+    height,
+    cursor,
+    rows,
+  };
 }
