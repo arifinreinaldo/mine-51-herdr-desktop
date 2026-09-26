@@ -12,7 +12,15 @@ import { describe, expect, it } from "vitest";
 import { decodeSurfaceFrame } from "../../src/decoder";
 
 const GOLDEN_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "golden");
-const FIXTURES = ["full-frame-basic", "row-patch-basic"];
+const FIXTURES = [
+  "full-frame-basic",
+  "row-patch-basic",
+  // Spec §8a.4: fixtures carrying the optional trailing rust_us u32, proving
+  // the decoder reads it when present (the two above prove it defaults to 0
+  // when absent).
+  "full-frame-with-rust-us",
+  "row-patch-with-rust-us",
+];
 
 describe("golden surface bytes", () => {
   for (const name of FIXTURES) {

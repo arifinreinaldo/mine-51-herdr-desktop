@@ -727,12 +727,19 @@ body.has-workspace-colors #tab-strip {
   display: flex;
   align-items: center;
   height: 24px;
-  padding: 0 10px 0 26px;
+  padding: 0 10px;
   border-radius: 4px;
   gap: 12px;
   position: relative;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* The left icon slot is reserved for every item in a menu only when at
+ * least one item in that menu has an icon or checkmark (spec: "items
+ * without icons keep their current alignment"). */
+.menu-item.menu-item--icon-slot {
+  padding-left: 26px;
 }
 
 .menu-item .menu-item__icon {

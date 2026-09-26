@@ -116,3 +116,87 @@ describe("wireMenuBar: hover-switch (finding #11)", () => {
     expect(document.querySelector(".menu")).toBeNull();
   });
 });
+
+function dispatchKeydown(key: string): void {
+  document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+}
+
+describe("wireMenuBar: arrow-key switching between top-level menus (phase 1.5 gap #3)", () => {
+  let ctx: MenuBarContext;
+  let titleEls: HTMLElement[];
+
+  beforeEach(() => {
+    ctx = fakeContext();
+    // Real names (spec §4's table): the "herdr" menu has no items with an
+    // icon/submenu, so it doubles as a plain menu in these tests, and
+    // "view" is the one bar menu with a real submenu (Color Theme).
+    titleEls = makeTitleEls(["workspace", "tab", "pane", "agents", "view", "herdr", "help"]);
+    wireMenuBar(titleEls, ctx);
+  });
+
+  it("Right switches to the next top-level menu and opens it", () => {
+    const [workspaceTitle, tabTitle] = titleEls;
+    workspaceTitle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(workspaceTitle.classList.contains("is-open")).toBe(true);
+
+    dispatchKeydown("ArrowRight");
+    expect(tabTitle.classList.contains("is-open")).toBe(true);
+    expect(workspaceTitle.classList.contains("is-open")).toBe(false);
+    expect(document.querySelectorAll(".menu")).toHaveLength(1);
+  });
+
+  it("Left switches to the previous top-level menu, wrapping from the first to the last", () => {
+    const [workspaceTitle] = titleEls;
+    const helpTitle = titleEls[titleEls.length - 1];
+    workspaceTitle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    dispatchKeydown("ArrowLeft");
+    expect(helpTitle.classList.contains("is-open")).toBe(true);
+    expect(workspaceTitle.classList.contains("is-open")).toBe(false);
+  });
+
+  it("Right wraps from the last top-level menu back to the first", () => {
+    const [workspaceTitle] = titleEls;
+    const helpTitle = titleEls[titleEls.length - 1];
+    helpTitle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    dispatchKeydown("ArrowRight");
+    expect(workspaceTitle.classList.contains("is-open")).toBe(true);
+    expect(helpTitle.classList.contains("is-open")).toBe(false);
+  });
+
+  it("switching highlights the new menu's first enabled item", () => {
+    const [workspaceTitle, tabTitle] = titleEls;
+    workspaceTitle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    dispatchKeydown("ArrowRight");
+    expect(tabTitle.classList.contains("is-open")).toBe(true);
+    const highlighted = document.querySelector(".menu-item.is-highlighted");
+    expect(highlighted?.getAttribute("data-item-id")).toBe("tab.new"); // Tab menu's first item
+  });
+
+  it("Right on an item with a submenu opens the submenu instead of switching menus (precedence)", () => {
+    const [, , , , viewTitle, herdrTitle] = titleEls;
+    viewTitle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(viewTitle.classList.contains("is-open")).toBe(true);
+
+    // View menu order: Toggle Sidebar (0), then Color Theme (1, has a submenu).
+    dispatchKeydown("ArrowDown");
+    dispatchKeydown("ArrowRight");
+
+    expect(document.querySelectorAll(".menu")).toHaveLength(2); // the submenu opened
+    expect(viewTitle.classList.contains("is-open")).toBe(true);
+    expect(herdrTitle.classList.contains("is-open")).toBe(false);
+  });
+
+  it("Left inside an open submenu still just closes the submenu, leaving the top-level menu open (existing behavior)", () => {
+    const [, , , , viewTitle] = titleEls;
+    viewTitle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    dispatchKeydown("ArrowDown");
+    dispatchKeydown("ArrowRight");
+    expect(document.querySelectorAll(".menu")).toHaveLength(2);
+
+    dispatchKeydown("ArrowLeft");
+    expect(document.querySelectorAll(".menu")).toHaveLength(1);
+    expect(viewTitle.classList.contains("is-open")).toBe(true);
+  });
+});

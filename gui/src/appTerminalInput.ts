@@ -140,6 +140,7 @@ export async function subscribeSurface(): Promise<void> {
     const { grid: nextGrid, dirtyRows } = applyDecodedFrame(appState.grid, frame);
     appState.grid = nextGrid;
     appState.renderer?.recordDecodeMs(performance.now() - decodeStart);
+    appState.renderer?.recordRustUs(frame.rustUs);
     appState.renderer?.setGrid(appState.grid, dirtyRows);
   };
   await invokeSafe("subscribe_surface", { channel });

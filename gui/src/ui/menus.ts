@@ -308,6 +308,18 @@ export function wireMenuBar(menuTitleEls: readonly HTMLElement[], ctx: MenuBarCo
           // breaking every hover-switch after the first.
           if (openMenuName === name) openMenuName = null;
         },
+        // Spec §4: with a top-level menu open, Left/Right move to the
+        // previous/next top-level menu and open it, wrapping. `openFor`'s
+        // own `openOverlay` (inside `openMenu`) closes this instance
+        // synchronously when the neighbour opens, the same mechanism the
+        // hover-switch above already relies on.
+        onSwitchTopLevel: (direction) => {
+          const currentIndex = menuTitleEls.indexOf(titleEl);
+          if (currentIndex < 0) return;
+          const nextIndex = (currentIndex + direction + menuTitleEls.length) % menuTitleEls.length;
+          const nextTitleEl = menuTitleEls[nextIndex];
+          openFor(nextTitleEl.dataset.menu ?? "", nextTitleEl);
+        },
       },
     );
   };

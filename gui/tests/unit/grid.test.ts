@@ -19,6 +19,7 @@ function fullFrame(): DecodedSurfaceFrame {
         ],
       },
     ],
+    rustUs: 0,
   };
 }
 
@@ -52,6 +53,7 @@ describe("applyDecodedFrame", () => {
       height: 1,
       cursor: { x: 1, y: 0, visible: true },
       rows: [{ y: 0, x: 1, cells: [{ symbol: "z", fg: 3, bg: 0, modifier: 0, skip: false }] }],
+      rustUs: 0,
     };
     const { grid, dirtyRows } = applyDecodedFrame(base, patch);
     expect(grid.cells.map((c) => c.symbol)).toEqual(["a", "z"]);
@@ -72,6 +74,7 @@ describe("applyDecodedFrame", () => {
       height: 1,
       cursor: null,
       rows: [{ y: 0, x: 1, cells: [{ symbol: "z", fg: 3, bg: 0, modifier: 0, skip: false }] }],
+      rustUs: 0,
     };
     const { grid } = applyDecodedFrame(base, patch);
     expect(grid.cursor).toBeNull();
@@ -85,6 +88,7 @@ describe("applyDecodedFrame", () => {
       height: 60000,
       cursor: null,
       rows: [],
+      rustUs: 0,
     };
     const before = createEmptyGrid();
     const { grid, dirtyRows } = applyDecodedFrame(before, huge);
@@ -104,6 +108,7 @@ describe("applyDecodedFrame", () => {
         x: 0,
         cells: [{ symbol: String(y), fg: 0, bg: 0, modifier: 0, skip: false }],
       })),
+      rustUs: 0,
     };
     const { grid: base } = applyDecodedFrame(createEmptyGrid(), tall);
     const patch: DecodedSurfaceFrame = {
@@ -113,6 +118,7 @@ describe("applyDecodedFrame", () => {
       height: 5,
       cursor: null,
       rows: [{ y: 3, x: 0, cells: [{ symbol: "Z", fg: 0, bg: 0, modifier: 0, skip: false }] }],
+      rustUs: 0,
     };
     const { dirtyRows } = applyDecodedFrame(base, patch);
     expect(dirtyRows).toEqual([3]);

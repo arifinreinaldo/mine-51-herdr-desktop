@@ -79,6 +79,21 @@ describe("decodeSurfaceFrame", () => {
     expect(decoded.rows[0].cells[0].symbol).toBe("\u{1F980}");
   });
 
+  it("decodes rustUs as 0 when the trailing u32 is absent (existing golden fixtures)", () => {
+    const decoded = decodeSurfaceFrame(buildMinimalFullFrame());
+    expect(decoded.rustUs).toBe(0);
+  });
+
+  it("decodes the trailing little-endian u32 rust_us when present (spec §8a.4)", () => {
+    const bytes = Array.from(buildMinimalFullFrame());
+    // 1_500_000 = 0x16E360, little-endian u32.
+    bytes.push(0x60, 0xe3, 0x16, 0x00);
+    const decoded = decodeSurfaceFrame(new Uint8Array(bytes));
+    expect(decoded.rustUs).toBe(1_500_000);
+    // The trailer must not disturb anything the payload already carried.
+    expect(decoded.rows).toEqual([{ y: 0, x: 0, cells: [{ symbol: "a", fg: 0, bg: 0, modifier: 0, skip: false }] }]);
+  });
+
   it("decodes multiple rows in a row patch", () => {
     const bytes: number[] = [
       2, // kind = rows

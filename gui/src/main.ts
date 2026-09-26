@@ -131,7 +131,7 @@ async function main(): Promise<void> {
     (stats) => {
       perfHudEl.textContent =
         `decode ${stats.decodeMs.toFixed(2)}ms · paint ${stats.paintMs.toFixed(2)}ms · ` +
-        `${stats.fps} fps · ${stats.dirtyRows} dirty rows`;
+        `rust ${stats.rustUs.toFixed(0)}us · ${stats.fps} fps · ${stats.dirtyRows} dirty rows`;
     },
   );
   appState.renderer.setFontSize(appState.settings.fontSize);

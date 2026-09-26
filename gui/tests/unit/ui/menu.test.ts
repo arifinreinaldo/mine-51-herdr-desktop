@@ -227,3 +227,96 @@ describe("openMenu: keyboard routing while a submenu is open (finding #1)", () =
     expect(root.querySelector(".menu")).not.toBeNull(); // parent still open
   });
 });
+
+describe("openMenu: icon slot reservation (phase 1.5 gap #1)", () => {
+  it("reserves the icon slot on every item when at least one item has an icon", () => {
+    const items: MenuItemSpec[] = [
+      { id: "with-icon", label: "Split Right", icon: "split-horizontal" },
+      { id: "no-icon", label: "Rename…" },
+    ];
+    openMenu(root, { left: 0, top: 0 }, items);
+    const itemEls = root.querySelectorAll<HTMLElement>(".menu-item");
+    expect(itemEls).toHaveLength(2);
+    for (const el of Array.from(itemEls)) {
+      expect(el.classList.contains("menu-item--icon-slot")).toBe(true);
+    }
+  });
+
+  it("reserves the icon slot on every item when at least one item has a checkmark", () => {
+    // A checkmark shares the same left slot as an icon (Agents ▸ Sort:
+    // Priority/Server order, View ▸ Toggle Sidebar), so it must reserve the
+    // slot too, even with no `icon` field anywhere in the menu.
+    const items: MenuItemSpec[] = [
+      { id: "checked", label: "Sort: Priority", checked: true },
+      { id: "unchecked", label: "Sort: Server order", checked: false },
+    ];
+    openMenu(root, { left: 0, top: 0 }, items);
+    const itemEls = root.querySelectorAll<HTMLElement>(".menu-item");
+    for (const el of Array.from(itemEls)) {
+      expect(el.classList.contains("menu-item--icon-slot")).toBe(true);
+    }
+  });
+
+  it("keeps the current (unreserved) alignment when no item in the menu has an icon or checkmark", () => {
+    const items: MenuItemSpec[] = [
+      { id: "a", label: "New Tab" },
+      { id: "b", label: "Close Tab" },
+    ];
+    openMenu(root, { left: 0, top: 0 }, items);
+    const itemEls = root.querySelectorAll<HTMLElement>(".menu-item");
+    for (const el of Array.from(itemEls)) {
+      expect(el.classList.contains("menu-item--icon-slot")).toBe(false);
+    }
+  });
+});
+
+describe("openMenu: arrow-key top-level menu switching (phase 1.5 gap #3)", () => {
+  it("ArrowRight on an item with no submenu calls onSwitchTopLevel(1) instead of doing nothing", () => {
+    const onSwitchTopLevel = vi.fn();
+    const items: MenuItemSpec[] = [{ id: "a", label: "New Tab" }];
+    openMenu(root, { left: 0, top: 0 }, items, { onSwitchTopLevel });
+    dispatchKeydown("ArrowRight");
+    expect(onSwitchTopLevel).toHaveBeenCalledWith(1);
+  });
+
+  it("ArrowLeft with no open submenu calls onSwitchTopLevel(-1)", () => {
+    const onSwitchTopLevel = vi.fn();
+    const items: MenuItemSpec[] = [{ id: "a", label: "New Tab" }];
+    openMenu(root, { left: 0, top: 0 }, items, { onSwitchTopLevel });
+    dispatchKeydown("ArrowLeft");
+    expect(onSwitchTopLevel).toHaveBeenCalledWith(-1);
+  });
+
+  it("ArrowRight on an item with a submenu opens the submenu instead of calling onSwitchTopLevel (precedence)", () => {
+    const onSwitchTopLevel = vi.fn();
+    const items: MenuItemSpec[] = [
+      { id: "parent", label: "Color Theme", submenu: [{ id: "child", label: "Dark Modern" }] },
+    ];
+    openMenu(root, { left: 0, top: 0 }, items, { onSwitchTopLevel });
+    dispatchKeydown("ArrowRight");
+    expect(onSwitchTopLevel).not.toHaveBeenCalled();
+    expect(itemMenus()).toHaveLength(2); // the submenu opened
+  });
+
+  it("ArrowLeft while a submenu is open still just closes the submenu, not onSwitchTopLevel (existing behavior)", () => {
+    const onSwitchTopLevel = vi.fn();
+    const items: MenuItemSpec[] = [
+      { id: "parent", label: "Color Theme", submenu: [{ id: "child", label: "Dark Modern" }] },
+    ];
+    openMenu(root, { left: 0, top: 0 }, items, { onSwitchTopLevel });
+    dispatchKeydown("ArrowRight"); // open the submenu
+    expect(itemMenus()).toHaveLength(2);
+
+    dispatchKeydown("ArrowLeft");
+    expect(onSwitchTopLevel).not.toHaveBeenCalled();
+    expect(itemMenus()).toHaveLength(1); // submenu closed, parent still open
+  });
+
+  it("a menu without onSwitchTopLevel (a tab/sidebar context menu) does nothing on a plain Left/Right", () => {
+    const items: MenuItemSpec[] = [{ id: "a", label: "Rename…" }];
+    openMenu(root, { left: 0, top: 0 }, items);
+    dispatchKeydown("ArrowRight");
+    dispatchKeydown("ArrowLeft");
+    expect(itemMenus()).toHaveLength(1); // still just the one menu, untouched
+  });
+});

@@ -116,6 +116,15 @@ fn write_cell(out: &mut Vec<u8>, cell: &Cell) {
     out.push(u8::from(cell.skip));
 }
 
+/// Appends the trailing little-endian `u32` `rust_us` (spec phase1.5 §8a.4)
+/// after the existing payload, without touching anything already written.
+/// Bumps nothing else in the v1 layout above: an existing consumer that
+/// only reads up through the last row (the golden fixtures included) never
+/// notices this extra trailer, since it simply never reads that far.
+pub fn append_rust_us_trailer(bytes: &mut Vec<u8>, rust_us: u32) {
+    bytes.extend_from_slice(&rust_us.to_le_bytes());
+}
+
 /// Truncates `symbol` to at most 255 UTF-8 bytes, on a char boundary, so
 /// `sym_len` (a `u8`) never wraps and this never panics on a pathological
 /// grapheme cluster from server data (code review finding #3: the old
@@ -214,6 +223,23 @@ mod tests {
         let row_start = 20 + 6;
         assert_eq!(bytes[row_start], 4);
         assert_eq!(&bytes[row_start + 1..row_start + 5], "\u{1F980}".as_bytes());
+    }
+
+    #[test]
+    fn rust_us_trailer_appends_after_the_existing_payload_unchanged() {
+        let cells = vec![cell("a", 1, 2, 3, false)];
+        let bytes_without_trailer = encode_full_frame(7, 1, 1, None, &cells);
+        let mut bytes_with_trailer = bytes_without_trailer.clone();
+        append_rust_us_trailer(&mut bytes_with_trailer, 1234);
+
+        assert_eq!(bytes_with_trailer.len(), bytes_without_trailer.len() + 4);
+        assert_eq!(
+            &bytes_with_trailer[..bytes_without_trailer.len()],
+            &bytes_without_trailer[..],
+            "the trailer must not disturb any existing byte"
+        );
+        let trailer = &bytes_with_trailer[bytes_without_trailer.len()..];
+        assert_eq!(u32::from_le_bytes(trailer.try_into().unwrap()), 1234);
     }
 
     #[test]

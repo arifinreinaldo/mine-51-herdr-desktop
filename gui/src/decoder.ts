@@ -37,6 +37,13 @@ export interface DecodedSurfaceFrame {
   height: number;
   cursor: DecodedCursor | null;
   rows: DecodedRow[];
+  /**
+   * The Rust-side decode+apply+encode µs for this frame (spec §8a.4), read
+   * from an optional trailing `u32` LE appended after the row data. `0`
+   * when the trailer is absent (every fixture/frame from before this field
+   * existed), never `undefined` -- the perf HUD can display it unconditionally.
+   */
+  rustUs: number;
 }
 
 /**
@@ -91,6 +98,11 @@ class ByteReader {
     this.offset += len;
     return slice;
   }
+
+  /** Bytes left unread, past everything consumed so far. */
+  remaining(): number {
+    return this.bytes.length - this.offset;
+  }
 }
 
 const textDecoder = new TextDecoder();
@@ -139,6 +151,13 @@ export function decodeSurfaceFrame(bytes: Uint8Array): DecodedSurfaceFrame {
     rows.push({ y, x, cells });
   }
 
+  // Spec §8a.4: an optional trailing little-endian u32 `rust_us`, appended
+  // after everything the v1 layout already defines. Every existing
+  // consumer (including the pre-trailer golden fixtures) only ever read up
+  // through the last row, so a payload that ends right there -- no bytes
+  // left -- must decode exactly as before, with `rustUs` at its default 0.
+  const rustUs = reader.remaining() >= 4 ? reader.u32() : 0;
+
   return {
     kind,
     surfaceRevision,
@@ -146,5 +165,6 @@ export function decodeSurfaceFrame(bytes: Uint8Array): DecodedSurfaceFrame {
     height,
     cursor,
     rows,
+    rustUs,
   };
 }

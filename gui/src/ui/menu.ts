@@ -30,13 +30,23 @@ export interface MenuPosition {
   top: number;
 }
 
-function buildItemEl(item: MenuItemSpec, onActivate: (item: MenuItemSpec) => void): HTMLElement {
+function buildItemEl(
+  item: MenuItemSpec,
+  onActivate: (item: MenuItemSpec) => void,
+  reserveIconSlot: boolean,
+): HTMLElement {
   const el = document.createElement("div");
   el.className = "menu-item";
   el.setAttribute("role", "menuitem");
   el.tabIndex = -1;
   if (item.danger) el.classList.add("is-danger");
   if (item.disabled) el.classList.add("is-disabled");
+  // Items without their own icon keep the menu's *current* alignment; the
+  // left icon slot is reserved for every item in the menu only when at
+  // least one item in it actually has an icon or checkmark (mock-b.png /
+  // the Pane menu and tab context menu), so a menu with no icons at all
+  // (Tab, Help, ...) is unaffected.
+  if (reserveIconSlot) el.classList.add("menu-item--icon-slot");
   el.dataset.itemId = item.id;
 
   if (item.icon) {
@@ -85,6 +95,15 @@ interface RenderMenuOptions {
    * register themselves with the global overlay tracker or close it on
    * open -- their lifecycle belongs to the parent item's hover state. */
   isSubmenu?: boolean;
+  /** Top-level menu bar only (never passed for a submenu): Left/Right move
+   * to the previous/next top-level menu and open it, wrapping (spec §4).
+   * `-1` = previous (Left), `1` = next (Right). Only reached when there is
+   * no open submenu and, for Right, the highlighted item has no submenu of
+   * its own -- that case still opens the submenu instead (existing
+   * behavior). Omitted for any menu that isn't a top-level bar menu (a tab
+   * or sidebar context menu), which keeps doing nothing on a plain
+   * Left/Right, as before. */
+  onSwitchTopLevel?: (direction: 1 | -1) => void;
 }
 
 /**
@@ -104,6 +123,8 @@ export function openMenu(
   menuEl.style.left = `${position.left}px`;
   menuEl.style.top = `${position.top}px`;
   menuEl.setAttribute("role", "menu");
+
+  const reserveIconSlot = items.some((item) => Boolean(item.icon) || Boolean(item.checked));
 
   let highlightedIndex = -1;
   let openSubDispose: (() => void) | null = null;
@@ -245,7 +266,7 @@ export function openMenu(
       hr.className = "menu-separator";
       menuEl.appendChild(hr);
     }
-    const el = buildItemEl(item, activate);
+    const el = buildItemEl(item, activate, reserveIconSlot);
     el.addEventListener("mouseenter", () => {
       const index = itemEls.indexOf(el);
       highlight(index);
@@ -292,12 +313,30 @@ export function openMenu(
       if (item) activate(item);
       return;
     }
+    // Left switches to the previous top-level menu (spec §4), but only for
+    // a top-level bar menu (`onSwitchTopLevel` passed) -- a tab/sidebar
+    // context menu, or a submenu (which never gets this option), keeps
+    // doing nothing on a plain Left, same as before this feature existed.
+    if (event.key === "ArrowLeft") {
+      if (options.onSwitchTopLevel) {
+        event.preventDefault();
+        options.onSwitchTopLevel(-1);
+      }
+      return;
+    }
     if (event.key === "ArrowRight") {
       const item = items[highlightedIndex];
       if (item?.submenu) {
         event.preventDefault();
         openSubmenuFor(item);
+      } else if (options.onSwitchTopLevel) {
+        // Right on an item with no submenu switches to the next top-level
+        // menu; Right on an item *with* a submenu (handled above) still
+        // opens it instead -- that precedence is the spec's one exception.
+        event.preventDefault();
+        options.onSwitchTopLevel(1);
       }
+      return;
     }
   };
   document.addEventListener("keydown", onKeydown, true);
@@ -316,7 +355,11 @@ export function openMenu(
   window.setTimeout(() => document.addEventListener("mousedown", onOutsideClick), 0);
 
   root.appendChild(menuEl);
-  if (itemEls.length > 0) highlight(0);
+  // Highlights the first *enabled* item (spec §4: switching a top-level
+  // menu highlights "its first enabled item"), not just index 0 -- matters
+  // whenever a menu's very first entry happens to be disabled.
+  const firstEnabledIndex = items.findIndex((item) => !item.disabled);
+  if (firstEnabledIndex >= 0) highlight(firstEnabledIndex);
 
   function dispose(): void {
     closeSubmenu();

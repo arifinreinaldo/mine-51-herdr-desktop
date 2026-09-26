@@ -35,6 +35,10 @@ export interface PerfSample {
   decodeMs: number;
   paintMs: number;
   dirtyRows: number;
+  /** Rust decode+apply+encode µs for the frame this paint applied (spec
+   * §8a.4), 0 when no surface frame has arrived yet or the trailer was
+   * absent. */
+  rustUs: number;
 }
 
 interface Percentiles {
@@ -52,12 +56,15 @@ function percentile(sorted: readonly number[], p: number): number {
 class PerfLog {
   private paintSamples: number[] = [];
   private decodeSamples: number[] = [];
+  private rustUsSamples: number[] = [];
 
   record(sample: PerfSample): void {
     this.paintSamples.push(sample.paintMs);
     this.decodeSamples.push(sample.decodeMs);
+    this.rustUsSamples.push(sample.rustUs);
     if (this.paintSamples.length > 300) this.paintSamples.shift();
     if (this.decodeSamples.length > 300) this.decodeSamples.shift();
+    if (this.rustUsSamples.length > 300) this.rustUsSamples.shift();
   }
 
   paintPercentiles(): Percentiles {
@@ -67,6 +74,11 @@ class PerfLog {
 
   decodePercentiles(): Percentiles {
     const sorted = [...this.decodeSamples].sort((a, b) => a - b);
+    return { p50: percentile(sorted, 0.5), p95: percentile(sorted, 0.95) };
+  }
+
+  rustUsPercentiles(): Percentiles {
+    const sorted = [...this.rustUsSamples].sort((a, b) => a - b);
     return { p50: percentile(sorted, 0.5), p95: percentile(sorted, 0.95) };
   }
 }
@@ -154,6 +166,7 @@ export class TerminalRenderer {
   private perfHudVisible = false;
   private lastLogAt = 0;
   private lastDecodeMs = 0;
+  private lastRustUs = 0;
   private frameTimestamps: number[] = [];
   /** `cssColor`'s "named" palette shape: index 0 is an unused placeholder
    * (named colour 0 = Reset, handled separately), 1-16 are the theme's 16
@@ -165,11 +178,11 @@ export class TerminalRenderer {
     private wrapEl: HTMLElement,
     theme: RendererTheme,
     private onResize: (cols: number, rows: number, cellWidthPx: number, cellHeightPx: number) => void,
-    private onPerfSample?: (perf: { paintMs: Percentiles; decodeMs: Percentiles; fps: number }) => void,
+    private onPerfSample?: (perf: { paintMs: Percentiles; decodeMs: Percentiles; rustUs: Percentiles; fps: number }) => void,
     /** Spec §8a.4 "Perf HUD": per-frame instantaneous stats, fired on every
      * paint while the HUD is visible (distinct from `onPerfSample`'s 5s
      * rolling-percentile debug log). */
-    private onFrameStats?: (stats: { decodeMs: number; paintMs: number; dirtyRows: number; fps: number }) => void,
+    private onFrameStats?: (stats: { decodeMs: number; paintMs: number; dirtyRows: number; rustUs: number; fps: number }) => void,
   ) {
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("2D context unavailable");
@@ -220,6 +233,13 @@ export class TerminalRenderer {
    * channel handler right after `decodeSurfaceFrame`/`applyDecodedFrame`. */
   recordDecodeMs(ms: number): void {
     this.lastDecodeMs = ms;
+  }
+
+  /** Records the Rust-side decode+apply+encode µs for the most recently
+   * applied surface frame (spec §8a.4), read from the decoded frame's
+   * `rustUs` (0 when the trailer was absent). */
+  recordRustUs(us: number): void {
+    this.lastRustUs = us;
   }
 
   setGrid(grid: Grid, dirtyRows: number[] | "all"): void {
@@ -331,7 +351,7 @@ export class TerminalRenderer {
 
     const paintMs = performance.now() - start;
     const dirtyRowCount = dirty === "all" ? paintHeight : dirty.size;
-    this.perfLog.record({ decodeMs: this.lastDecodeMs, paintMs, dirtyRows: dirtyRowCount });
+    this.perfLog.record({ decodeMs: this.lastDecodeMs, paintMs, dirtyRows: dirtyRowCount, rustUs: this.lastRustUs });
     this.reportPerfIfDue();
 
     if (this.perfHudVisible) {
@@ -341,7 +361,7 @@ export class TerminalRenderer {
         this.frameTimestamps.shift();
       }
       const fps = this.frameTimestamps.length;
-      this.onFrameStats?.({ decodeMs: this.lastDecodeMs, paintMs, dirtyRows: dirtyRowCount, fps });
+      this.onFrameStats?.({ decodeMs: this.lastDecodeMs, paintMs, dirtyRows: dirtyRowCount, rustUs: this.lastRustUs, fps });
     }
   }
 
@@ -351,11 +371,13 @@ export class TerminalRenderer {
     this.lastLogAt = now;
     const paint = this.perfLog.paintPercentiles();
     const decode = this.perfLog.decodePercentiles();
+    const rustUs = this.perfLog.rustUsPercentiles();
     // eslint-disable-next-line no-console
     console.debug(
-      `[herdr-gui] paint p50=${paint.p50.toFixed(2)}ms p95=${paint.p95.toFixed(2)}ms`,
+      `[herdr-gui] paint p50=${paint.p50.toFixed(2)}ms p95=${paint.p95.toFixed(2)}ms ` +
+        `rust p50=${rustUs.p50.toFixed(0)}us p95=${rustUs.p95.toFixed(0)}us`,
     );
-    this.onPerfSample?.({ paintMs: paint, decodeMs: decode, fps: 0 });
+    this.onPerfSample?.({ paintMs: paint, decodeMs: decode, rustUs, fps: 0 });
   }
 
   private paintRow(y: number, paintWidth: number): void {

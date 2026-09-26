@@ -10,7 +10,7 @@
 //! same-size `ClientShellResize` (spec §1 "Resync on reject").
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use herdr_wire::{
     ClientMessage, ClientShellSnapshot, ClientSurfaceSize, EndpointClientHello, ServerMessage,
@@ -21,7 +21,9 @@ use tauri::{AppHandle, Emitter};
 use crate::commands::Inner;
 use crate::conn::{ConnError, Connection};
 use crate::mirror::Delta;
-use crate::surface_encode::{encode_full_frame, encode_row_patch, EncodedRow};
+use crate::surface_encode::{
+    append_rust_us_trailer, encode_full_frame, encode_row_patch, EncodedRow,
+};
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 
@@ -120,6 +122,14 @@ async fn run_dispatch_loop(app: &AppHandle, inner: &Arc<Inner>, conn: &Arc<Conne
     loop {
         match conn.read_message().await {
             Ok(ServerMessage::PaneSurface(frame)) => {
+                // Spec §8a.4 "Rust decode+apply+encode µs per frame": timed
+                // around exactly the three steps named there -- decoding the
+                // `ServerMessage` payload into `frame` already happened by
+                // the time this arm runs (`conn::Connection`'s reader task),
+                // so this window covers applying it to the mirror and
+                // encoding the compact frame, which is what actually varies
+                // with frame size and dominates the cost.
+                let rust_start = Instant::now();
                 let outcome = {
                     let mut mirror = mirror_lock(inner);
                     match mirror.apply_full(frame) {
@@ -137,8 +147,9 @@ async fn run_dispatch_loop(app: &AppHandle, inner: &Arc<Inner>, conn: &Arc<Conne
                     }
                 };
                 match outcome {
-                    Ok(bytes) => {
+                    Ok(mut bytes) => {
                         inner.record_attach();
+                        append_rust_us_trailer(&mut bytes, elapsed_us(rust_start));
                         push_surface_bytes(inner, bytes);
                     }
                     Err(()) => resync(inner, conn).await,
@@ -210,6 +221,9 @@ async fn handle_patch(
     conn: &Arc<Connection>,
     patch: herdr_wire::PaneSurfacePatch,
 ) {
+    // Spec §8a.4: same measured window as the full-frame arm above (apply
+    // to the mirror + encode the compact frame).
+    let rust_start = Instant::now();
     let outcome = {
         let mut mirror = mirror_lock(inner);
         match mirror.apply_patch(patch) {
@@ -242,9 +256,20 @@ async fn handle_patch(
     };
 
     match outcome {
-        Some(bytes) => push_surface_bytes(inner, bytes),
+        Some(mut bytes) => {
+            append_rust_us_trailer(&mut bytes, elapsed_us(rust_start));
+            push_surface_bytes(inner, bytes);
+        }
         None => resync(inner, conn).await,
     }
+}
+
+/// `start.elapsed()` as a wire-safe `u32` microsecond count, saturating
+/// rather than panicking/wrapping on the pathological case of a stalled
+/// frame taking over ~71 minutes (finding-style defensive guard, matching
+/// this codebase's other never-panic-on-derived-timing choices).
+fn elapsed_us(start: Instant) -> u32 {
+    u32::try_from(start.elapsed().as_micros()).unwrap_or(u32::MAX)
 }
 
 /// Locks the mirror, recovering from a poisoned lock rather than panicking

@@ -15,7 +15,9 @@
 use std::path::PathBuf;
 
 use herdr_gui_lib::mirror::Cell;
-use herdr_gui_lib::surface_encode::{encode_full_frame, encode_row_patch, EncodedRow};
+use herdr_gui_lib::surface_encode::{
+    append_rust_us_trailer, encode_full_frame, encode_row_patch, EncodedRow,
+};
 use herdr_wire::CursorState;
 
 fn golden_dir() -> PathBuf {
@@ -87,6 +89,9 @@ fn full_frame_basic() -> Fixture {
             { "y": 0, "x": 0, "cells": cells[0..3].iter().map(cell_json).collect::<Vec<_>>() },
             { "y": 1, "x": 0, "cells": cells[3..6].iter().map(cell_json).collect::<Vec<_>>() },
         ],
+        // No trailing rust_us bytes on this fixture (spec §8a.4): the
+        // decoder must treat that absence as 0.
+        "rustUs": 0,
     });
     Fixture {
         name: "full-frame-basic",
@@ -123,9 +128,71 @@ fn row_patch_basic() -> Fixture {
             { "y": 0, "x": 2, "cells": row0_cells.iter().map(cell_json).collect::<Vec<_>>() },
             { "y": 1, "x": 5, "cells": row1_cells.iter().map(cell_json).collect::<Vec<_>>() },
         ],
+        "rustUs": 0,
     });
     Fixture {
         name: "row-patch-basic",
+        bytes,
+        json,
+    }
+}
+
+/// Same full frame as `full_frame_basic`, plus the spec §8a.4 trailing
+/// `rust_us` (a fixed, made-up value -- this fixture exists to prove the
+/// *decoder* reads a trailer when one is present, not to assert a real
+/// timing).
+fn full_frame_with_rust_us() -> Fixture {
+    let cursor = CursorState {
+        x: 1,
+        y: 0,
+        visible: true,
+        shape: 0,
+    };
+    let cells = vec![cell("h", 2, 0, 0, false), cell("i", 3, 0, 1, false)];
+    let mut bytes = encode_full_frame(7, 2, 1, Some(&cursor), &cells);
+    append_rust_us_trailer(&mut bytes, 1234);
+    let json = serde_json::json!({
+        "kind": "full",
+        "surfaceRevision": 7,
+        "width": 2,
+        "height": 1,
+        "cursor": { "x": 1, "y": 0, "visible": true },
+        "rows": [
+            { "y": 0, "x": 0, "cells": cells.iter().map(cell_json).collect::<Vec<_>>() },
+        ],
+        "rustUs": 1234,
+    });
+    Fixture {
+        name: "full-frame-with-rust-us",
+        bytes,
+        json,
+    }
+}
+
+/// Same row patch shape as `row_patch_basic`, plus the trailer, exercising
+/// `kind = 2` (rows) with a trailer too.
+fn row_patch_with_rust_us() -> Fixture {
+    let row0_cells = vec![cell("x", 1, 1, 0, false)];
+    let rows = vec![EncodedRow {
+        y: 0,
+        x: 2,
+        cells: &row0_cells,
+    }];
+    let mut bytes = encode_row_patch(11, 80, 24, None, &rows);
+    append_rust_us_trailer(&mut bytes, 42);
+    let json = serde_json::json!({
+        "kind": "rows",
+        "surfaceRevision": 11,
+        "width": 80,
+        "height": 24,
+        "cursor": null,
+        "rows": [
+            { "y": 0, "x": 2, "cells": row0_cells.iter().map(cell_json).collect::<Vec<_>>() },
+        ],
+        "rustUs": 42,
+    });
+    Fixture {
+        name: "row-patch-with-rust-us",
         bytes,
         json,
     }
@@ -135,7 +202,12 @@ fn row_patch_basic() -> Fixture {
 fn golden_bytes_match_committed_fixtures() {
     let update = std::env::var("UPDATE_GOLDEN").as_deref() == Ok("1");
     let dir = golden_dir();
-    let fixtures = vec![full_frame_basic(), row_patch_basic()];
+    let fixtures = vec![
+        full_frame_basic(),
+        row_patch_basic(),
+        full_frame_with_rust_us(),
+        row_patch_with_rust_us(),
+    ];
 
     if update {
         std::fs::create_dir_all(&dir).expect("create gui/tests/golden");

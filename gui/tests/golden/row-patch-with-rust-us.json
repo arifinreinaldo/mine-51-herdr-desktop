@@ -1,0 +1,23 @@
+{
+  "cursor": null,
+  "height": 24,
+  "kind": "rows",
+  "rows": [
+    {
+      "cells": [
+        {
+          "bg": 1,
+          "fg": 1,
+          "modifier": 0,
+          "skip": false,
+          "symbol": "x"
+        }
+      ],
+      "x": 2,
+      "y": 0
+    }
+  ],
+  "rustUs": 42,
+  "surfaceRevision": 11,
+  "width": 80
+}
