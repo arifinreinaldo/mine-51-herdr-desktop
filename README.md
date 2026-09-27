@@ -1,85 +1,151 @@
-# herdr
+# Herdr Desktop
 
+A Windows desktop app for running many coding agents side by side — Claude Code,
+Codex, OpenCode, Copilot CLI, Cursor, Gemini and more — built on top of
+[herdr](https://github.com/herdrdev/herdr), the terminal runtime for coding agents.
 
-<p align="center">
-  <img src="assets/logo.png" alt="herdr" width="100" />
-</p>
+Herdr Desktop gives herdr a VS Code-style window: a workspace sidebar, editor-style
+tabs, a crisp GPU-friendly terminal, and a status bar that tells you which agent
+needs you next.
 
-<p align="center">
-  <a href="https://herdr.dev">herdr.dev</a> · <a href="#install">install</a> · <a href="https://herdr.dev/docs/quick-start/">quick start</a> · <a href="https://herdr.dev/docs/">docs</a>
-</p>
+![Herdr Desktop main window](gui/docs/screenshots/main-window.png)
 
-<p align="center">
-  English · <a href="README.zh-CN.md">简体中文</a>
-</p>
+> Screenshots use a demo session (`acme-api`, `web-dashboard`, …); the terminal shows
+> this repository's own commit history.
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-666666?labelColor=333333" alt="Apache 2.0 license" /></a>
-  <a href="https://github.com/herdrdev/herdr/releases"><img src="https://img.shields.io/github/downloads/herdrdev/herdr/total?labelColor=333333&color=666666" alt="total GitHub release downloads" /></a>
-  <a href="https://github.com/herdrdev/herdr/stargazers"><img src="https://img.shields.io/github/stars/herdrdev/herdr?labelColor=333333&color=666666&logo=github" alt="GitHub stars" /></a>
-  <a href="https://github.com/herdrdev/herdr/releases/latest"><img src="https://img.shields.io/github/v/release/herdrdev/herdr?label=release&labelColor=333333&color=666666" alt="latest stable release" /></a>
-  <a href="https://formulae.brew.sh/formula/herdr"><img src="https://img.shields.io/homebrew/v/herdr?label=homebrew&labelColor=333333&color=666666" alt="Homebrew version" /></a>
-  <a href="https://x.com/herdrdev"><img src="https://img.shields.io/badge/follow-%40herdrdev-000000?logo=x&logoColor=white" alt="follow @herdrdev on X" /></a>
-</p>
+## Features
 
----
+### See every agent at a glance
 
-https://github.com/user-attachments/assets/043ec09f-4bdd-41d5-aee0-8fda6b83e267
+The status bar counts agents by state — working, blocked, done, idle. Blocked
+workspaces get an orange bar in the sidebar, and each tab shows its agent's status
+dot. When an agent finishes, the agent list opens with a **DONE · just now** card;
+press Enter to jump straight to it. If the window is in the background you get a
+Windows notification instead.
 
-**the runtime your coding agents live on.**
+![Agent list with done notifications](gui/docs/screenshots/agent-done.png)
 
-- **detach without stopping work** — herdr keeps terminals running in a background server when you close the client or lose your SSH connection. after a server or machine restart, herdr restores the saved layout and can resume supported agent sessions; the original processes do not survive. [session state →](https://herdr.dev/docs/session-state/)
-- **several machines, one window** — keep local work and saved ssh machines together, with a combined agent list and independent reconnects. [remote machines →](https://herdr.dev/docs/connecting-machines/)
-- **never hunt for the stuck one** — every pane is marked working, blocked, or idle. when an agent stops and needs an answer, herdr says so.
-- **agent-native** — agents drive herdr through the cli and socket api: they can spawn panes, prompt each other, and wait until another agent is genuinely blocked. [agent skill →](https://herdr.dev/docs/agent-skill/)
-- **runs what you already run** — claude code, codex, cursor, opencode, grok and the rest. herdr doesn't wrap or replace them; it owns their terminals.
-- **keyboard and mouse, both first-class** — tmux-style prefix keys *and* click, drag, split. pick per moment, not per tool.
-- **plugins** — extend panes and workflows. [browse the marketplace →](https://herdr.dev/plugins/)
-- **one rust binary, no electron** — runs in whatever terminal you already use.
+### Claude plan usage, always visible
 
----
+The status bar shows your 5-hour Claude usage and time left. Hover it for the
+weekly limit and reset times. The numbers come from Claude Code's own status line —
+Herdr Desktop never reads or stores your Claude credentials.
 
-## install
+![Claude usage popover](gui/docs/screenshots/claude-usage.png)
 
-```bash
-curl -fsSL https://herdr.dev/install.sh | sh
+### Workspaces with colours, tabs with splits
+
+Each workspace (one per project folder) gets its own colour, shown on the sidebar
+and on the selected tab. Right-click a workspace to rename it or change its colour.
+Right-click a tab to split it right or down, rename it, or zoom a pane. Tabs can be
+dragged to reorder and closed with their ×.
+
+| Workspace colours | Tab menu |
+|---|---|
+| ![Change a workspace colour](gui/docs/screenshots/workspace-colors.png) | ![Split a tab from its menu](gui/docs/screenshots/tab-menu.png) |
+
+### Menus for everything
+
+A VS Code-style menu bar: **Workspace**, **Tab**, **Pane**, **Agents**, **View**,
+**herdr** and **Help**. *Workspace ▸ New Workspace…* opens a folder picker and turns
+the folder into a workspace. The **herdr** menu mirrors herdr's own menu: settings,
+setup, start/stop the server, start at login, and what's new.
+
+| Workspace menu | herdr menu |
+|---|---|
+| ![Workspace menu](gui/docs/screenshots/workspace-menu.png) | ![herdr menu](gui/docs/screenshots/herdr-menu.png) |
+
+### Guided provider setup
+
+*herdr ▸ Setup…* checks the herdr engine, detects which agent CLIs are installed,
+installs missing ones in a visible terminal tab (only after you confirm), connects
+them to herdr for status detection, and signs you in with each CLI's own login.
+
+![Setup — agent providers](gui/docs/screenshots/setup-providers.png)
+
+### Keyboard first
+
+Shortcuts only use Ctrl+Shift, Alt and a few function keys, so everyday keys like
+Ctrl+C, Ctrl+R or Ctrl+T still reach Claude Code and your shell. Press
+**Ctrl+Shift+/** for the searchable cheat sheet.
+
+![Keyboard shortcuts cheat sheet](gui/docs/screenshots/keyboard-shortcuts.png)
+
+| Shortcut | Action |
+|---|---|
+| `Alt+1` … `Alt+9` | Go to tab 1–8 / last tab |
+| `Ctrl+Shift+1` … `Ctrl+Shift+9` | Go to workspace 1–8 / last workspace |
+| ``Alt+` `` | Toggle between the last two tabs |
+| `Ctrl+Shift+T` / `Ctrl+Shift+W` | New tab / close tab |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
+| `Ctrl+Shift+N` | New workspace from a folder |
+| `Ctrl+Shift+↓` / `Ctrl+Shift+↑` | Next / previous workspace |
+| `Ctrl+Shift+E` | Focus the sidebar (arrows + Enter) |
+| `Alt+Shift+=` / `Alt+Shift+-` | Split right / split down |
+| `Ctrl+Shift+J` | Jump to the next agent that needs you |
+| `Ctrl+Shift+A` | Show the agent list |
+| `Ctrl+Shift+/` | Keyboard shortcuts |
+
+### More
+
+- **Themes** — Dark Modern by default, plus herdr, Catppuccin Mocha, Tokyo Night,
+  One Dark Pro and Dracula. *View ▸ Import VS Code Theme…* loads any VS Code theme
+  (`.json` or `.vsix`).
+- **Fast terminal** — device-pixel rendering with a glyph cache; box-drawing
+  characters join without gaps; `Ctrl+Shift+Alt+P` shows a performance overlay.
+- **Light on memory** — about 180 MB when idle; WebView2 drops to low-memory mode
+  while the window is minimized.
+- **Agents keep running** — closing the window never stops your agents; the herdr
+  server keeps them alive.
+
+## Download and run
+
+Herdr Desktop is a single portable `.exe` — no installer.
+
+1. Download `Herdr Desktop.exe` from the
+   [Releases](https://github.com/arifinreinaldo/mine-51-herdr-desktop/releases) page.
+2. Run it. The build is not code-signed yet, so Windows SmartScreen may warn you:
+   choose **More info → Run anyway**.
+3. If herdr is not installed, the banner offers **Open Setup**. The herdr engine
+   (0.9.1) is bundled inside the `.exe` and installs offline after a SHA-256 check.
+
+Requirements: Windows 10 or 11 (64-bit) with the WebView2 runtime (built into
+Windows 11).
+
+## Build from source
+
+Requirements: Rust 1.96.1 (see `rust-toolchain.toml`), Node.js 20+, npm.
+
+```powershell
+cd gui
+npm install
+npm run check      # format, clippy, Rust + Vitest tests
+npm run package    # portable exe -> gui/target-agent/release/portable/
 ```
 
-or `brew install herdr` · `mise use -g herdr` · windows: `powershell -ExecutionPolicy Bypass -c "irm https://herdr.dev/install.ps1 | iex"` · [endpoint-protected Windows](https://herdr.dev/docs/windows-beta/) · [binaries](https://github.com/herdrdev/herdr/releases)
+`npm run package` downloads the pinned herdr release package and verifies its
+SHA-256 before embedding it. Specs and design notes live in [`gui/docs/`](gui/docs).
 
-then start it where the work lives:
+## How it works
 
-```bash
-herdr
+Herdr Desktop is a client of a normal herdr server. It connects over herdr's
+stable client protocol (generation 1), renders the server's terminal grid on a
+canvas, and sends keyboard input back. Workspaces, tabs, panes and agent detection
+all live in herdr, so the terminal UI and the desktop app can share the same
+sessions.
+
+```
+gui/
+  src/            TypeScript frontend (shell, sidebar, tabs, renderer, setup)
+  src-tauri/      Rust backend (herdr connection, engine setup, settings)
+  crates/herdr-wire/  herdr client protocol types
 ```
 
-run your agents, split panes, walk away. `ctrl+b q` detaches, `herdr` reattaches. [quick start →](https://herdr.dev/docs/quick-start/)
+## Credits and license
 
-## docs
+Herdr Desktop is a fork of [herdr](https://github.com/herdrdev/herdr) by the herdr
+authors, licensed under the [Apache License 2.0](LICENSE). The original herdr README
+is kept in [`README.herdr.md`](README.herdr.md). Icons are
+[Codicons](https://github.com/microsoft/vscode-codicons) © Microsoft (CC BY 4.0).
 
-everything lives at [herdr.dev/docs](https://herdr.dev/docs/): [quick start](https://herdr.dev/docs/quick-start/) · [concepts](https://herdr.dev/docs/concepts/) · [supported agents](https://herdr.dev/docs/agents/) · [keyboard](https://herdr.dev/docs/keyboard/) · [configuration](https://herdr.dev/docs/configuration/) · [session state](https://herdr.dev/docs/session-state/) · [connecting machines](https://herdr.dev/docs/connecting-machines/) · [remote](https://herdr.dev/docs/persistence-remote/) · [integrations](https://herdr.dev/docs/integrations/) · [plugins](https://herdr.dev/docs/plugins/) · [socket api](https://herdr.dev/docs/socket-api/)
-
-## thanks
-
-every past sponsor and backer is listed in [SPONSORS.md](./SPONSORS.md) — thank you 🐑
-
-enterprise / partnership: hey@herdr.dev
-
-## agent instructions
-
-if you are an ai agent helping with this repository, read [`AGENTS.md`](./AGENTS.md) before making changes and read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening issues or PRs.
-
-## development
-
-```bash
-git clone https://github.com/herdrdev/herdr
-cd herdr
-cargo build --release
-
-just test        # unit tests
-just check       # formatting, tests, and maintenance checks
-```
-
-## license
-
-Herdr is licensed under the [Apache License 2.0](LICENSE).
+This project is not affiliated with or endorsed by the herdr maintainers.
