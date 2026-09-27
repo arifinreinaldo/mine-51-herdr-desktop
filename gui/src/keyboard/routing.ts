@@ -29,7 +29,7 @@
 import type { KeyboardEventLike, MappedKey } from "../input/keymap";
 import { mapKeyboardEvent } from "../input/keymap";
 import { findShortcut, type ShortcutAction } from "../shortcuts";
-import { closeActiveOverlay, isOverlayOpen } from "../ui/overlay";
+import { closeActiveOverlay, isActiveOverlayEscapableFromOutside, isOverlayOpen } from "../ui/overlay";
 
 export interface KeyboardRoutingHandlers {
   onShortcut(action: ShortcutAction): void;
@@ -87,7 +87,18 @@ export function routeKeydown(
   // (e.g. "Esc closes just the open submenu") when focus is already
   // elsewhere in the chrome -- those cases already work via each widget's
   // own listener and must reach it untouched.
-  if (event.key === "Escape" && activeElement === keyboardCaptureEl && isOverlayOpen()) {
+  //
+  // UX pass 1 §3 finding #3: a *pinned* agent popover opts out of this via
+  // `isActiveOverlayEscapableFromOutside()` -- it must never swallow an Esc
+  // meant for the terminal while focus never left the capture; Esc only
+  // closes it via its own keydown listener, which requires focus actually
+  // be inside it.
+  if (
+    event.key === "Escape" &&
+    activeElement === keyboardCaptureEl &&
+    isOverlayOpen() &&
+    isActiveOverlayEscapableFromOutside()
+  ) {
     event.preventDefault();
     closeActiveOverlay();
     return;

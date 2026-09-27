@@ -10,6 +10,7 @@ import { debounce } from "./debounce";
 import { createEmptyGrid, type Grid } from "./grid";
 import { DoneTransitionDetector, HighlightCardStack } from "./notifications/doneDetector";
 import { SeenDoneTabsTracker } from "./notifications/seenDoneTabs";
+import { StatusAgeTracker } from "./notifications/statusAge";
 import type { TerminalRenderer } from "./render/renderer";
 import { DEFAULT_SETTINGS, saveSettings, type Settings } from "./settings";
 import { ThemeRegistry } from "./themes/index";
@@ -32,6 +33,10 @@ export const appState = {
   usagePayload: { five_hour: null, seven_day: null, captured_at: null, status: "missing" } as UsageEventPayload,
   windowFocused: document.hasFocus(),
   lastConnectionStatus: "connecting",
+  /** UX pass 1 spec §4 "Honest disconnected state": the agent counts'
+   * "as of HH:MM" suffix while disconnected uses the time of the last
+   * snapshot actually received, not `Date.now()` at render time. */
+  lastSnapshotAt: null as number | null,
   /** Finding #14 "About shows the server version", from the welcome
    * handshake via the `connection-status` event's `serverVersion` field. */
   serverVersion: null as string | null,
@@ -45,6 +50,10 @@ export const appState = {
 
 export const doneDetector = new DoneTransitionDetector();
 export const seenDoneTabs = new SeenDoneTabsTracker();
+/** UX pass 1 spec §2 "Age": tracks how long each pane has been in its
+ * current status, reset alongside `doneDetector` at the same three points
+ * (boot_id change, disconnect, before the `sync_state` replay). */
+export const statusAge = new StatusAgeTracker();
 /** Keyboard shortcut Alt+` ("toggle to the previously focused tab"): fed by
  * `main.ts`'s snapshot listener, read by `appMenuBar.ts`. */
 export const tabMru = new TabMruTracker();

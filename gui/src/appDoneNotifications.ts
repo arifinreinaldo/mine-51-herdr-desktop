@@ -42,8 +42,11 @@ export function handleDoneTransitions(transitions: AgentForDetection[]): void {
     window.setTimeout(() => {
       // Finding #11: hover pauses this, and it only ever auto-closes the
       // popover this same done-transition auto-opened -- never one the
-      // user has since taken over manually.
+      // user has since taken over manually. Pruning stale highlight cards
+      // always happens; UX pass 1 spec §3 only exempts the *close* while
+      // pinned ("does not auto-hide").
       highlightCards.prune(Date.now(), hoveredHighlightPaneIds);
+      if (appState.settings.agentListPinned) return;
       if (highlightCards.list().length === 0 && appState.agentPopoverAutoOpened) appState.agentPopoverCloser?.();
     }, 8100);
   } else {

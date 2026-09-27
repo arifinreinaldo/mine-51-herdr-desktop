@@ -3,13 +3,16 @@
 
 import { listen } from "@tauri-apps/api/event";
 import { api, showErrorNotice } from "./appApi";
+import { requireConnected } from "./appConnectionGuard";
 import { overlayRoot, tabListEl, tabOverflowEl, tabPlusEl } from "./appDom";
 import { focusedWorkspaceTabs, tabLabel } from "./appLookups";
-import { appState, seenDoneTabs } from "./appState";
+import { appState, seenDoneTabs, statusAge } from "./appState";
 import type { RawSnapshot, RawTab } from "./appTypes";
+import { formatAge, oldestAgeMs } from "./notifications/statusAge";
 import { isRenderGuarded } from "./ui/renderGuard";
 import { renderTabStrip, TAB_RENDER_GUARD_REGION, type TabRow } from "./ui/tabs";
 import { openModal } from "./ui/modal";
+import { createStatusDot } from "./ui/statusDot";
 import { waitForTabFocusedPane } from "./workspace/tabFocusWait";
 import { optimisticTabOrderAfterMove } from "./workspace/tabMove";
 
@@ -43,6 +46,17 @@ export async function focusedPaneIdForTabAction(tabId: string): Promise<string |
   return paneId;
 }
 
+/** UX pass 1 spec §3 "Tab strip": the age suffix for a blocked, unselected
+ * tab's label -- the oldest blocked pane within that tab, `""` while
+ * unknown. */
+function blockedAgeLabelFor(tabId: string): string {
+  const now = Date.now();
+  const blockedPaneIds = (appState.snapshot?.agents ?? [])
+    .filter((a) => a.tab_id === tabId && a.agent_status === "blocked")
+    .map((a) => a.pane_id);
+  return formatAge(oldestAgeMs(blockedPaneIds, (paneId) => statusAge.ageMs(paneId, now)));
+}
+
 export function renderTabsNow(): void {
   // Finding #5: a snapshot mid-rename or mid-drag must not rebuild the tab
   // strip -- that destroys the rename `<input>` (and its focus/typed text)
@@ -51,12 +65,30 @@ export function renderTabsNow(): void {
   if (isRenderGuarded(TAB_RENDER_GUARD_REGION)) return;
   const tabs = focusedWorkspaceTabs();
   seenDoneTabs.update(tabs.map((t) => ({ tab_id: t.tab_id, agent_status: t.agent_status, focused: t.focused })));
-  const rows: TabRow[] = tabs.map((t) => ({ tab_id: t.tab_id, label: t.label, focused: t.focused, agent_status: t.agent_status }));
+  const rows: TabRow[] = tabs.map((t) => ({
+    tab_id: t.tab_id,
+    label: t.label,
+    focused: t.focused,
+    agent_status: t.agent_status,
+    blockedAgeLabel: blockedAgeLabelFor(t.tab_id),
+  }));
   renderTabStrip(tabListEl, overlayRoot, rows, seenDoneTabs, {
-    onFocusTab: (id) => void api("tab.focus", { tab_id: id }),
-    onCloseTab: (id) => void api("tab.close", { tab_id: id }),
-    onRenameTab: (id, label) => void api("tab.rename", { tab_id: id, label }),
+    onFocusTab: (id) => {
+      // UX pass 1 spec §4: "not interactive (no API calls). A click shows
+      // the notice 'herdr is not connected'."
+      if (!requireConnected()) return;
+      void api("tab.focus", { tab_id: id });
+    },
+    onCloseTab: (id) => {
+      if (!requireConnected()) return;
+      void api("tab.close", { tab_id: id });
+    },
+    onRenameTab: (id, label) => {
+      if (!requireConnected()) return;
+      void api("tab.rename", { tab_id: id, label });
+    },
     onMoveTab: (id, insertIndex) => {
+      if (!requireConnected()) return;
       // Finding #11 "Tab drag: optimistic reorder + snap back on error"
       // (spec §6 "reorder optimistically ... On an error, snap back and
       // show a notice").
@@ -71,18 +103,21 @@ export function renderTabsNow(): void {
       });
     },
     onSplitRight: (tabId) => {
+      if (!requireConnected()) return;
       void (async () => {
         const paneId = await focusedPaneIdForTabAction(tabId);
         if (paneId) void api("pane.split", { direction: "right", target_pane_id: paneId, focus: true });
       })();
     },
     onSplitDown: (tabId) => {
+      if (!requireConnected()) return;
       void (async () => {
         const paneId = await focusedPaneIdForTabAction(tabId);
         if (paneId) void api("pane.split", { direction: "down", target_pane_id: paneId, focus: true });
       })();
     },
     onToggleZoom: (tabId) => {
+      if (!requireConnected()) return;
       void (async () => {
         const paneId = await focusedPaneIdForTabAction(tabId);
         if (paneId) void api("pane.zoom", { pane_id: paneId });
@@ -101,11 +136,12 @@ function openAllTabsModal(tabs: readonly RawTab[]): void {
     for (const tab of tabs) {
       const row = document.createElement("div");
       row.className = "modal-shortcut-row";
-      const dot = document.createElement("span");
-      dot.className = `status-dot status-dot--${tab.agent_status}`;
-      row.appendChild(dot);
+      row.appendChild(createStatusDot(tab.agent_status));
       row.append(tab.label);
-      row.addEventListener("click", () => void api("tab.focus", { tab_id: tab.tab_id }));
+      row.addEventListener("click", () => {
+        if (!requireConnected()) return;
+        void api("tab.focus", { tab_id: tab.tab_id });
+      });
       body.appendChild(row);
     }
   });
@@ -113,6 +149,7 @@ function openAllTabsModal(tabs: readonly RawTab[]): void {
 
 export function wireTabStripControls(): void {
   tabPlusEl.addEventListener("click", () => {
+    if (!requireConnected()) return;
     void api("tab.create", { workspace_id: appState.snapshot?.focused_workspace_id ?? undefined, focus: true });
   });
   tabOverflowEl.addEventListener("click", () => openAllTabsModal(focusedWorkspaceTabs()));

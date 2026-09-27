@@ -8,6 +8,7 @@ import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
 import { dragDropInsertIndex } from "../workspace/tabMove";
 import { openMenu } from "./menu";
 import { beginRenderGuard } from "./renderGuard";
+import { createStatusDot } from "./statusDot";
 
 /** Keyboard shortcuts feature, item 6: `"<label> (Alt+N)"` for a tab at
  * `index` (0-based, tab strip order) among `total` tabs -- N for index <
@@ -35,6 +36,10 @@ export interface TabRow {
   label: string;
   focused: boolean;
   agent_status: AgentStatus;
+  /** UX pass 1 spec §3 "Tab strip": "a blocked tab's label ... gains the
+   * age suffix '· 12m' when the tab is not selected." `""`/`undefined`
+   * when the age isn't known yet -- no suffix, never "· ". */
+  blockedAgeLabel?: string;
 }
 
 export interface TabCallbacks {
@@ -45,10 +50,6 @@ export interface TabCallbacks {
   onSplitRight(tabId: string): void;
   onSplitDown(tabId: string): void;
   onToggleZoom(tabId: string): void;
-}
-
-function statusDotClass(status: AgentStatus): string {
-  return `status-dot status-dot--${status}`;
 }
 
 /** A row inline rename can target: a tab (`{id: tab_id, label}`) or,
@@ -214,16 +215,19 @@ export function renderTabStrip(
 
     const labelEl = document.createElement("span");
     labelEl.className = "tab-label";
-    labelEl.textContent = tab.label;
+    // UX pass 1 spec §3 "Tab strip": a blocked, unselected tab's label
+    // gains a "· 12m" age suffix; no suffix while the age is unknown.
+    labelEl.textContent =
+      tab.agent_status === "blocked" && !tab.focused && tab.blockedAgeLabel
+        ? `${tab.label} · ${tab.blockedAgeLabel}`
+        : tab.label;
     tabEl.appendChild(labelEl);
 
     const slot = document.createElement("span");
     slot.className = "tab-slot";
     const dotStatus: AgentStatus =
       tab.agent_status === "done" && seenDoneTracker.isSeen(tab.tab_id) ? "idle" : tab.agent_status;
-    const dot = document.createElement("span");
-    dot.className = statusDotClass(dotStatus);
-    slot.appendChild(dot);
+    slot.appendChild(createStatusDot(dotStatus));
     const closeIcon = document.createElement("i");
     closeIcon.className = "codicon codicon-close tab-close-icon";
     slot.appendChild(closeIcon);

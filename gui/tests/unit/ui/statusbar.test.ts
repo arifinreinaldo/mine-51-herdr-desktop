@@ -12,7 +12,7 @@
 // plain-object fake can't reproduce.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderUsageStatusItem } from "../../../src/ui/statusbar";
+import { formatAsOfClock, renderAgentCounts, renderUsageStatusItem, type AgentCounts } from "../../../src/ui/statusbar";
 import type { UsageState } from "../../../src/usage";
 
 const NOW = 1_000_000;
@@ -125,5 +125,52 @@ describe("renderUsageStatusItem: open/close across many re-renders (finding #10)
     expect(popoverCount()).toBe(1);
     el.dispatchEvent(new MouseEvent("click"));
     expect(popoverCount()).toBe(0);
+  });
+});
+
+// UX pass 1 spec §4 "Honest disconnected state": counts dim and gain an
+// "as of HH:MM" suffix while not connected.
+describe("renderAgentCounts (UX pass 1 spec §4)", () => {
+  const counts: AgentCounts = { working: 2, blocked: 1, done: 0, idle: 0 };
+
+  it("no dim class and no suffix while connected (disconnected=null)", () => {
+    renderAgentCounts(el, counts, vi.fn());
+    expect(el.classList.contains("is-disconnected")).toBe(false);
+    expect(el.querySelector(".status-agent-counts__as-of")).toBeNull();
+  });
+
+  it("adds the dim class and the 'as of HH:MM' suffix while disconnected", () => {
+    renderAgentCounts(el, counts, vi.fn(), { asOfLabel: "as of 09:41" });
+    expect(el.classList.contains("is-disconnected")).toBe(true);
+    expect(el.querySelector(".status-agent-counts__as-of")?.textContent).toBe("as of 09:41");
+  });
+
+  // Finding #8: no snapshot has ever been received yet -- the dim style
+  // still applies (there's nothing else to show while disconnected), but
+  // there is no snapshot time to caption an "as of" suffix with, so none
+  // renders (never a misleading "as of <now>").
+  it("adds the dim class but renders no 'as of' suffix when asOfLabel is empty", () => {
+    renderAgentCounts(el, counts, vi.fn(), { asOfLabel: "" });
+    expect(el.classList.contains("is-disconnected")).toBe(true);
+    expect(el.querySelector(".status-agent-counts__as-of")).toBeNull();
+  });
+
+  it("every count item's dot gets role=img and a matching aria-label", () => {
+    renderAgentCounts(el, counts, vi.fn());
+    const workingDot = el.querySelector(".status-item .status-dot--working")!;
+    expect(workingDot.getAttribute("role")).toBe("img");
+    expect(workingDot.getAttribute("aria-label")).toBe("working");
+  });
+});
+
+describe("formatAsOfClock (UX pass 1 spec §4)", () => {
+  it("formats local HH:MM, zero-padded", () => {
+    const epochMs = new Date(2026, 0, 1, 9, 5, 0).getTime();
+    expect(formatAsOfClock(epochMs)).toBe("as of 09:05");
+  });
+
+  it("pads both hours and minutes", () => {
+    const epochMs = new Date(2026, 0, 1, 0, 0, 0).getTime();
+    expect(formatAsOfClock(epochMs)).toBe("as of 00:00");
   });
 });

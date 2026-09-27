@@ -322,6 +322,15 @@ button {
   color: var(--list-activeSelectionForeground);
 }
 
+/* UX pass 1 spec §3 "Sidebar line 2 for attention states only". */
+.ws .ws-meta--blocked {
+  color: var(--herdr-status-blocked);
+}
+
+.ws .ws-meta--done {
+  color: var(--herdr-status-done);
+}
+
 .ws .ws-meta .codicon {
   font-size: 12px;
   color: inherit;
@@ -587,10 +596,58 @@ body.has-workspace-colors #tab-strip {
   white-space: nowrap;
 }
 
+/* UX pass 1 spec §4: "The socket path moves into a 'Details' disclosure
+   inside the banner." Absolutely positioned so opening it doesn't grow the
+   24px banner. */
+.connection-banner__details {
+  position: relative;
+  flex-shrink: 0;
+  color: var(--descriptionForeground);
+}
+
+.connection-banner__details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.connection-banner__details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.connection-banner__details[open] > span {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  background: var(--editorHoverWidget-background);
+  border: 1px solid var(--editorHoverWidget-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  z-index: 10;
+}
+
+/* UX pass 1 spec §4: "uses button.background/button.foreground tokens and
+   meets contrast ≥ 4.5:1" -- standalone (not layered under `.btn`, whose
+   later `background: transparent` would otherwise win the cascade). */
 .connection-banner__start-btn {
   flex-shrink: 0;
-  padding: 1px 8px;
+  padding: 1px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--button-background);
+  background: var(--button-background);
+  color: var(--button-foreground);
   font-size: 12px;
+  cursor: pointer;
+}
+
+.connection-banner__start-btn:hover {
+  filter: brightness(1.1);
+}
+
+.connection-banner__start-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
 }
 
 #perf-hud {
@@ -690,24 +747,47 @@ body.has-workspace-colors #tab-strip {
   display: inline-block;
 }
 
+/* UX pass 1 spec §2 "Agent state in words, not colour alone": every status
+   also gets a shape distinct from the others, not just a colour. */
+
 .status-dot--working {
+  /* A filled circle -- the base shape above, unchanged. */
   background: var(--herdr-status-working);
 }
 .status-dot--blocked {
+  /* A filled square. */
   background: var(--herdr-status-blocked);
+  border-radius: 2px;
 }
 .status-dot--done {
-  background: var(--herdr-status-done);
+  /* A check mark, drawn rather than a filled circle so it reads
+     correctly against any surrounding background. */
+  background: transparent;
+  border-radius: 0;
+  position: relative;
+}
+.status-dot--done::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 2px;
+  width: 5px;
+  height: 3px;
+  border-left: 1.5px solid var(--herdr-status-done);
+  border-bottom: 1.5px solid var(--herdr-status-done);
+  transform: rotate(-45deg);
 }
 .status-dot--idle {
+  /* A hollow circle. */
   background: transparent;
   border: 1.5px solid var(--herdr-status-idle);
   width: 6.5px;
   height: 6.5px;
 }
 .status-dot--unknown {
+  /* A dashed hollow circle. */
   background: transparent;
-  border: 1.5px solid var(--descriptionForeground);
+  border: 1.5px dashed var(--descriptionForeground);
   opacity: 0.6;
   width: 6.5px;
   height: 6.5px;
@@ -835,7 +915,7 @@ body.has-workspace-colors #tab-strip {
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   padding: 10px 12px;
-  width: 240px;
+  width: 260px;
   z-index: 55;
   font-size: 12px;
 }
@@ -847,6 +927,34 @@ body.has-workspace-colors #tab-strip {
 .confirm-popover__detail {
   color: var(--descriptionForeground);
   margin-bottom: 8px;
+}
+
+/* UX pass 1 spec §1 "Name what stops". */
+.confirm-popover__agent-list {
+  max-height: 120px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.confirm-popover__agent-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  color: var(--descriptionForeground);
+}
+
+.confirm-popover__agent-line span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.confirm-popover__agent-more {
+  color: var(--descriptionForeground);
+  padding: 2px 0 0 14px;
+  font-style: italic;
 }
 
 .confirm-popover__actions {
@@ -936,6 +1044,33 @@ body.has-workspace-colors #tab-strip {
 .agent-popover__sort {
   margin-left: auto;
   cursor: pointer;
+}
+
+/* UX pass 1 spec §3 "Pinnable agent list". */
+.agent-popover__pin {
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--descriptionForeground);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.agent-popover__pin:hover,
+.agent-popover__pin[aria-pressed="true"] {
+  color: var(--foreground);
+}
+
+/* UX pass 1 spec §3 "Blocked and done first": one small header per group. */
+.agent-popover__group-header {
+  padding: 4px 12px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--descriptionForeground);
 }
 
 .agent-row {
@@ -1114,6 +1249,18 @@ body.has-workspace-colors #tab-strip {
   display: flex;
   align-items: center;
   height: 100%;
+}
+
+/* UX pass 1 spec §4 "Honest disconnected state": the agent counts and the
+   terminal canvas dim while the connection is not `connected`. */
+.is-disconnected {
+  opacity: 0.5;
+}
+
+.status-agent-counts__as-of {
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--descriptionForeground);
 }
 
 /* Overlays (menus, popovers, confirms, swatches) are positioned in viewport

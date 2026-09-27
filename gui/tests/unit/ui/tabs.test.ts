@@ -173,6 +173,44 @@ describe("tab overflow: active tab scroll-into-view (finding #11)", () => {
   });
 });
 
+describe("status dots in the tab strip (UX pass 1 spec §2)", () => {
+  it("every tab's dot gets role=img and an aria-label matching its status", () => {
+    const callbacks = makeCallbacks();
+    guardedRender(callbacks); // tabs(): both idle
+    const dot = listEl.querySelector('[data-tab-id="t1"] .status-dot')!;
+    expect(dot.getAttribute("role")).toBe("img");
+    expect(dot.getAttribute("aria-label")).toBe("idle");
+  });
+});
+
+describe("blocked tab age suffix (UX pass 1 spec §3)", () => {
+  it("a blocked, unselected tab's label gains a '· <age>' suffix", () => {
+    const callbacks = makeCallbacks();
+    guardedRender(callbacks, [
+      { tab_id: "t1", label: "one", focused: true, agent_status: "idle" },
+      { tab_id: "t2", label: "two", focused: false, agent_status: "blocked", blockedAgeLabel: "12m" },
+    ]);
+    expect(listEl.querySelector('[data-tab-id="t2"] .tab-label')?.textContent).toBe("two · 12m");
+  });
+
+  it("no suffix while the age is unknown ('') -- never '· '", () => {
+    const callbacks = makeCallbacks();
+    guardedRender(callbacks, [
+      { tab_id: "t1", label: "one", focused: true, agent_status: "idle" },
+      { tab_id: "t2", label: "two", focused: false, agent_status: "blocked", blockedAgeLabel: "" },
+    ]);
+    expect(listEl.querySelector('[data-tab-id="t2"] .tab-label')?.textContent).toBe("two");
+  });
+
+  it("no suffix on the selected (focused) tab, even if blocked", () => {
+    const callbacks = makeCallbacks();
+    guardedRender(callbacks, [
+      { tab_id: "t1", label: "one", focused: true, agent_status: "blocked", blockedAgeLabel: "12m" },
+    ]);
+    expect(listEl.querySelector('[data-tab-id="t1"] .tab-label')?.textContent).toBe("one");
+  });
+});
+
 describe("tabShortcutTooltip (keyboard shortcuts feature, item 6)", () => {
   it("positions 1-8 get their own Alt+N hint", () => {
     expect(tabShortcutTooltip("one", 0, 10)).toBe("one (Alt+1)");

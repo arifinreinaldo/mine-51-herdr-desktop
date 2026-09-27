@@ -2,6 +2,7 @@
 // (finding #16 extraction from `main.ts`).
 
 import { mainEl, sidebarFooterEl, sidebarNewWorkspaceBtn, sidebarResizeHandleEl } from "./appDom";
+import { requireConnected } from "./appConnectionGuard";
 import { appState, persistSettings } from "./appState";
 import { newWorkspaceFlow } from "./appWorkspaceFlows";
 
@@ -40,9 +41,21 @@ export function wireSidebarResize(): void {
 }
 
 export function wireNewWorkspaceControls(): void {
-  sidebarNewWorkspaceBtn.addEventListener("click", () => void newWorkspaceFlow());
-  sidebarFooterEl.addEventListener("click", () => void newWorkspaceFlow());
+  // MINOR guard (finding #6): "New Workspace" starts with a
+  // `pick_workspace_folder`/`workspace.create` round trip -- must not fire
+  // while herdr is not connected, same as every other sidebar/tab-strip
+  // click (spec §4 "not interactive ... A click shows the notice").
+  sidebarNewWorkspaceBtn.addEventListener("click", () => {
+    if (!requireConnected()) return;
+    void newWorkspaceFlow();
+  });
+  sidebarFooterEl.addEventListener("click", () => {
+    if (!requireConnected()) return;
+    void newWorkspaceFlow();
+  });
   sidebarFooterEl.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") void newWorkspaceFlow();
+    if (event.key !== "Enter") return;
+    if (!requireConnected()) return;
+    void newWorkspaceFlow();
   });
 }

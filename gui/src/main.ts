@@ -9,8 +9,8 @@ import "./style.css";
 import { listen } from "@tauri-apps/api/event";
 
 import { invokeSafe, showErrorNotice } from "./appApi";
+import { renderConnectionBanner } from "./appConnectionBanner";
 import {
-  bannerEl,
   canvas,
   keyboardCapture,
   perfHudEl,
@@ -32,10 +32,16 @@ import {
   wireMenuBarNow,
   wirePerfHudToggle,
 } from "./appMenuBar";
-import { appState, doneDetector, tabMru } from "./appState";
+import { appState, doneDetector, statusAge, tabMru } from "./appState";
 import { renderSidebarNow } from "./appSidebarPanel";
 import { applySidebarVisibility, applySidebarWidth, wireNewWorkspaceControls, wireSidebarResize } from "./appSidebarResize";
-import { renderStatusBarNow, renderUsageBarNow, wireUsageRefresh } from "./appStatusBar";
+import {
+  openOrRefreshAgentPopover,
+  refreshAgentPopoverIfOpen,
+  renderStatusBarNow,
+  renderUsageBarNow,
+  wireUsageRefresh,
+} from "./appStatusBar";
 import { renderTabsNow, wireTabStripControls } from "./appTabStrip";
 import { subscribeSurface, wireInputHandlers, wireResizeObserver } from "./appTerminalInput";
 import type { RawSnapshot, UsageEventPayload } from "./appTypes";
@@ -48,12 +54,26 @@ import { onRenderGuardReleased } from "./ui/renderGuard";
 import { SIDEBAR_RENDER_GUARD_REGION } from "./ui/sidebar";
 import { TerminalRenderer } from "./render/renderer";
 import { formatTitlebarCenter, wireTitlebarControls } from "./ui/titlebar";
-import { decideConnectionBanner, type EngineKind } from "./connectionBanner";
-import { openSetupWizard } from "./wizard/wizard";
 
 function paintChromeSkeleton(): void {
   sidebarEl.textContent = "";
   statusUsageEl.textContent = "Claude usage: waiting for a Claude Code session";
+}
+
+// UX pass 1 spec §2 refresh (finding #2): ages ("12m", "3h", ...) go stale
+// between snapshots -- a workspace or agent that's been blocked for an
+// hour with no new snapshot would otherwise still read "blocked 1m" from
+// whenever that snapshot happened to arrive. Every 30s, re-render the
+// sidebar/tab strip (both recompute ages fresh off the wall clock) and
+// refresh the open agent popover in place (never disposes/reopens it, so
+// it never steals focus -- see `refreshAgentPopoverIfOpen`).
+const AGE_REFRESH_INTERVAL_MS = 30_000;
+function wireAgeRefresh(): void {
+  window.setInterval(() => {
+    renderSidebarNow();
+    renderTabsNow();
+    refreshAgentPopoverIfOpen();
+  }, AGE_REFRESH_INTERVAL_MS);
 }
 
 function reportReadyAfterTwoFrames(startedAt: number): void {
@@ -65,82 +85,12 @@ function reportReadyAfterTwoFrames(startedAt: number): void {
   });
 }
 
-let startHerdrBtnBusy = false;
-let bannerRenderGeneration = 0;
-
-interface EngineStatusWireForBanner {
-  kind: EngineKind;
-}
-
-/** Paints one `BannerDecision` (spec addendum §11.3) into `bannerEl`: the
- * "checking"/"engine missing" states show no button or [Open Setup]; the
- * "server down, engine found" state keeps the existing [Start herdr]
- * (finding #4 "no 'Start herdr' button"). The Start button invokes
- * `engine_force_start_server` (bypasses the once-per-launch auto-start
- * guard, since this is an explicit user click, spec §3.3), is disabled
- * while a click is in flight, and reports its result through the existing
- * transient error-notice mechanism (there is no other notice channel). */
-function paintConnectionBanner(decision: ReturnType<typeof decideConnectionBanner>): void {
-  bannerEl.innerHTML = "";
-  bannerEl.hidden = !decision.visible;
-  if (!decision.visible) return;
-
-  const text = document.createElement("span");
-  text.className = "connection-banner__text";
-  text.textContent = decision.message;
-  bannerEl.appendChild(text);
-
-  if (decision.action === "open_setup") {
-    const openSetupBtn = document.createElement("button");
-    openSetupBtn.className = "btn connection-banner__start-btn";
-    openSetupBtn.textContent = "Open Setup";
-    openSetupBtn.addEventListener("click", () => openSetupWizard());
-    bannerEl.appendChild(openSetupBtn);
-    return;
-  }
-
-  if (decision.action !== "start_herdr") return;
-
-  const startBtn = document.createElement("button");
-  startBtn.className = "btn connection-banner__start-btn";
-  startBtn.textContent = "Start herdr";
-  startBtn.disabled = startHerdrBtnBusy;
-  startBtn.addEventListener("click", () => {
-    void (async () => {
-      startHerdrBtnBusy = true;
-      startBtn.disabled = true;
-      startBtn.textContent = "Starting…";
-      const started = await invokeSafe<boolean>("engine_force_start_server");
-      startHerdrBtnBusy = false;
-      showErrorNotice(started ? "herdr server started." : "Could not start the herdr server.");
-      startBtn.disabled = false;
-      startBtn.textContent = "Start herdr";
-    })();
-  });
-  bannerEl.appendChild(startBtn);
-}
-
-/** The disconnected banner (spec addendum §11.3): rebuilt on every
- * `connection-status` event. The engine status needs its own async round
- * trip (`engine_status`), so this paints immediately from the "unknown"
- * state, then repaints once the probe resolves; a generation counter drops
- * a stale resolve from a since-superseded event (e.g. the server
- * reconnected while the probe was still in flight). */
-function renderConnectionBanner(status: string, socketPath: string): void {
-  const generation = ++bannerRenderGeneration;
-  paintConnectionBanner(decideConnectionBanner(status, null, socketPath));
-  if (status !== "unavailable" && status !== "disconnected") return;
-  void (async () => {
-    const engineStatus = await invokeSafe<EngineStatusWireForBanner>("engine_status");
-    if (generation !== bannerRenderGeneration) return;
-    paintConnectionBanner(decideConnectionBanner(status, engineStatus?.kind ?? "missing", socketPath));
-  })();
-}
-
 async function wireEvents(): Promise<void> {
   await listen<RawSnapshot>("snapshot", (event) => {
     const previousBootId = appState.snapshot?.boot_id;
+    const isFirstSnapshot = appState.snapshot === null;
     appState.snapshot = event.payload;
+    appState.lastSnapshotAt = Date.now();
     // Keyboard shortcut Alt+`: feed the MRU tracker from every snapshot's
     // focused tab, across all workspaces (not just the current one).
     tabMru.record(appState.snapshot.focused_tab_id);
@@ -150,17 +100,28 @@ async function wireEvents(): Promise<void> {
     appState.optimisticTabOrder = null;
     if (previousBootId !== undefined && previousBootId !== appState.snapshot.boot_id) {
       doneDetector.resetBaseline();
+      statusAge.reset();
     } else {
       handleDoneTransitions(doneDetector.diff(toDetectionAgents()));
     }
+    statusAge.update(toDetectionAgents(), appState.lastSnapshotAt);
     renderSidebarNow();
     renderTabsNow();
     renderStatusBarNow();
+    // UX pass 1 spec §2 refresh (finding #2): keep the open agent
+    // popover's rows/ages in sync with each snapshot too, not just the
+    // 30s tick below -- without this, a pinned list could show a status
+    // that changed several snapshots ago.
+    refreshAgentPopoverIfOpen();
     refreshMenuBarContext();
     titlebarCenterEl.textContent = formatTitlebarCenter(
       appState.snapshot.tabs.find((t) => t.focused)?.label ?? null,
       appState.snapshot.workspaces.find((w) => w.focused)?.label ?? null,
     );
+    // UX pass 1 spec §3 "the list reopens pinned at startup": deferred to
+    // the first real snapshot (rather than true `main()` start) so it has
+    // actual agent rows to show, not an empty popover.
+    if (isFirstSnapshot && appState.settings.agentListPinned) openOrRefreshAgentPopover(false);
   });
   await listen<UsageEventPayload>("usage", (event) => {
     appState.usagePayload = event.payload;
@@ -171,7 +132,11 @@ async function wireEvents(): Promise<void> {
     if (event.payload.serverVersion) appState.serverVersion = event.payload.serverVersion;
     if (appState.lastConnectionStatus !== "connected") {
       doneDetector.resetBaseline();
+      statusAge.reset();
     }
+    // Spec §4: the terminal canvas dims alongside the status-bar counts
+    // (handled by `renderStatusBarNow` below) while not connected.
+    canvas.classList.toggle("is-disconnected", appState.lastConnectionStatus !== "connected");
     renderConnectionBanner(appState.lastConnectionStatus, event.payload.socketPath);
     renderStatusBarNow();
   });
@@ -217,6 +182,7 @@ async function main(): Promise<void> {
   wireNewWorkspaceControls();
   wireTabStripControls();
   wireUsageRefresh();
+  wireAgeRefresh();
   wireTitlebarControls(winMinimizeEl, winMaximizeEl, winCloseEl);
   wireMenuBarNow();
   wirePerfHudToggle();
@@ -245,6 +211,7 @@ async function main(): Promise<void> {
   // three reset points and must stay correct if `sync_state` is ever
   // called again later (e.g. from a future reconnect path).
   doneDetector.resetBaseline();
+  statusAge.reset();
   await invokeSafe("sync_state");
   reportReadyAfterTwoFrames(startedAt);
 }

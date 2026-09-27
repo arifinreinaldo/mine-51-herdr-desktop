@@ -20,24 +20,31 @@ describe("decideConnectionBanner", () => {
     expect(decision.message).not.toBe("");
   });
 
-  it("unavailable + engine missing: 'herdr engine is not installed' + Open Setup", () => {
+  // UX pass 1 spec §4 "Honest disconnected state": the engine-missing copy
+  // gets a trailing period, the server-down copy changes to "herdr isn't
+  // running -- your agents may have stopped.", and the socket path moves
+  // out of `message` into its own `socketPath` field (rendered inside a
+  // "Details" disclosure by main.ts, not inline in the banner text).
+  it("unavailable + engine missing: 'herdr engine is not installed.' + Open Setup, no socket path", () => {
     const decision = decideConnectionBanner("unavailable", "missing", "\\\\.\\pipe\\herdr");
     expect(decision.visible).toBe(true);
-    expect(decision.message).toBe("herdr engine is not installed");
+    expect(decision.message).toBe("herdr engine is not installed.");
     expect(decision.action).toBe("open_setup");
+    expect(decision.socketPath).toBeNull();
   });
 
   it("unavailable + engine broken: same Open Setup guidance as missing", () => {
     const decision = decideConnectionBanner("unavailable", "broken", "\\\\.\\pipe\\herdr");
-    expect(decision.message).toBe("herdr engine is not installed");
+    expect(decision.message).toBe("herdr engine is not installed.");
     expect(decision.action).toBe("open_setup");
+    expect(decision.socketPath).toBeNull();
   });
 
-  it("unavailable + engine found: keeps the existing 'not reachable... retrying' + Start herdr", () => {
+  it("unavailable + engine found: 'herdr isn't running...' + Start herdr, with the socket path carried separately", () => {
     const decision = decideConnectionBanner("unavailable", "found", "\\\\.\\pipe\\herdr");
-    expect(decision.message).toContain("not reachable");
-    expect(decision.message).toContain("\\\\.\\pipe\\herdr");
+    expect(decision.message).toBe("herdr isn't running — your agents may have stopped.");
     expect(decision.action).toBe("start_herdr");
+    expect(decision.socketPath).toBe("\\\\.\\pipe\\herdr");
   });
 
   it("disconnected behaves the same as unavailable for a missing engine", () => {

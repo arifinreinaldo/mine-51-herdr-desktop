@@ -48,6 +48,11 @@ pub struct Settings {
     /// `false` on open and `true` again on its own Done step).
     #[serde(default)]
     pub first_run_complete: bool,
+    /// UX pass 1 spec §3 "Pinnable agent list": persists across restarts.
+    /// `#[serde(default)]` keeps an older `settings.json` (written before
+    /// this field existed) loading fine, defaulting to `false`.
+    #[serde(default)]
+    pub agent_list_pinned: bool,
 }
 
 fn default_theme() -> String {
@@ -78,6 +83,7 @@ impl Default for Settings {
             agent_sort: default_agent_sort(),
             desktop_notifications: true,
             first_run_complete: false,
+            agent_list_pinned: false,
         }
     }
 }
@@ -299,6 +305,9 @@ mod tests {
         assert_eq!(response.settings.theme, "dracula");
         assert_eq!(response.settings.sidebar_width, default_sidebar_width());
         assert!(response.settings.desktop_notifications);
+        // UX pass 1 spec §3: an older settings.json written before this
+        // field existed must still load fine, defaulting to unpinned.
+        assert!(!response.settings.agent_list_pinned);
         let _ = std::fs::remove_file(&path);
     }
 }

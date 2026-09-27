@@ -6,9 +6,10 @@ import { focusKeyboardCapture, keyboardCaptureReturnTarget } from "../keyboard/f
 import { DIRECT_FOCUS_SLOT_COUNT } from "../shortcuts";
 import { resolveWorkspacePaletteColor, type ThemeColors } from "../themes/tokens";
 import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
-import { openConfirmPopover } from "./confirmPopover";
+import { openConfirmPopover, type ConfirmPopoverAgentList } from "./confirmPopover";
 import type { MenuItemSpec } from "./menu";
 import { openMenu } from "./menu";
+import { createStatusDot } from "./statusDot";
 import { startInlineRename } from "./tabs";
 
 /** Finding #5/#14: the render-guard region a workspace inline rename
@@ -20,6 +21,33 @@ export const SIDEBAR_RENDER_GUARD_REGION = "sidebar";
 
 export type AgentStatus = "idle" | "working" | "blocked" | "done" | "unknown";
 
+/** UX pass 1 spec §3 "Sidebar line 2 for attention states only": a blocked
+ * agent anywhere in the workspace outranks a done one, which outranks the
+ * ordinary branch line. `ageLabel` is `""` when the age isn't known yet
+ * (spec §2 "unknown age shows nothing, not '0m'") -- rendered as the bare
+ * status word with no trailing age. */
+export type SidebarAttention =
+  | { kind: "blocked"; ageLabel: string }
+  | { kind: "done"; ageLabel: string }
+  | { kind: "branch" };
+
+/** Finding #7: "done · age" shows *only* when the workspace has done agents
+ * and no blocked and no working agents (spec's literal "only done
+ * agents") -- a workspace with a done agent alongside a still-working one
+ * shows the branch instead, not "done". A blocked agent still always wins
+ * regardless of `hasWorking`. */
+export function sidebarAttention(
+  hasBlocked: boolean,
+  blockedAgeLabel: string,
+  hasDone: boolean,
+  doneAgeLabel: string,
+  hasWorking: boolean = false,
+): SidebarAttention {
+  if (hasBlocked) return { kind: "blocked", ageLabel: blockedAgeLabel };
+  if (hasDone && !hasWorking) return { kind: "done", ageLabel: doneAgeLabel };
+  return { kind: "branch" };
+}
+
 export interface SidebarWorkspace {
   workspace_id: string;
   label: string;
@@ -30,11 +58,35 @@ export interface SidebarWorkspace {
   /** Present only for a workspace that is part of a linked-worktree group
    * (spec §5 "close_group"). */
   worktree_key: string | null;
+  /** Optional so existing callers/fixtures that don't compute it keep
+   * today's plain branch line (spec §3's default: "Otherwise it shows the
+   * branch as today"). */
+  attention?: SidebarAttention;
 }
 
 export interface WorkspaceAgentCounts {
   working: number;
   blocked: number;
+}
+
+/** One agent in a workspace, for the close-confirm's "Name what stops"
+ * list (UX pass 1 spec §1) and for `closeDetailText`'s counts. Only
+ * "working" or "blocked" agents belong in this list. */
+export interface WorkspaceAgentLine {
+  status: AgentStatus;
+  tabLabel: string;
+  agentName: string;
+}
+
+const CLOSE_CONFIRM_AGENT_LINE_LIMIT = 5;
+
+/** Truncates the close-confirm's "Name what stops" list to at most 5 lines
+ * (spec §1), reporting how many more agents exist beyond that. */
+export function closeConfirmAgentLines(agents: readonly WorkspaceAgentLine[]): ConfirmPopoverAgentList {
+  return {
+    lines: agents.slice(0, CLOSE_CONFIRM_AGENT_LINE_LIMIT),
+    overflow: Math.max(0, agents.length - CLOSE_CONFIRM_AGENT_LINE_LIMIT),
+  };
 }
 
 export interface SidebarCallbacks {
@@ -48,15 +100,18 @@ export interface SidebarCallbacks {
   onChangeColor(workspaceId: string, index: number): void;
 }
 
-function statusDotClass(status: AgentStatus): string {
-  return `status-dot status-dot--${status}`;
+function agentLinesFor(
+  workspaceId: string,
+  lines: ReadonlyMap<string, readonly WorkspaceAgentLine[]>,
+): readonly WorkspaceAgentLine[] {
+  return lines.get(workspaceId) ?? [];
 }
 
-function agentCountsFor(
-  workspaceId: string,
-  counts: ReadonlyMap<string, WorkspaceAgentCounts>,
-): WorkspaceAgentCounts {
-  return counts.get(workspaceId) ?? { working: 0, blocked: 0 };
+function countsFromAgentLines(agents: readonly WorkspaceAgentLine[]): WorkspaceAgentCounts {
+  return {
+    working: agents.filter((a) => a.status === "working").length,
+    blocked: agents.filter((a) => a.status === "blocked").length,
+  };
 }
 
 function linkedWorktreeCount(workspace: SidebarWorkspace, all: readonly SidebarWorkspace[]): number {
@@ -94,6 +149,7 @@ function renderRow(
   colorIndex: number | undefined,
   theme: ThemeColors,
   callbacks: SidebarCallbacks,
+  agentLines: readonly WorkspaceAgentLine[],
 ): HTMLElement {
   const row = document.createElement("div");
   row.className = "ws";
@@ -104,9 +160,7 @@ function renderRow(
   if (workspace.agent_status === "blocked") row.classList.add("is-blocked");
   row.setAttribute("aria-selected", String(workspace.focused));
 
-  const dot = document.createElement("span");
-  dot.className = statusDotClass(workspace.agent_status);
-  row.appendChild(dot);
+  row.appendChild(createStatusDot(workspace.agent_status));
 
   const nameRow = document.createElement("div");
   nameRow.className = "ws-name-row";
@@ -124,7 +178,16 @@ function renderRow(
 
   const meta = document.createElement("div");
   meta.className = "ws-meta";
-  if (workspace.branch) {
+  const attention = workspace.attention ?? { kind: "branch" as const };
+  if (attention.kind !== "branch") {
+    // UX pass 1 spec §3: line 2 shows the attention state instead of the
+    // branch while any agent needs it; the branch stays available as the
+    // row's tooltip (below) regardless.
+    meta.classList.add(`ws-meta--${attention.kind}`);
+    const text = document.createElement("span");
+    text.textContent = attention.ageLabel ? `${attention.kind} · ${attention.ageLabel}` : attention.kind;
+    meta.appendChild(text);
+  } else if (workspace.branch) {
     const branchIcon = document.createElement("i");
     branchIcon.className = "codicon codicon-git-branch";
     meta.appendChild(branchIcon);
@@ -168,7 +231,7 @@ function renderRow(
 
   closeBtn.addEventListener("click", (event) => {
     event.stopPropagation();
-    openWorkspaceCloseConfirm(workspace, all, overlayRoot, row, callbacks);
+    openWorkspaceCloseConfirm(workspace, all, overlayRoot, row, callbacks, agentLines);
   });
 
   const openContextMenu = (x: number, y: number) => {
@@ -265,15 +328,15 @@ function openWorkspaceCloseConfirm(
   overlayRoot: HTMLElement,
   rowEl: HTMLElement,
   callbacks: SidebarCallbacks,
+  agentLines: readonly WorkspaceAgentLine[],
 ): void {
-  // Populated by the caller via `renderSidebar`'s closure below (agent
-  // counts need the full snapshot, not just this row's workspace).
-  const detail = (rowEl.dataset.closeDetail as string) || "No agents running";
   openConfirmPopover(overlayRoot, rowEl, {
     titlePrefix: "Close ",
     titleName: workspace.label,
     titleSuffix: "?",
-    detail,
+    detail: closeDetailText(countsFromAgentLines(agentLines)),
+    // UX pass 1 spec §1 "Name what stops".
+    agentLines: closeConfirmAgentLines(agentLines),
     confirmLabel: "Close",
     onConfirm: () => {
       void handleCloseConfirmed(workspace, callbacks, overlayRoot, rowEl, all);
@@ -281,39 +344,54 @@ function openWorkspaceCloseConfirm(
   });
 }
 
+function pluralAgents(n: number): string {
+  return n === 1 ? "agent" : "agents";
+}
+
+/** UX pass 1 spec §1 "[P0]": handles the plural correctly and says what
+ * the destructive action actually does, e.g. "Stops 2 working and 1
+ * blocked agent." (both categories share one trailing noun, pluralised by
+ * whichever count is named last) or "Stops 3 blocked agents." (a single
+ * category). "No agents running." with neither. */
 export function closeDetailText(counts: WorkspaceAgentCounts): string {
-  if (counts.working === 0 && counts.blocked === 0) return "No agents running";
-  const parts: string[] = [];
-  if (counts.working > 0) parts.push(`${counts.working} agents running`);
-  if (counts.blocked > 0) parts.push(`${counts.blocked} blocked will be stopped`);
-  return parts.join(" · ");
+  const { working, blocked } = counts;
+  if (working === 0 && blocked === 0) return "No agents running.";
+  if (working > 0 && blocked > 0) {
+    return `Stops ${working} working and ${blocked} blocked ${pluralAgents(blocked)}.`;
+  }
+  if (working > 0) return `Stops ${working} working ${pluralAgents(working)}.`;
+  return `Stops ${blocked} blocked ${pluralAgents(blocked)}.`;
 }
 
 /** Keyboard shortcuts feature, item 6: `"<label> (Ctrl+Shift+N)"` for a row
  * at `index` (0-based, sidebar order) among `total` rows -- N for index <
  * `DIRECT_FOCUS_SLOT_COUNT` (1-8), and the last row (whatever its index)
- * also always mentions Ctrl+Shift+9. Plain `label` when neither applies. */
-export function sidebarRowTooltip(label: string, index: number, total: number): string {
+ * also always mentions Ctrl+Shift+9. Plain `label` when neither applies.
+ * `branch`, when given, is always appended (UX pass 1 spec §3: "The branch
+ * is always available as the row tooltip"), even when line 2 is currently
+ * showing an attention state instead of the branch. */
+export function sidebarRowTooltip(label: string, index: number, total: number, branch: string | null = null): string {
   const hints: string[] = [];
   if (index < DIRECT_FOCUS_SLOT_COUNT) hints.push(`Ctrl+Shift+${index + 1}`);
   if (index === total - 1) hints.push(`Ctrl+Shift+${LAST_FOCUS_SHORTCUT_DIGIT}`);
-  return hints.length > 0 ? `${label} (${hints.join(" / ")})` : label;
+  const base = hints.length > 0 ? `${label} (${hints.join(" / ")})` : label;
+  return branch ? `${base} — ${branch}` : base;
 }
 
 export function renderSidebar(
   listEl: HTMLElement,
   overlayRoot: HTMLElement,
   workspaces: readonly SidebarWorkspace[],
-  agentCounts: ReadonlyMap<string, WorkspaceAgentCounts>,
+  agentLines: ReadonlyMap<string, readonly WorkspaceAgentLine[]>,
   colorAssignment: Readonly<Record<string, number>>,
   theme: ThemeColors,
   callbacks: SidebarCallbacks,
 ): void {
   listEl.textContent = "";
   workspaces.forEach((workspace, index) => {
-    const row = renderRow(workspace, workspaces, overlayRoot, colorAssignment[workspace.workspace_id], theme, callbacks);
-    row.title = sidebarRowTooltip(workspace.label, index, workspaces.length);
-    row.dataset.closeDetail = closeDetailText(agentCountsFor(workspace.workspace_id, agentCounts));
+    const lines = agentLinesFor(workspace.workspace_id, agentLines);
+    const row = renderRow(workspace, workspaces, overlayRoot, colorAssignment[workspace.workspace_id], theme, callbacks, lines);
+    row.title = sidebarRowTooltip(workspace.label, index, workspaces.length, workspace.branch);
     listEl.appendChild(row);
   });
 }

@@ -198,6 +198,25 @@ describe("routeKeydown", () => {
       expect(handlers.terminalKeys).toHaveLength(1);
     });
 
+    // Finding #3: an overlay opened with `escapableFromOutside: false` (a
+    // *pinned* agent popover) must not be closed by this central-router
+    // rule -- Esc instead falls through to step 3 (the terminal), exactly
+    // as if no overlay were open at all. The popover's own keydown
+    // listener is the only thing that may close it on Esc, and only when
+    // focus is actually inside it.
+    it("Esc reaches the terminal instead of closing an overlay marked non-escapable-from-outside", () => {
+      const capture = fakeElement();
+      const handlers = fakeHandlers();
+      const dispose = vi.fn();
+      openOverlay(dispose, { escapableFromOutside: false });
+
+      const event = fakeEvent({ key: "Escape", code: "Escape" });
+      routeKeydown(event, capture, capture, handlers);
+
+      expect(dispose).not.toHaveBeenCalled();
+      expect(handlers.terminalKeys).toHaveLength(1);
+    });
+
     it("Esc does not pre-empt a chrome widget's own handling when focus is not on the capture", () => {
       // A menu/submenu already moves focus onto its own item, so its own
       // listener handles Esc (e.g. finding #1's "close just the submenu");

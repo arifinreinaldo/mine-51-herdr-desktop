@@ -5,17 +5,22 @@ import { agentDisplayName, agentTaskTitle } from "./agentText";
 import type { AgentRow } from "./agents";
 import { sortAgents } from "./agents";
 import { api } from "./appApi";
+import { requireConnected } from "./appConnectionGuard";
 import { overlayRoot, statusAgentCountsEl, statusConnectionEl, statusUsageEl } from "./appDom";
 import { currentThemeDef, tabLabel, workspaceLabel } from "./appLookups";
-import { appState, highlightCards, hoveredHighlightPaneIds, persistSettings } from "./appState";
+import { appState, highlightCards, hoveredHighlightPaneIds, persistSettings, statusAge } from "./appState";
 import { resolveWorkspacePaletteColor } from "./themes/tokens";
 import {
+  formatAsOfClock,
   openAgentPopover,
+  refreshOpenAgentPopover,
   renderAgentCounts,
   renderConnectionStatus,
   renderUsageStatusItem,
+  type AgentPopoverCallbacks,
   type AgentCounts,
   type AgentPopoverRow,
+  type OpenAgentPopoverOptions,
 } from "./ui/statusbar";
 import type { UsageState as FormatUsageState } from "./usage";
 
@@ -55,40 +60,90 @@ export async function focusAgentSequence(row: { workspace_id: string; tab_id: st
   await api("pane.focus", { pane_id: row.pane_id });
 }
 
+/** Shared between the initial `openAgentPopover` call and (finding #2) a
+ * background `refreshOpenAgentPopover` call -- kept as one function so the
+ * two never drift out of sync on what the popover actually shows. */
+function agentPopoverRenderOptions(): OpenAgentPopoverOptions {
+  return {
+    sortMode: appState.settings.agentSort,
+    highlightCards: highlightCards.list(),
+    highlightRowFor: (paneId) => agentPopoverRows().find((r) => r.pane_id === paneId),
+    pinned: appState.settings.agentListPinned,
+    ageMsFor: (paneId) => statusAge.ageMs(paneId, Date.now()),
+  };
+}
+
+/** Shared between the initial `openAgentPopover` call and (finding #2) a
+ * background `refreshOpenAgentPopover` call -- see
+ * `agentPopoverRenderOptions`. */
+function agentPopoverCallbacks(): AgentPopoverCallbacks {
+  return {
+    onFocusRow: (row) => {
+      // MINOR guard (finding #6): a row click focuses that workspace/tab/
+      // pane via three chained API calls -- must not fire while herdr is
+      // not connected, same as every other sidebar/tab-strip click.
+      if (!requireConnected()) return;
+      appState.agentPopoverCloser?.();
+      void focusAgentSequence(row);
+    },
+    onToggleSort: () => {
+      appState.settings.agentSort = appState.settings.agentSort === "priority" ? "server_order" : "priority";
+      persistSettings();
+      openOrRefreshAgentPopover();
+    },
+    onHighlightHoverChange: (paneId, hovering) => {
+      if (hovering) hoveredHighlightPaneIds.add(paneId);
+      else hoveredHighlightPaneIds.delete(paneId);
+    },
+    // UX pass 1 spec §3 "Pinnable agent list": toggling on keeps the
+    // popover open (re-rendered so the header icon flips to "pinned");
+    // toggling off is one of the explicit ways to close it.
+    onTogglePin: () => {
+      appState.settings.agentListPinned = !appState.settings.agentListPinned;
+      persistSettings();
+      if (appState.settings.agentListPinned) {
+        openOrRefreshAgentPopover();
+      } else {
+        appState.agentPopoverCloser?.();
+      }
+    },
+    // Finding #11 "closer reset so Ctrl+Shift+A always toggles": fires
+    // no matter how the popover actually closed (a row click, Esc, an
+    // outside click, or the auto-hide timeout below), unlike the prior
+    // code's manual reset only in `onFocusRow`.
+    onClose: () => {
+      appState.agentPopoverCloser = null;
+    },
+    // MINOR (finding #5): only wired into `openOverlay` while pinned (see
+    // `ui/statusbar.ts`'s `openAgentPopover`) -- reopens the pinned list
+    // once whatever superseded it (a menu, a hover popover, a confirm)
+    // itself finishes closing. Re-checks the setting at that later point,
+    // in case the user unpinned it in the meantime.
+    onSupersededReopen: () => {
+      if (appState.settings.agentListPinned) openOrRefreshAgentPopover();
+    },
+  };
+}
+
 export function openOrRefreshAgentPopover(autoOpened?: boolean): void {
   appState.agentPopoverCloser?.();
   if (autoOpened !== undefined) appState.agentPopoverAutoOpened = autoOpened;
   appState.agentPopoverCloser = openAgentPopover(
     overlayRoot,
     agentPopoverRows(),
-    {
-      sortMode: appState.settings.agentSort,
-      highlightCards: highlightCards.list(),
-      highlightRowFor: (paneId) => agentPopoverRows().find((r) => r.pane_id === paneId),
-    },
-    {
-      onFocusRow: (row) => {
-        appState.agentPopoverCloser?.();
-        void focusAgentSequence(row);
-      },
-      onToggleSort: () => {
-        appState.settings.agentSort = appState.settings.agentSort === "priority" ? "server_order" : "priority";
-        persistSettings();
-        openOrRefreshAgentPopover();
-      },
-      onHighlightHoverChange: (paneId, hovering) => {
-        if (hovering) hoveredHighlightPaneIds.add(paneId);
-        else hoveredHighlightPaneIds.delete(paneId);
-      },
-      // Finding #11 "closer reset so Ctrl+Shift+A always toggles": fires
-      // no matter how the popover actually closed (a row click, Esc, an
-      // outside click, or the auto-hide timeout below), unlike the prior
-      // code's manual reset only in `onFocusRow`.
-      onClose: () => {
-        appState.agentPopoverCloser = null;
-      },
-    },
+    agentPopoverRenderOptions(),
+    agentPopoverCallbacks(),
   );
+}
+
+/** UX pass 1 spec §2 "refresh": re-renders the open agent popover's rows in
+ * place (fresh ages, snapshot-driven changes) without disposing/reopening
+ * it and without stealing focus -- a no-op when no popover is open, or
+ * while the user's focus is already inside it. Called on the 30s
+ * age-refresh tick and after every snapshot (finding #2). */
+export function refreshAgentPopoverIfOpen(): void {
+  if (!appState.agentPopoverCloser) return;
+  refreshOpenAgentPopover(overlayRoot, agentPopoverRows(), agentPopoverRenderOptions(), agentPopoverCallbacks());
 }
 
 /** Finding #14 "agent-count click scrolls to and highlights that status
@@ -108,10 +163,34 @@ function scrollAgentPopoverToStatusGroup(status: keyof AgentCounts): void {
 }
 
 export function renderStatusBarNow(): void {
-  renderAgentCounts(statusAgentCountsEl, computeAgentCounts(), (status) => {
-    openOrRefreshAgentPopover(false);
-    scrollAgentPopoverToStatusGroup(status);
-  });
+  // UX pass 1 spec §4 "Honest disconnected state": the counts dim and gain
+  // an "as of HH:MM" suffix (the last snapshot's time) while not connected.
+  // Finding #8: omit the "as of HH:MM" suffix entirely when no snapshot has
+  // ever been received yet (`lastSnapshotAt === null`) -- falling back to
+  // `Date.now()` there would label the suffix with the current time, not
+  // "the last snapshot", which is not what it claims to be.
+  const disconnected =
+    appState.lastConnectionStatus === "connected"
+      ? null
+      : { asOfLabel: appState.lastSnapshotAt !== null ? formatAsOfClock(appState.lastSnapshotAt) : "" };
+  renderAgentCounts(
+    statusAgentCountsEl,
+    computeAgentCounts(),
+    (status) => {
+      // MINOR (finding #4): clicking the counts while the *pinned* list is
+      // already open closes it -- a toggle -- rather than just refreshing
+      // it in place. An unpinned popover keeps the prior behaviour
+      // (re-open/re-scroll to the clicked group), since it isn't "the
+      // persistent list" the finding is about.
+      if (appState.agentPopoverCloser && appState.settings.agentListPinned) {
+        appState.agentPopoverCloser();
+        return;
+      }
+      openOrRefreshAgentPopover(false);
+      scrollAgentPopoverToStatusGroup(status);
+    },
+    disconnected,
+  );
   renderConnectionStatus(statusConnectionEl, appState.lastConnectionStatus);
 }
 

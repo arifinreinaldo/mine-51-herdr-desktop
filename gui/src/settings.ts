@@ -17,6 +17,9 @@ export interface Settings {
   desktopNotifications: boolean;
   /** Phase 1.6 §4: the first-run wizard's trigger. */
   firstRunComplete: boolean;
+  /** UX pass 1 spec §3 "Pinnable agent list": persists across restarts --
+   * "the list reopens pinned at startup." */
+  agentListPinned: boolean;
 }
 
 export interface SettingsGetResponse {
@@ -34,6 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   agentSort: "priority",
   desktopNotifications: true,
   firstRunComplete: false,
+  agentListPinned: false,
 };
 
 export async function loadSettings(): Promise<SettingsGetResponse> {
