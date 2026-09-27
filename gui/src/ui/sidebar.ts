@@ -3,7 +3,9 @@
 // one flat row per workspace.
 
 import { focusKeyboardCapture, keyboardCaptureReturnTarget } from "../keyboard/focusCapture";
+import { DIRECT_FOCUS_SLOT_COUNT } from "../shortcuts";
 import { resolveWorkspacePaletteColor, type ThemeColors } from "../themes/tokens";
+import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
 import { openConfirmPopover } from "./confirmPopover";
 import type { MenuItemSpec } from "./menu";
 import { openMenu } from "./menu";
@@ -210,11 +212,51 @@ function renderRow(
       const rect = row.getBoundingClientRect();
       openContextMenu(rect.left, rect.bottom);
     } else if (event.key === "Enter") {
+      // Keyboard shortcuts feature (Ctrl+Shift+E "focus sidebar"): Enter
+      // on a row focuses that workspace, then returns keyboard focus to
+      // the terminal capture -- the row keeps only a roving `tabindex`,
+      // not lasting keyboard focus, once its job is done.
       callbacks.onFocusWorkspace(workspace.workspace_id);
+      focusKeyboardCapture();
+    } else if (event.key === "Escape") {
+      // Esc backs out of sidebar keyboard navigation with no change.
+      event.preventDefault();
+      focusKeyboardCapture();
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveSidebarRovingFocus(row, event.key === "ArrowDown" ? 1 : -1);
     }
   });
 
   return row;
+}
+
+/** Roving `tabindex` between sidebar rows (Ctrl+Shift+E's ArrowUp/Down):
+ * only one row is ever `tabindex="0"` at a time. Reads siblings from the
+ * DOM at the moment of the keypress rather than a captured array, since
+ * `row` is the one durable reference each row's own keydown closure has. */
+function moveSidebarRovingFocus(row: HTMLElement, direction: 1 | -1): void {
+  const rows = Array.from(row.parentElement?.children ?? []) as HTMLElement[];
+  const currentIndex = rows.indexOf(row);
+  if (currentIndex === -1 || rows.length === 0) return;
+  const nextIndex = ((currentIndex + direction) % rows.length + rows.length) % rows.length;
+  const next = rows[nextIndex];
+  row.tabIndex = -1;
+  next.tabIndex = 0;
+  next.focus();
+}
+
+/** Ctrl+Shift+E ("focus sidebar", keyboard shortcuts feature): moves
+ * keyboard focus onto the selected workspace's row, or the first row when
+ * none is selected. A no-op with an empty sidebar. Sets up the roving
+ * `tabindex` (only the focused row keeps `0`) that
+ * `moveSidebarRovingFocus` then maintains on ArrowUp/Down. */
+export function focusSidebarRow(listEl: HTMLElement): void {
+  const rows = Array.from(listEl.querySelectorAll<HTMLElement>(".ws"));
+  if (rows.length === 0) return;
+  const target = rows.find((row) => row.classList.contains("is-selected")) ?? rows[0];
+  for (const row of rows) row.tabIndex = row === target ? 0 : -1;
+  target.focus();
 }
 
 function openWorkspaceCloseConfirm(
@@ -247,6 +289,17 @@ export function closeDetailText(counts: WorkspaceAgentCounts): string {
   return parts.join(" · ");
 }
 
+/** Keyboard shortcuts feature, item 6: `"<label> (Ctrl+Shift+N)"` for a row
+ * at `index` (0-based, sidebar order) among `total` rows -- N for index <
+ * `DIRECT_FOCUS_SLOT_COUNT` (1-8), and the last row (whatever its index)
+ * also always mentions Ctrl+Shift+9. Plain `label` when neither applies. */
+export function sidebarRowTooltip(label: string, index: number, total: number): string {
+  const hints: string[] = [];
+  if (index < DIRECT_FOCUS_SLOT_COUNT) hints.push(`Ctrl+Shift+${index + 1}`);
+  if (index === total - 1) hints.push(`Ctrl+Shift+${LAST_FOCUS_SHORTCUT_DIGIT}`);
+  return hints.length > 0 ? `${label} (${hints.join(" / ")})` : label;
+}
+
 export function renderSidebar(
   listEl: HTMLElement,
   overlayRoot: HTMLElement,
@@ -257,9 +310,10 @@ export function renderSidebar(
   callbacks: SidebarCallbacks,
 ): void {
   listEl.textContent = "";
-  for (const workspace of workspaces) {
+  workspaces.forEach((workspace, index) => {
     const row = renderRow(workspace, workspaces, overlayRoot, colorAssignment[workspace.workspace_id], theme, callbacks);
+    row.title = sidebarRowTooltip(workspace.label, index, workspaces.length);
     row.dataset.closeDetail = closeDetailText(agentCountsFor(workspace.workspace_id, agentCounts));
     listEl.appendChild(row);
-  }
+  });
 }

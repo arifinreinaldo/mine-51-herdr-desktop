@@ -116,6 +116,29 @@ describe("routeKeydown", () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
+  // Keyboard shortcuts feature: Alt+1 (a new claimed class, step 2) is
+  // claimed even while the terminal capture has focus -- unlike a plain
+  // Ctrl+<letter>, which per spec §1 always belongs to the terminal (Ctrl+K
+  // in particular is a regression check: nothing about this feature may
+  // start claiming it).
+  it("step 2: Alt+1 is claimed even while the terminal capture has focus", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    const event = fakeEvent({ altKey: true, code: "Digit1" });
+    routeKeydown(event, capture, capture, handlers);
+    expect(handlers.shortcuts).toEqual(["tab.focusByIndex.1"]);
+    expect(handlers.terminalKeys).toEqual([]);
+  });
+
+  it("step 3: plain Ctrl+K still reaches the terminal, unclaimed", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    const event = fakeEvent({ ctrlKey: true, key: "k", code: "KeyK" });
+    routeKeydown(event, capture, capture, handlers);
+    expect(handlers.shortcuts).toEqual([]);
+    expect(handlers.terminalKeys).toHaveLength(1);
+  });
+
   it("step 4: an unclaimed key with a chrome element focused does nothing", () => {
     const capture = fakeElement();
     const row = fakeElement(["ws"]);

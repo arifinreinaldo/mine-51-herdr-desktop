@@ -15,6 +15,7 @@ import { isRenderGuarded, onRenderGuardReleased } from "../../../src/ui/renderGu
 import {
   renderTabStrip,
   startTabInlineRename,
+  tabShortcutTooltip,
   TAB_RENDER_GUARD_REGION,
   type TabCallbacks,
   type TabRow,
@@ -169,5 +170,31 @@ describe("tab overflow: active tab scroll-into-view (finding #11)", () => {
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
     }
+  });
+});
+
+describe("tabShortcutTooltip (keyboard shortcuts feature, item 6)", () => {
+  it("positions 1-8 get their own Alt+N hint", () => {
+    expect(tabShortcutTooltip("one", 0, 10)).toBe("one (Alt+1)");
+    expect(tabShortcutTooltip("eight", 7, 10)).toBe("eight (Alt+8)");
+  });
+
+  it("the last tab always also mentions Alt+9, even within positions 1-8", () => {
+    expect(tabShortcutTooltip("last-of-five", 4, 5)).toBe("last-of-five (Alt+5 / Alt+9)");
+  });
+
+  it("the last tab beyond position 8 mentions only Alt+9", () => {
+    expect(tabShortcutTooltip("last-of-twelve", 11, 12)).toBe("last-of-twelve (Alt+9)");
+  });
+
+  it("a tab beyond position 8 that is not last gets the plain label", () => {
+    expect(tabShortcutTooltip("ninth", 8, 12)).toBe("ninth");
+  });
+
+  it("renderTabStrip wires the title attribute for every tab", () => {
+    const callbacks = makeCallbacks();
+    guardedRender(callbacks); // tabs(): t1 (index 0), t2 (index 1, last)
+    expect(listEl.querySelector('[data-tab-id="t1"]')?.getAttribute("title")).toBe("one (Alt+1)");
+    expect(listEl.querySelector('[data-tab-id="t2"]')?.getAttribute("title")).toBe("two (Alt+2 / Alt+9)");
   });
 });

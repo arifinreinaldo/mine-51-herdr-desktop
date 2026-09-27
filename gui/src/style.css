@@ -428,7 +428,9 @@ body.has-workspace-colors #tab-strip {
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow: inset 0 2px 0 var(--current-ws-color, transparent);
+  /* Unfocused tabs get a neutral gray top border; only the selected tab
+     carries the workspace colour (see .tab.active). */
+  box-shadow: inset 0 2px 0 var(--descriptionForeground);
 }
 
 .tab:hover {
@@ -1043,6 +1045,42 @@ body.has-workspace-colors #tab-strip {
 
 .modal-copy-btn {
   margin-top: 10px;
+}
+
+/* Keyboard Shortcuts modal: search + menu-grouped list. */
+.shortcuts-modal-search {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--menu-border);
+  border-radius: 4px;
+  color: inherit;
+  font: inherit;
+}
+
+.shortcuts-modal-search:focus {
+  outline: 1px solid var(--focusBorder);
+  outline-offset: -1px;
+}
+
+.shortcuts-modal-group {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--descriptionForeground);
+  margin: 12px 0 4px;
+}
+
+.shortcuts-modal-group:first-of-type {
+  margin-top: 0;
+}
+
+.shortcuts-modal-empty {
+  color: var(--descriptionForeground);
+  padding: 8px 0;
 }
 
 /* ---------------------------------------------------------------------- */

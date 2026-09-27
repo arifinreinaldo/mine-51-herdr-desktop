@@ -14,19 +14,22 @@ import {
   neighbourWorkspaceId,
 } from "./appLookups";
 import { applySidebarVisibility } from "./appSidebarResize";
-import { appState, persistSettings } from "./appState";
+import { focusSidebarForKeyboard } from "./appSidebarPanel";
+import { appState, persistSettings, tabMru } from "./appState";
 import { focusAgentSequence, openOrRefreshAgentPopover } from "./appStatusBar";
 import { sendKeyEvent, sendPaste } from "./appTerminalInput";
 import { importThemeFlow, newWorkspaceFlow } from "./appWorkspaceFlows";
 import { DEFAULT_FONT_SIZE_PX } from "./render/renderer";
 import type { AgentSort } from "./settings";
-import { SHORTCUTS, type ShortcutAction } from "./shortcuts";
+import type { ShortcutAction } from "./shortcuts";
 import { BUILT_IN_THEMES } from "./themes/index";
 import { openModal } from "./ui/modal";
 import { wireMenuBar, type MenuBarContext } from "./ui/menus";
 import { closeActiveOverlay } from "./ui/overlay";
+import { openKeyboardShortcutsModal } from "./ui/shortcutsModal";
 import { openSetupWizard } from "./wizard/wizard";
 import { startTabInlineRename, type TabRow } from "./ui/tabs";
+import { resolveIndexForShortcut } from "./workspace/focusByIndex";
 import {
   canMoveLeft,
   canMoveRight,
@@ -227,19 +230,11 @@ export const menuBarContext: MenuBarContext = {
     menuBarContext.autostartEnabled = autostartEnabled;
     void invokeSafe("autostart_set", { enabled: autostartEnabled });
   },
+  // Keyboard shortcuts feature: one modal implementation
+  // (`ui/shortcutsModal.ts`), opened from here, from the Ctrl+Shift+/
+  // shortcut, and from the Help menu's own item -- never duplicated.
   onOpenKeyboardShortcuts: () => {
-    openModal("Keyboard Shortcuts", (body) => {
-      for (const action of SHORTCUTS) {
-        const row = document.createElement("div");
-        row.className = "modal-shortcut-row";
-        row.append(action.label);
-        const key = document.createElement("span");
-        key.className = "key";
-        key.textContent = action.display;
-        row.appendChild(key);
-        body.appendChild(row);
-      }
-    });
+    openKeyboardShortcutsModal();
   },
   onReloadConfig: () => void api("server.reload_config"),
   updateAvailable: false,
@@ -294,6 +289,55 @@ export function refreshMenuBarContext(): void {
   herdrMenuDotEl.hidden = !(menuBarContext.updateAvailable || Boolean(appState.snapshot?.integration_updates_available));
 }
 
+/** Alt+1..8 / Ctrl+Shift+1..8 (fixed position) and Alt+9 / Ctrl+Shift+9
+ * (last, spec: "keyboard shortcuts feature"): resolves `n` against
+ * `items.length` via `resolveIndexForShortcut` and fires `onFocus` with
+ * the resolved item, or does nothing when `n` is out of range. */
+function focusByIndex<T>(items: readonly T[], n: number, onFocus: (item: T) => void): void {
+  const index = resolveIndexForShortcut(n, items.length);
+  if (index !== undefined) onFocus(items[index]);
+}
+
+function focusTabByIndex(n: number): void {
+  focusByIndex(focusedWorkspaceTabs(), n, (tab) => void api("tab.focus", { tab_id: tab.tab_id }));
+}
+
+function focusWorkspaceByIndex(n: number): void {
+  focusByIndex(appState.snapshot?.workspaces ?? [], n, (workspace) =>
+    void api("workspace.focus", { workspace_id: workspace.workspace_id }),
+  );
+}
+
+/** Alt+` ("toggle to the previously focused tab", keyboard shortcuts
+ * feature): jumps to the second-most-recently-focused tab tracked by
+ * `tabMru` (fed from every snapshot in `main.ts`). A no-op with nothing
+ * tracked yet, or if that tab no longer exists in the current snapshot. A
+ * cross-workspace jump focuses the workspace first, awaited before the
+ * tab -- doing both in one `tab.focus` isn't how the wire protocol works
+ * (spec §1: pane/tab/workspace actions are always separate calls). */
+async function toggleToPreviousTab(): Promise<void> {
+  const previousTabId = tabMru.previousTabId();
+  if (!previousTabId) return;
+  const snapshot = appState.snapshot;
+  const tab = snapshot?.tabs.find((t) => t.tab_id === previousTabId);
+  if (!tab) return;
+  if (tab.workspace_id !== snapshot?.focused_workspace_id) {
+    await api("workspace.focus", { workspace_id: tab.workspace_id });
+  }
+  await api("tab.focus", { tab_id: previousTabId });
+}
+
+/** The 9 `tab.focusByIndex.<n>` / `workspace.focusByIndex.<n>` ids
+ * `shortcuts.ts`'s `digitRangeShortcuts` generates, each mapped to the same
+ * two handlers parameterized by `n` -- built once here rather than spelled
+ * out 18 times, since `SHORTCUT_HANDLERS` below is otherwise a literal,
+ * one-line-per-id table matching every other id in `shortcuts.ts`. */
+const RANGE_SHORTCUT_HANDLERS: Record<string, () => void> = {};
+for (let n = 1; n <= 9; n++) {
+  RANGE_SHORTCUT_HANDLERS[`tab.focusByIndex.${n}`] = () => focusTabByIndex(n);
+  RANGE_SHORTCUT_HANDLERS[`workspace.focusByIndex.${n}`] = () => focusWorkspaceByIndex(n);
+}
+
 const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   "workspace.new": () => menuBarContext.onNewWorkspace(),
   "workspace.next": () => menuBarContext.onNextWorkspace(),
@@ -305,6 +349,7 @@ const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   "tab.previous": () => menuBarContext.onPreviousTab(),
   "tab.moveLeft": () => menuBarContext.onMoveTabLeft(),
   "tab.moveRight": () => menuBarContext.onMoveTabRight(),
+  "tab.togglePrevious": () => void toggleToPreviousTab(),
   "pane.splitRight": () => menuBarContext.onSplitRight(),
   "pane.splitDown": () => menuBarContext.onSplitDown(),
   "pane.close": () => menuBarContext.onClosePane(),
@@ -315,7 +360,10 @@ const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   "view.zoomIn": () => menuBarContext.onZoomIn(),
   "view.zoomOut": () => menuBarContext.onZoomOut(),
   "view.zoomReset": () => menuBarContext.onZoomReset(),
+  "view.focusSidebar": () => focusSidebarForKeyboard(),
   "herdr.settings": () => menuBarContext.onOpenSettings(),
+  "herdr.showShortcuts": () => menuBarContext.onOpenKeyboardShortcuts(),
+  ...RANGE_SHORTCUT_HANDLERS,
 };
 
 export function onShortcut(action: ShortcutAction): void {

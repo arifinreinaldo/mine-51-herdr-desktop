@@ -6,7 +6,13 @@ import { overlayRoot, sidebarEl } from "./appDom";
 import { currentThemeDef, updateWorkspaceColorTitlebarVar } from "./appLookups";
 import { appState, persistSettings } from "./appState";
 import { isRenderGuarded } from "./ui/renderGuard";
-import { renderSidebar, SIDEBAR_RENDER_GUARD_REGION, type SidebarWorkspace, type WorkspaceAgentCounts } from "./ui/sidebar";
+import {
+  focusSidebarRow,
+  renderSidebar,
+  SIDEBAR_RENDER_GUARD_REGION,
+  type SidebarWorkspace,
+  type WorkspaceAgentCounts,
+} from "./ui/sidebar";
 import { assignWorkspaceColors } from "./workspace/colors";
 import { prunePersistedFolders } from "./workspace/dedupe";
 
@@ -88,4 +94,11 @@ export function renderSidebarNow(): void {
     },
   );
   updateWorkspaceColorTitlebarVar();
+}
+
+/** Ctrl+Shift+E ("focus sidebar", keyboard shortcuts feature): the
+ * `appMenuBar.ts` shortcut handler's entry point into the sidebar's own
+ * roving-focus DOM logic (`ui/sidebar.ts`'s `focusSidebarRow`). */
+export function focusSidebarForKeyboard(): void {
+  focusSidebarRow(sidebarEl);
 }

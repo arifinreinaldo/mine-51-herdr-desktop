@@ -240,7 +240,12 @@ function viewMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
 function herdrMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
   const items: MenuItemSpec[] = [
     { id: "herdr.settings", label: "Settings…", shortcut: shortcutDisplay("herdr.settings"), onSelect: ctx.onOpenSettings },
-    { id: "herdr.shortcuts", label: "Keyboard Shortcuts", onSelect: ctx.onOpenKeyboardShortcuts },
+    {
+      id: "herdr.shortcuts",
+      label: "Keyboard Shortcuts",
+      shortcut: shortcutDisplay("herdr.showShortcuts"),
+      onSelect: ctx.onOpenKeyboardShortcuts,
+    },
     { id: "herdr.reload", label: "Reload Config", onSelect: ctx.onReloadConfig },
     { id: "herdr.setup", label: "Setup…", separatorBefore: true, onSelect: ctx.onSetupWizard },
     { id: "herdr.stopServer", label: "Stop Server…", onSelect: ctx.onStopServer },
@@ -275,6 +280,13 @@ function herdrMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
 function helpMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
   return [
     { id: "help.reconnect", label: "Reconnect", onSelect: ctx.onReconnect },
+    {
+      id: "help.shortcuts",
+      label: "Keyboard Shortcuts",
+      shortcut: shortcutDisplay("herdr.showShortcuts"),
+      separatorBefore: true,
+      onSelect: ctx.onOpenKeyboardShortcuts,
+    },
     { id: "help.about", label: "About herdr GUI", onSelect: ctx.onAbout },
   ];
 }

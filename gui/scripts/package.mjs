@@ -19,6 +19,13 @@
 // script copies (never moves -- the plain build artifact stays where cargo
 // put it) and renames it to
 // `<target-agent>/release/portable/Herdr Desktop.exe`.
+//
+// That fixed name can already be open -- running it is exactly how someone
+// notices they want a fresh build. Overwriting a running .exe on Windows
+// fails with EBUSY/EPERM rather than silently succeeding (and the running
+// process must never be killed to force it through). On that specific
+// failure, this falls back to a timestamped sibling file instead of
+// aborting the whole build.
 
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
@@ -73,5 +80,33 @@ const builtExe = path.join(targetDir, "release", "herdr-gui.exe");
 const portableDir = path.join(targetDir, "release", "portable");
 const portableExe = path.join(portableDir, "Herdr Desktop.exe");
 mkdirSync(portableDir, { recursive: true });
-copyFileSync(builtExe, portableExe);
-console.log(`package: portable exe at ${portableExe}`);
+
+/** `Herdr Desktop-<yyyyMMdd-HHmm>.exe`, next to the fixed-name copy. */
+function timestampedPortableExePath() {
+  const now = new Date();
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const stamp =
+    `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}` +
+    `-${pad2(now.getHours())}${pad2(now.getMinutes())}`;
+  return path.join(portableDir, `Herdr Desktop-${stamp}.exe`);
+}
+
+try {
+  copyFileSync(builtExe, portableExe);
+  console.log(`package: portable exe at ${portableExe}`);
+} catch (err) {
+  if (err?.code === "EBUSY" || err?.code === "EPERM") {
+    // Someone (the user) is running the fixed-name exe right now -- copy
+    // to a fresh, timestamped name instead of failing the whole build.
+    const fallbackExe = timestampedPortableExePath();
+    copyFileSync(builtExe, fallbackExe);
+    console.log(
+      `package: "${portableExe}" is in use and could not be replaced; ` +
+        `wrote the new build to "${fallbackExe}" instead. Close the running ` +
+        `app and re-run "npm run package" to update "${portableExe}" too.`,
+    );
+  } else {
+    console.error(`package: failed to copy "${builtExe}" to "${portableExe}": ${err.message}`);
+    process.exit(1);
+  }
+}

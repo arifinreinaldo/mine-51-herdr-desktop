@@ -14,6 +14,7 @@ import type { TerminalRenderer } from "./render/renderer";
 import { DEFAULT_SETTINGS, saveSettings, type Settings } from "./settings";
 import { ThemeRegistry } from "./themes/index";
 import type { RawSnapshot, UsageEventPayload } from "./appTypes";
+import { TabMruTracker } from "./workspace/tabMru";
 
 export const appState = {
   grid: createEmptyGrid() as Grid,
@@ -44,6 +45,9 @@ export const appState = {
 
 export const doneDetector = new DoneTransitionDetector();
 export const seenDoneTabs = new SeenDoneTabsTracker();
+/** Keyboard shortcut Alt+` ("toggle to the previously focused tab"): fed by
+ * `main.ts`'s snapshot listener, read by `appMenuBar.ts`. */
+export const tabMru = new TabMruTracker();
 export const highlightCards = new HighlightCardStack();
 /** Finding #11 "hover pauses the 8s auto-hide", fed into
  * `HighlightCardStack.prune()`'s `pausedPaneIds`. */

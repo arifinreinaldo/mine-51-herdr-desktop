@@ -3,9 +3,22 @@
 
 import { focusKeyboardCapture, keyboardCaptureReturnTarget } from "../keyboard/focusCapture";
 import type { SeenDoneTabsTracker } from "../notifications/seenDoneTabs";
+import { DIRECT_FOCUS_SLOT_COUNT } from "../shortcuts";
+import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
 import { dragDropInsertIndex } from "../workspace/tabMove";
 import { openMenu } from "./menu";
 import { beginRenderGuard } from "./renderGuard";
+
+/** Keyboard shortcuts feature, item 6: `"<label> (Alt+N)"` for a tab at
+ * `index` (0-based, tab strip order) among `total` tabs -- N for index <
+ * `DIRECT_FOCUS_SLOT_COUNT` (1-8), and the last tab (whatever its index)
+ * also always mentions Alt+9. Plain `label` when neither applies. */
+export function tabShortcutTooltip(label: string, index: number, total: number): string {
+  const hints: string[] = [];
+  if (index < DIRECT_FOCUS_SLOT_COUNT) hints.push(`Alt+${index + 1}`);
+  if (index === total - 1) hints.push(`Alt+${LAST_FOCUS_SHORTCUT_DIGIT}`);
+  return hints.length > 0 ? `${label} (${hints.join(" / ")})` : label;
+}
 
 /** The render-guard region name tab renames and drags claim (finding #5).
  * Exported so `sidebar.ts` can guard its own re-render under the *same*
@@ -195,6 +208,7 @@ export function renderTabStrip(
     tabEl.setAttribute("role", "tab");
     tabEl.tabIndex = tab.focused ? 0 : -1;
     tabEl.draggable = true;
+    tabEl.title = tabShortcutTooltip(tab.label, index, tabs.length);
     if (tab.focused) tabEl.classList.add("active");
     if (tab.agent_status === "blocked" && !tab.focused) tabEl.classList.add("is-blocked");
 

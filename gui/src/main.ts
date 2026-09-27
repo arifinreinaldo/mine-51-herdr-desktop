@@ -32,7 +32,7 @@ import {
   wireMenuBarNow,
   wirePerfHudToggle,
 } from "./appMenuBar";
-import { appState, doneDetector } from "./appState";
+import { appState, doneDetector, tabMru } from "./appState";
 import { renderSidebarNow } from "./appSidebarPanel";
 import { applySidebarVisibility, applySidebarWidth, wireNewWorkspaceControls, wireSidebarResize } from "./appSidebarResize";
 import { renderStatusBarNow, renderUsageBarNow, wireUsageRefresh } from "./appStatusBar";
@@ -141,6 +141,9 @@ async function wireEvents(): Promise<void> {
   await listen<RawSnapshot>("snapshot", (event) => {
     const previousBootId = appState.snapshot?.boot_id;
     appState.snapshot = event.payload;
+    // Keyboard shortcut Alt+`: feed the MRU tracker from every snapshot's
+    // focused tab, across all workspaces (not just the current one).
+    tabMru.record(appState.snapshot.focused_tab_id);
     // Finding #11: "the next snapshot is authoritative" -- any new
     // snapshot, whether or not it is the one confirming a pending
     // `tab.move`, ends the optimistic reorder window.
