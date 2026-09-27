@@ -24,6 +24,7 @@ import {
 } from "./appDom";
 import { applyCurrentTheme, currentThemeDef, rendererThemeFrom } from "./appLookups";
 import {
+  initAutostartState,
   onPasteOverride,
   onShortcut,
   onTerminalKey,
@@ -47,6 +48,8 @@ import { onRenderGuardReleased } from "./ui/renderGuard";
 import { SIDEBAR_RENDER_GUARD_REGION } from "./ui/sidebar";
 import { TerminalRenderer } from "./render/renderer";
 import { formatTitlebarCenter, wireTitlebarControls } from "./ui/titlebar";
+import { decideConnectionBanner, type EngineKind } from "./connectionBanner";
+import { openSetupWizard } from "./wizard/wizard";
 
 function paintChromeSkeleton(): void {
   sidebarEl.textContent = "";
@@ -60,6 +63,78 @@ function reportReadyAfterTwoFrames(startedAt: number): void {
       void invokeSafe("report_ready", { ms });
     });
   });
+}
+
+let startHerdrBtnBusy = false;
+let bannerRenderGeneration = 0;
+
+interface EngineStatusWireForBanner {
+  kind: EngineKind;
+}
+
+/** Paints one `BannerDecision` (spec addendum §11.3) into `bannerEl`: the
+ * "checking"/"engine missing" states show no button or [Open Setup]; the
+ * "server down, engine found" state keeps the existing [Start herdr]
+ * (finding #4 "no 'Start herdr' button"). The Start button invokes
+ * `engine_force_start_server` (bypasses the once-per-launch auto-start
+ * guard, since this is an explicit user click, spec §3.3), is disabled
+ * while a click is in flight, and reports its result through the existing
+ * transient error-notice mechanism (there is no other notice channel). */
+function paintConnectionBanner(decision: ReturnType<typeof decideConnectionBanner>): void {
+  bannerEl.innerHTML = "";
+  bannerEl.hidden = !decision.visible;
+  if (!decision.visible) return;
+
+  const text = document.createElement("span");
+  text.className = "connection-banner__text";
+  text.textContent = decision.message;
+  bannerEl.appendChild(text);
+
+  if (decision.action === "open_setup") {
+    const openSetupBtn = document.createElement("button");
+    openSetupBtn.className = "btn connection-banner__start-btn";
+    openSetupBtn.textContent = "Open Setup";
+    openSetupBtn.addEventListener("click", () => openSetupWizard());
+    bannerEl.appendChild(openSetupBtn);
+    return;
+  }
+
+  if (decision.action !== "start_herdr") return;
+
+  const startBtn = document.createElement("button");
+  startBtn.className = "btn connection-banner__start-btn";
+  startBtn.textContent = "Start herdr";
+  startBtn.disabled = startHerdrBtnBusy;
+  startBtn.addEventListener("click", () => {
+    void (async () => {
+      startHerdrBtnBusy = true;
+      startBtn.disabled = true;
+      startBtn.textContent = "Starting…";
+      const started = await invokeSafe<boolean>("engine_force_start_server");
+      startHerdrBtnBusy = false;
+      showErrorNotice(started ? "herdr server started." : "Could not start the herdr server.");
+      startBtn.disabled = false;
+      startBtn.textContent = "Start herdr";
+    })();
+  });
+  bannerEl.appendChild(startBtn);
+}
+
+/** The disconnected banner (spec addendum §11.3): rebuilt on every
+ * `connection-status` event. The engine status needs its own async round
+ * trip (`engine_status`), so this paints immediately from the "unknown"
+ * state, then repaints once the probe resolves; a generation counter drops
+ * a stale resolve from a since-superseded event (e.g. the server
+ * reconnected while the probe was still in flight). */
+function renderConnectionBanner(status: string, socketPath: string): void {
+  const generation = ++bannerRenderGeneration;
+  paintConnectionBanner(decideConnectionBanner(status, null, socketPath));
+  if (status !== "unavailable" && status !== "disconnected") return;
+  void (async () => {
+    const engineStatus = await invokeSafe<EngineStatusWireForBanner>("engine_status");
+    if (generation !== bannerRenderGeneration) return;
+    paintConnectionBanner(decideConnectionBanner(status, engineStatus?.kind ?? "missing", socketPath));
+  })();
 }
 
 async function wireEvents(): Promise<void> {
@@ -94,13 +169,7 @@ async function wireEvents(): Promise<void> {
     if (appState.lastConnectionStatus !== "connected") {
       doneDetector.resetBaseline();
     }
-    if (appState.lastConnectionStatus === "unavailable" || appState.lastConnectionStatus === "disconnected") {
-      bannerEl.hidden = false;
-      bannerEl.textContent = `herdr server not reachable at ${event.payload.socketPath} — retrying`;
-    } else {
-      bannerEl.hidden = true;
-      bannerEl.textContent = "";
-    }
+    renderConnectionBanner(appState.lastConnectionStatus, event.payload.socketPath);
     renderStatusBarNow();
   });
 }
@@ -155,9 +224,18 @@ async function main(): Promise<void> {
   window.addEventListener("blur", () => {
     appState.windowFocused = false;
   });
+  // Phase 1.6 spec §6.2 "No painting while minimized": WebView2 reports a
+  // minimized window as `document.hidden` (Chromium's own Page Visibility
+  // behavior), so this one listener covers both "minimized" and "hidden".
+  document.addEventListener("visibilitychange", () => {
+    appState.renderer?.setPaused(document.hidden);
+  });
 
   await wireEvents();
   await subscribeSurface();
+  void initAutostartState();
+  // Phase 1.6 addendum §11 item 2: no first-run auto-open. The Setup wizard
+  // opens only from herdr menu ▸ Setup… (`openSetupWizard`).
   // Finding #8: reset right before the `sync_state` replay too, not just
   // on a boot_id change or a disconnect -- a no-op today (the detector's
   // baseline already starts `null`), but it is the third of the spec's

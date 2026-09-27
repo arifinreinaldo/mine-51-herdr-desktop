@@ -11,8 +11,10 @@
     "check": "cargo fmt --check && cargo clippy --workspace -- -D warnings && cargo test --workspace && tsc --noEmit && vitest run",
     "test:rust": "cargo test --workspace",
     "test:ts": "vitest run",
+    "test:ps": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/test-statusline.ps1",
     "e2e": "wdio run tests/e2e/wdio.conf.ts",
-    "bench:startup": "node scripts/bench-startup.mjs"
+    "bench:startup": "node scripts/bench-startup.mjs",
+    "package": "node scripts/package.mjs"
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.36"

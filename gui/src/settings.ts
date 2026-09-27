@@ -15,6 +15,8 @@ export interface Settings {
   fontSize: number;
   agentSort: AgentSort;
   desktopNotifications: boolean;
+  /** Phase 1.6 §4: the first-run wizard's trigger. */
+  firstRunComplete: boolean;
 }
 
 export interface SettingsGetResponse {
@@ -31,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fontSize: 14,
   agentSort: "priority",
   desktopNotifications: true,
+  firstRunComplete: false,
 };
 
 export async function loadSettings(): Promise<SettingsGetResponse> {

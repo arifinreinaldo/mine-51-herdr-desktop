@@ -43,6 +43,11 @@ pub struct Settings {
     pub agent_sort: String,
     #[serde(default = "default_true")]
     pub desktop_notifications: bool,
+    /// Phase 1.6 §4: the first-run wizard's trigger. Also set by `herdr
+    /// menu ▸ Setup…` re-running it (the wizard just flips this back to
+    /// `false` on open and `true` again on its own Done step).
+    #[serde(default)]
+    pub first_run_complete: bool,
 }
 
 fn default_theme() -> String {
@@ -72,6 +77,7 @@ impl Default for Settings {
             font_size: default_font_size(),
             agent_sort: default_agent_sort(),
             desktop_notifications: true,
+            first_run_complete: false,
         }
     }
 }

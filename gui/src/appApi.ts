@@ -30,6 +30,21 @@ export function invokeSafe<T>(cmd: string, args?: Record<string, unknown>): Prom
   });
 }
 
+/** For a `Result<(), ApiError>` command, where the resolved success value
+ * is `()` -- serialized as JSON `null`, which is *not* reliably
+ * distinguishable from `invokeSafe`'s own `undefined` failure sentinel
+ * across every IPC layer version. Resolves `true`/`false` from whether the
+ * call actually rejected, never from its resolved value's shape. */
+export async function invokeOk(cmd: string, args?: Record<string, unknown>): Promise<boolean> {
+  try {
+    await invoke(cmd, args);
+    return true;
+  } catch (err: unknown) {
+    showErrorNotice(errorMessage(err));
+    return false;
+  }
+}
+
 export async function api<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T | undefined> {
   const result = await invokeSafe<unknown>("api", { method, params });
   return result as T | undefined;

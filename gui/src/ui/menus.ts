@@ -58,6 +58,10 @@ export interface MenuBarContext {
   onOpenSettings(): void;
   onOpenKeyboardShortcuts(): void;
   onReloadConfig(): void;
+  onSetupWizard(): void;
+  onStopServer(): void;
+  autostartEnabled: boolean;
+  onToggleAutostart(): void;
   updateAvailable: boolean;
   latestReleaseNotesAvailable: boolean;
   /** Finding #15 "'What's New' inert/hidden when release_notes is None":
@@ -238,6 +242,14 @@ function herdrMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
     { id: "herdr.settings", label: "Settings…", shortcut: shortcutDisplay("herdr.settings"), onSelect: ctx.onOpenSettings },
     { id: "herdr.shortcuts", label: "Keyboard Shortcuts", onSelect: ctx.onOpenKeyboardShortcuts },
     { id: "herdr.reload", label: "Reload Config", onSelect: ctx.onReloadConfig },
+    { id: "herdr.setup", label: "Setup…", separatorBefore: true, onSelect: ctx.onSetupWizard },
+    { id: "herdr.stopServer", label: "Stop Server…", onSelect: ctx.onStopServer },
+    {
+      id: "herdr.autostart",
+      label: "Start at Login",
+      checked: ctx.autostartEnabled,
+      onSelect: ctx.onToggleAutostart,
+    },
   ];
   if (ctx.updateAvailable || ctx.latestReleaseNotesAvailable) {
     items.push({

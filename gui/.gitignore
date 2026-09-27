@@ -11,3 +11,8 @@ src-tauri/gen/schemas
 
 # Generated golden bytes are committed (spec §9.7); only scratch bench output is ignored.
 scripts/*.local.json
+
+# Phase 1.6 §2.1: the bundled herdr zip + copied install.ps1 are fetched at
+# build time by scripts/fetch-herdr-package.mjs, never committed.
+# resources/statusline/* (the GUI's own PS1 tap) IS committed.
+src-tauri/resources/herdr/

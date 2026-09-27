@@ -34,7 +34,7 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 /// frontend's first `ResizeObserver`-driven `resize` call. `surface_active:
 /// true`, `surface_reuse: false`, `surface_delta: false` per spec:
 /// full/patch `PaneSurface` frames only.
-fn initial_hello(inner: &Inner) -> EndpointClientHello {
+pub(crate) fn initial_hello(inner: &Inner) -> EndpointClientHello {
     let (cols, rows, cell_width_px, cell_height_px) = inner.last_size();
     EndpointClientHello {
         generation: 1,
@@ -92,6 +92,16 @@ pub async fn run_reconnect_loop(app: AppHandle, inner: Arc<Inner>) {
 
         match Connection::connect(&socket_path, &initial_hello(&inner)).await {
             Ok(conn) => {
+                // Finding #1 "Stop Server auto-undone": a successful
+                // connection means herdr is up right now, whether or not
+                // *this* launch's own auto-start ever had to spawn it.
+                // Claiming the guard here too means a later disconnect --
+                // including a deliberate Stop that runs outside
+                // `engine_stop_server` (e.g. `herdr server stop` from a
+                // terminal) -- always shows the banner instead of being
+                // silently respawned; this launch already got its one
+                // silent start opportunity, spent or not.
+                inner.server_start_guard.try_claim();
                 let conn = Arc::new(conn);
                 *inner.connection.write().await = Some(conn.clone());
                 emit_connection_status(
@@ -109,10 +119,84 @@ pub async fn run_reconnect_loop(app: AppHandle, inner: Arc<Inner>) {
             }
             Err(_) => {
                 emit_connection_status(&app, &inner, "unavailable", &socket_path_str, None);
+                maybe_auto_start_server(&inner, &socket_path).await;
             }
         }
 
         tokio::time::sleep(RECONNECT_DELAY).await;
+    }
+}
+
+/// Phase 1.6 spec §3.3: "the reconnect loop uses probe -> start -> connect.
+/// It starts the server once per launch." `ensure_server_started` itself
+/// holds the actual probe -> start -> poll decision and the start-once
+/// guard (spec §3.3 "one entry point"); this just skips even *locating*
+/// herdr (an extra `--version` subprocess) once that one attempt for this
+/// launch has already happened, so a permanently-down/never-installed
+/// herdr doesn't get re-probed on every failed reconnect forever.
+async fn maybe_auto_start_server(inner: &Inner, socket_path: &std::path::Path) {
+    if inner.server_start_guard.already_claimed() {
+        return;
+    }
+    let status = crate::engine::locate_herdr().await;
+    if !should_attempt_auto_start(&status) {
+        // Finding #2 "clean-machine ordering": Missing/Broken (installing
+        // herdr is the wizard's job, spec §4.1) never claims the guard
+        // here. The old code claimed it unconditionally on this branch, on
+        // the theory that it would otherwise re-run `herdr --version` on
+        // every failed reconnect forever -- but claiming it also
+        // permanently spent this launch's one silent start attempt before
+        // any real spawn was ever attempted. Right after the wizard
+        // installs herdr, `engine_ensure_server_started` would then find
+        // the guard already claimed and (pre-finding-#3) report a false
+        // failure. `locate_herdr` is one `--version` probe (~3s worst
+        // case, `RECONNECT_DELAY` is 2s) -- an acceptable, bounded cost to
+        // keep re-checking while herdr is genuinely still missing, not a
+        // runaway loop.
+        return;
+    }
+    let crate::engine::EngineStatus::Found { path, .. } = status else {
+        return; // unreachable given should_attempt_auto_start's contract
+    };
+    let hello = initial_hello(inner);
+    let _ =
+        crate::engine::ensure_server_started(&inner.server_start_guard, &path, socket_path, &hello)
+            .await;
+}
+
+/// Whether `maybe_auto_start_server` should even attempt a start for
+/// `status` (finding #2 "clean-machine ordering"): only `Found` ever
+/// spawns anything, so only `Found` may touch the start-once guard.
+fn should_attempt_auto_start(status: &crate::engine::EngineStatus) -> bool {
+    matches!(status, crate::engine::EngineStatus::Found { .. })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn missing_and_broken_never_attempt_auto_start() {
+        assert!(!should_attempt_auto_start(
+            &crate::engine::EngineStatus::Missing
+        ));
+        assert!(!should_attempt_auto_start(
+            &crate::engine::EngineStatus::Broken {
+                path: PathBuf::from("herdr.exe"),
+                error: "boom".to_string(),
+            }
+        ));
+    }
+
+    #[test]
+    fn found_attempts_auto_start() {
+        assert!(should_attempt_auto_start(
+            &crate::engine::EngineStatus::Found {
+                path: PathBuf::from("herdr.exe"),
+                version: "0.9.1".to_string(),
+            }
+        ));
     }
 }
 

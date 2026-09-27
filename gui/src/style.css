@@ -565,15 +565,30 @@ body.has-workspace-colors #tab-strip {
   right: 0;
   z-index: 5;
   height: 24px;
-  line-height: 24px;
   padding: 0 8px;
   background: var(--statusBarItem-warningBackground);
   color: var(--foreground);
   font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .connection-banner[hidden] {
   display: none;
+}
+
+.connection-banner__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connection-banner__start-btn {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  font-size: 12px;
 }
 
 #perf-hud {
@@ -1098,4 +1113,244 @@ body.has-workspace-colors #tab-strip {
   grid-row: 2;
   white-space: nowrap;
   text-align: right;
+}
+
+.btn--primary {
+  background: var(--button-background, var(--focusBorder));
+  color: var(--button-foreground, #ffffff);
+  border-color: var(--button-background, var(--focusBorder));
+}
+
+.btn--primary:hover {
+  filter: brightness(1.1);
+}
+
+/* ---------------------------------------------------------------------- */
+/* First-run wizard (Phase 1.6 spec §4): a full-window overlay, VS Code    */
+/* walkthrough pattern -- a left step list, the active step on the right. */
+/* z-index below #overlay-root (100), so any confirm popover the wizard's  */
+/* own steps open still renders on top of the wizard panel.                */
+/* ---------------------------------------------------------------------- */
+
+.wizard-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+}
+
+.wizard-panel {
+  width: min(860px, 92vw);
+  height: min(600px, 88vh);
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  background: var(--menu-background);
+  color: var(--menu-foreground);
+  border: 1px solid var(--menu-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.wizard-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--menu-separatorBackground);
+  padding: 12px 0;
+}
+
+.wizard-title {
+  margin: 0 14px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--descriptionForeground);
+}
+
+.wizard-step-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.wizard-step-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  color: var(--descriptionForeground);
+}
+
+.wizard-step-row:hover {
+  background: var(--list-hoverBackground);
+}
+
+.wizard-step-row.is-active {
+  background: var(--list-activeSelectionBackground);
+  color: var(--list-activeSelectionForeground);
+}
+
+.wizard-step-row--completed .wizard-step-row__title {
+  color: var(--herdr-status-done);
+}
+
+.wizard-step-row .codicon-check {
+  color: var(--herdr-status-done);
+  font-size: 14px;
+}
+
+.wizard-finish-later {
+  margin: 8px 14px 0;
+  text-align: left;
+  color: var(--descriptionForeground);
+}
+
+.wizard-content {
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+
+.wizard-content h3 {
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+
+.wizard-step-description {
+  color: var(--descriptionForeground);
+  margin-bottom: 10px;
+}
+
+.wizard-step-footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.wizard-log {
+  margin-top: 10px;
+  padding: 8px 10px;
+  max-height: 160px;
+  overflow-y: auto;
+  background: var(--terminal-background);
+  border: 1px solid var(--menu-border);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.wizard-summary-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.wizard-summary-list li {
+  margin-bottom: 6px;
+}
+
+.wizard-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--menu-border);
+  color: var(--descriptionForeground);
+}
+
+.wizard-tag--ok {
+  border-color: var(--herdr-status-done);
+  color: var(--herdr-status-done);
+}
+
+.wizard-link {
+  color: var(--descriptionForeground);
+  text-decoration: underline;
+}
+
+.wizard-consent {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--menu-border);
+  border-radius: 6px;
+  background: var(--editorHoverWidget-background);
+}
+
+.wizard-consent__label {
+  margin-bottom: 4px;
+}
+
+.wizard-consent__command {
+  font-family: monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+  background: var(--terminal-background);
+  border-radius: 4px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.wizard-consent__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.wizard-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wizard-provider-card {
+  border: 1px solid var(--menu-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.wizard-provider-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.wizard-provider-card__meta {
+  color: var(--descriptionForeground);
+  font-size: 11px;
+  margin: 2px 0;
+}
+
+.wizard-provider-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.wizard-provider-more {
+  margin-top: 8px;
+  border-top: 1px solid var(--menu-separatorBackground);
+  padding-top: 8px;
+}
+
+.wizard-provider-more__row {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.wizard-note {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--herdr-status-done);
+  border-radius: 6px;
+}
+
+.wizard-usage-body p {
+  margin-bottom: 6px;
 }

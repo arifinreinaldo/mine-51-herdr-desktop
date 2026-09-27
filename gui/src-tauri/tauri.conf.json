@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "herdr-gui",
+  "productName": "Herdr Desktop",
   "version": "0.1.0",
   "identifier": "dev.herdr.gui",
   "build": {
@@ -22,7 +22,8 @@
         "visible": false,
         "decorations": false,
         "backgroundColor": "#1f1f1f",
-        "zoomHotkeysEnabled": false
+        "zoomHotkeysEnabled": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-networking --disable-component-update --disable-sync --disable-default-apps --no-first-run"
       }
     ],
     "security": {
@@ -31,7 +32,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

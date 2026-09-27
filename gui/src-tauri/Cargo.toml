@@ -20,10 +20,16 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 herdr-wire = { path = "../crates/herdr-wire" }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `preserve_order` (Phase 1.6 §7): the statusLine editor (`statusline.rs`)
+# reads and rewrites `~/.claude/settings.json` while keeping every other
+# key's order unchanged (spec §4.3 step 5).
+serde_json = { version = "1", features = ["preserve_order"] }
 bincode = { version = "2", features = ["serde"] }
 interprocess = { version = "2.4.2", features = ["tokio"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs"] }
+# `process` (Phase 1.6 §3): `engine.rs` spawns `herdr --version`/`herdr
+# server`/`herdr server stop`/`powershell.exe -File install.ps1` and streams
+# their stdout/stderr.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs", "process"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
@@ -46,6 +52,28 @@ zip = "2"
 # JSONC-tolerant parser for VS Code theme files (comments + trailing commas,
 # spec §2.3 "Theme JSON is JSONC").
 json5 = "0.4"
+# `herdr menu > Start at Login` (Phase 1.6 §3.3): HKCU Run, launches the GUI
+# (never a Windows service).
+tauri-plugin-autostart = "2"
+# Second launch focuses/unminimizes the existing window instead of failing
+# to create its webview (0x800700AA, the profile is in use) -- Phase 1.6
+# addendum §11 item 4. Registered first in `lib.rs`'s builder, before every
+# other plugin.
+tauri-plugin-single-instance = "2"
+# The embedded engine payload's SHA-256 re-verify at install time (Phase 1.6
+# addendum §11.1): already resolved in the tree at this exact version via
+# `zip`'s own dependency chain (see Cargo.lock), so this adds no second copy.
+sha2 = "0.10"
+# WebView2 memory target (Phase 1.6 §6.1): dropped to LOW while the window
+# is minimized/hidden, back to NORMAL on restore. Windows only -- `wry`
+# already depends on this exact version, so this adds no second copy.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+# `Interface::cast` (COM interface upcasting to `ICoreWebView2_19`) and
+# `windows::core::Result`, spec §7: "Use windows/windows-sys only if they
+# are already in the tree" -- `windows` 0.61 is already resolved (via
+# `webview2-com`/`wry`), so this adds no second copy either.
+windows = { version = "0.61", features = [] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs", "test-util"] }

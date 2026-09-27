@@ -25,6 +25,7 @@ import { BUILT_IN_THEMES } from "./themes/index";
 import { openModal } from "./ui/modal";
 import { wireMenuBar, type MenuBarContext } from "./ui/menus";
 import { closeActiveOverlay } from "./ui/overlay";
+import { openSetupWizard } from "./wizard/wizard";
 import { startTabInlineRename, type TabRow } from "./ui/tabs";
 import {
   canMoveLeft,
@@ -32,6 +33,19 @@ import {
   moveLeftInsertIndex,
   moveRightInsertIndex,
 } from "./workspace/tabMove";
+
+// Phase 1.6 §3.3 "herdr menu ▸ Start at Login": cached here (not in
+// `appState.settings`) because it's not a GUI setting -- it's read from
+// the OS (HKCU Run via `tauri-plugin-autostart`), so it must be re-fetched
+// rather than persisted/defaulted like the rest of `menuBarContext`.
+let autostartEnabled = false;
+
+/** Fetches the current autostart registration once at startup, so the
+ * menu's checkmark reflects reality on the very first open. */
+export async function initAutostartState(): Promise<void> {
+  autostartEnabled = (await invokeSafe<boolean>("autostart_get")) ?? false;
+  menuBarContext.autostartEnabled = autostartEnabled;
+}
 
 /** F2 (tab UI focus only) and `Tab ▸ Rename Tab…` both trigger the same
  * inline rename UI double-click uses (spec §4/§6), not a native prompt. */
@@ -179,6 +193,40 @@ export const menuBarContext: MenuBarContext = {
     persistSettings();
   },
   onOpenSettings: () => void invokeSafe("open_settings"),
+  onSetupWizard: () => openSetupWizard(),
+  onStopServer: () => {
+    const agentCount = appState.snapshot?.agents.length ?? 0;
+    const dispose = openModal("Stop herdr server?", (body) => {
+      const p = document.createElement("p");
+      p.textContent =
+        agentCount > 0
+          ? `${agentCount} agent(s) running will stop.`
+          : "No agents are currently running.";
+      body.appendChild(p);
+      const actions = document.createElement("div");
+      actions.className = "confirm-popover__actions";
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "btn";
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.addEventListener("click", () => dispose());
+      const confirmBtn = document.createElement("button");
+      confirmBtn.className = "btn btn--danger";
+      confirmBtn.textContent = "Stop Server";
+      confirmBtn.addEventListener("click", () => {
+        dispose();
+        void invokeSafe("engine_stop_server");
+      });
+      actions.appendChild(cancelBtn);
+      actions.appendChild(confirmBtn);
+      body.appendChild(actions);
+    });
+  },
+  autostartEnabled,
+  onToggleAutostart: () => {
+    autostartEnabled = !autostartEnabled;
+    menuBarContext.autostartEnabled = autostartEnabled;
+    void invokeSafe("autostart_set", { enabled: autostartEnabled });
+  },
   onOpenKeyboardShortcuts: () => {
     openModal("Keyboard Shortcuts", (body) => {
       for (const action of SHORTCUTS) {
@@ -239,6 +287,7 @@ export function refreshMenuBarContext(): void {
   menuBarContext.currentThemeId = appState.settings.theme;
   menuBarContext.themes = appState.themeRegistry.list();
   menuBarContext.desktopNotifications = appState.settings.desktopNotifications;
+  menuBarContext.autostartEnabled = autostartEnabled;
   menuBarContext.updateAvailable = Boolean(appState.snapshot?.update_available);
   menuBarContext.latestReleaseNotesAvailable = Boolean(appState.snapshot?.latest_release_notes_available);
   menuBarContext.releaseNotesPresent = Boolean(appState.snapshot?.release_notes);

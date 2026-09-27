@@ -79,6 +79,10 @@ pub struct Inner {
     /// A `tokio` mutex, not `StdMutex`, because the lock is held across the
     /// blocking file write inside an `async fn` command.
     pub settings_save_lock: tokio::sync::Mutex<()>,
+    /// The once-per-launch herdr server auto-start guard (Phase 1.6 spec
+    /// §3.3): shared by the reconnect loop's `Err` arm and the wizard's
+    /// step 1, per "one entry point `ensure_server_started()`".
+    pub server_start_guard: crate::engine::StartOnceGuard,
 }
 
 impl Inner {
@@ -98,6 +102,7 @@ impl Inner {
             last_connection_status: StdMutex::new(None),
             toast_limiter: StdMutex::new(crate::notify::ToastRateLimiter::default()),
             settings_save_lock: tokio::sync::Mutex::new(()),
+            server_start_guard: crate::engine::StartOnceGuard::default(),
         }
     }
 

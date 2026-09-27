@@ -162,6 +162,8 @@ export class TerminalRenderer {
   private atlas: GlyphAtlas;
   private pendingDirty: Set<number> | "all" | null = null;
   private rafScheduled = false;
+  /** Phase 1.6 spec §6.2 "No painting while minimized". */
+  private paused = false;
   private perfLog = new PerfLog();
   private perfHudVisible = false;
   private lastLogAt = 0;
@@ -271,10 +273,28 @@ export class TerminalRenderer {
       if (!this.pendingDirty) this.pendingDirty = new Set();
       for (const y of rows) this.pendingDirty.add(y);
     }
-    if (!this.rafScheduled) {
+    // Phase 1.6 spec §6.2: never schedule a paint while paused (minimized
+    // or `document.hidden`) -- `pendingDirty` still accumulates, so
+    // `setPaused(false)` can catch up with one full repaint.
+    if (!this.rafScheduled && !this.paused) {
       this.rafScheduled = true;
       requestAnimationFrame(() => this.flush());
     }
+  }
+
+  /** Phase 1.6 spec §6.2 "No painting while minimized": stop scheduling
+   * rAF paints while `paused`. Frames keep being applied to the grid as
+   * usual either way (spec: "Keep applying frames to the mirror"); only
+   * the paint itself is skipped. Un-pausing does one full repaint of
+   * whatever accumulated while paused. */
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    if (!paused) this.markDirty("all");
+  }
+
+  isPaused(): boolean {
+    return this.paused;
   }
 
   /** Spec §8.2: recompute cell size/backing store on font size, DPR, or

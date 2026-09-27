@@ -4,11 +4,14 @@
 pub mod commands;
 pub mod conn;
 pub mod dispatch;
+pub mod engine;
 pub mod folder_picker;
+pub mod memory;
 pub mod mirror;
 pub mod notify;
 pub mod settings;
 pub mod socket;
+pub mod statusline;
 pub mod surface_encode;
 pub mod theme_import;
 pub mod usage;
@@ -17,7 +20,7 @@ pub mod window_chrome;
 use std::time::{Duration, Instant};
 
 use commands::AppState;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tracing_subscriber::EnvFilter;
 
 /// Initializes logging to `%LOCALAPPDATA%\herdr-gui\logs` (spec §4
@@ -41,10 +44,25 @@ pub fn run(start: Instant) {
     let prevent_default_plugin = build_prevent_default_plugin();
 
     let app = tauri::Builder::default()
+        // Phase 1.6 addendum §11 item 4: registered first, before every
+        // other plugin. A second launch focuses/unminimizes the existing
+        // window instead of failing to create its own webview
+        // (`0x800700AA`, the profile is already in use) and then exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(prevent_default_plugin)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::send_input,
@@ -65,6 +83,19 @@ pub fn run(start: Instant) {
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,
             notify::notify_agent_done,
+            engine::engine_status,
+            engine::engine_install,
+            engine::engine_ensure_server_started,
+            engine::engine_force_start_server,
+            engine::engine_stop_server,
+            engine::node_version,
+            engine::gemini_version,
+            engine::autostart_get,
+            engine::autostart_set,
+            engine::restart_gui,
+            statusline::statusline_status,
+            statusline::statusline_install,
+            statusline::statusline_undo,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -73,6 +104,9 @@ pub fn run(start: Instant) {
                 inner.clone(),
             ));
             tauri::async_runtime::spawn(run_usage_poll_loop(app_handle, inner.clone()));
+            if let Some(window) = app.get_webview_window("main") {
+                memory::wire_memory_target(&window);
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

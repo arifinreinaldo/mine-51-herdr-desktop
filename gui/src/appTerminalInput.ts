@@ -26,13 +26,11 @@ export function sendPaste(text: string): void {
   void invokeSafe("send_input", { paneId, events: [{ Paste: text }] });
 }
 
-export function sendKeyEvent(mapped: { code: unknown; modifiers: number }): void {
-  const paneId = targetPaneId();
-  if (!paneId) return;
-  const event = {
+function keyEvent(code: unknown, modifiers: number): unknown {
+  return {
     Key: {
-      code: mapped.code,
-      modifiers: mapped.modifiers,
+      code,
+      modifiers,
       kind: "Press",
       repeat_count: 1,
       shifted_codepoint: null,
@@ -42,7 +40,22 @@ export function sendKeyEvent(mapped: { code: unknown; modifiers: number }): void
       windows_record: null,
     },
   };
-  void invokeSafe("send_input", { paneId, events: [event] });
+}
+
+export function sendKeyEvent(mapped: { code: unknown; modifiers: number }): void {
+  const paneId = targetPaneId();
+  if (!paneId) return;
+  void invokeSafe("send_input", { paneId, events: [keyEvent(mapped.code, mapped.modifiers)] });
+}
+
+/** Types `command` into `paneId` and presses Enter, through the exact same
+ * `ClientShellPaneInput` events a user's own typing produces
+ * (`TextCommit` then `Key Enter`) -- the wizard's provider-install/sign-in
+ * flow uses this (Phase 1.6 spec §4.2 "through the existing input path"),
+ * targeting a specific pane rather than whichever one currently has focus. */
+export async function sendCommandLineToPane(paneId: string, command: string): Promise<void> {
+  await invokeSafe("send_input", { paneId, events: [{ TextCommit: command }] });
+  await invokeSafe("send_input", { paneId, events: [keyEvent("Enter", 0)] });
 }
 
 async function onCanvasClick(event: MouseEvent): Promise<void> {
