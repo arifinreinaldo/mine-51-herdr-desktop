@@ -26,7 +26,7 @@ import { renderTabsNow } from "./appTabStrip";
 /** The agents that would stop if a workspace closed (UX pass 1 spec §1
  * "Name what stops"), grouped by `workspace_id`. Only "working" or
  * "blocked" agents belong here. */
-function computeWorkspaceAgentLines(): Map<string, WorkspaceAgentLine[]> {
+export function computeWorkspaceAgentLines(): Map<string, WorkspaceAgentLine[]> {
   const map = new Map<string, WorkspaceAgentLine[]>();
   for (const agent of appState.snapshot?.agents ?? []) {
     if (agent.agent_status !== "working" && agent.agent_status !== "blocked") continue;

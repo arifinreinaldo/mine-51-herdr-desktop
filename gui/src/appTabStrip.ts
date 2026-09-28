@@ -1,3 +1,4 @@
+import { requestCloseTab } from "./tabClose";
 // Tab strip rendering, drag/move, and the overflow chevron's "All Tabs"
 // modal (finding #16 extraction from `main.ts`).
 
@@ -81,7 +82,7 @@ export function renderTabsNow(): void {
     },
     onCloseTab: (id) => {
       if (!requireConnected()) return;
-      void api("tab.close", { tab_id: id });
+      requestCloseTab(id);
     },
     onRenameTab: (id, label) => {
       if (!requireConnected()) return;

@@ -1,3 +1,4 @@
+import { requestCloseTab } from "./tabClose";
 // The menu bar's declarative action table (`MenuBarContext`), the
 // keyboard-shortcut dispatch table that mirrors it, and the handful of
 // chrome actions (F2 rename, the perf HUD toggle) that don't cleanly
@@ -84,7 +85,7 @@ export const menuBarContext: MenuBarContext = {
   },
   onNewTab: () => void api("tab.create", { workspace_id: appState.snapshot?.focused_workspace_id ?? undefined, focus: true }),
   onCloseTab: () => {
-    if (appState.snapshot?.focused_tab_id) void api("tab.close", { tab_id: appState.snapshot.focused_tab_id });
+    if (appState.snapshot?.focused_tab_id) requestCloseTab(appState.snapshot.focused_tab_id);
   },
   onRenameActiveTab: renameFocusedTab,
   onNextTab: () => {
