@@ -1,14 +1,16 @@
-# Herdr Desktop
+# Cowbell
+
+Cowbell — a desktop for herdr.
 
 A Windows desktop app for running many coding agents side by side — Claude Code,
 Codex, OpenCode, Copilot CLI, Cursor, Gemini and more — built on top of
 [herdr](https://github.com/herdrdev/herdr), the terminal runtime for coding agents.
 
-Herdr Desktop gives herdr a VS Code-style window: a workspace sidebar, editor-style
+Cowbell gives herdr a VS Code-style window: a workspace sidebar, editor-style
 tabs, a crisp GPU-friendly terminal, and a status bar that tells you which agent
 needs you next.
 
-![Herdr Desktop main window](gui/docs/screenshots/main-window.png)
+![Cowbell main window](gui/docs/screenshots/main-window.png)
 
 > Screenshots use a demo session (`acme-api`, `web-dashboard`, …); the terminal shows
 > this repository's own commit history.
@@ -29,7 +31,7 @@ Windows notification instead.
 
 The status bar shows your 5-hour Claude usage and time left. Hover it for the
 weekly limit and reset times. The numbers come from Claude Code's own status line —
-Herdr Desktop never reads or stores your Claude credentials.
+Cowbell never reads or stores your Claude credentials.
 
 ![Claude usage popover](gui/docs/screenshots/claude-usage.png)
 
@@ -100,14 +102,16 @@ Ctrl+C, Ctrl+R or Ctrl+T still reach Claude Code and your shell. Press
 
 ## Download and run
 
-Herdr Desktop is a single portable `.exe` — no installer.
+Cowbell is a single portable `.exe` — no installer.
 
-1. Download `Herdr Desktop.exe` from the
+1. Download `Cowbell.exe` from the
    [Releases](https://github.com/arifinreinaldo/mine-51-herdr-desktop/releases) page.
 2. Run it. The build is not code-signed yet, so Windows SmartScreen may warn you:
    choose **More info → Run anyway**.
-3. If herdr is not installed, the banner offers **Open Setup**. The herdr engine
-   (0.9.1) is bundled inside the `.exe` and installs offline after a SHA-256 check.
+3. Cowbell does not bundle herdr — it is a separate install. If herdr is not
+   installed, the banner offers **Open Setup**, or *herdr ▸ Setup…*, which runs
+   **Install herdr**: herdr's own official installer from
+   [herdr.dev](https://herdr.dev), downloaded and run over HTTPS.
 
 Requirements: Windows 10 or 11 (64-bit) with the WebView2 runtime (built into
 Windows 11).
@@ -123,16 +127,19 @@ npm run check      # format, clippy, Rust + Vitest tests
 npm run package    # portable exe -> gui/target-agent/release/portable/
 ```
 
-`npm run package` downloads the pinned herdr release package and verifies its
-SHA-256 before embedding it. Specs and design notes live in [`gui/docs/`](gui/docs).
+`npm run package` regenerates the third-party notices file
+(`gui/public/THIRD-PARTY-NOTICES.txt`) before building. It does not bundle a
+herdr release — Cowbell installs herdr separately, at first run, from
+herdr.dev. Specs and design notes live in [`gui/docs/`](gui/docs).
 
 ## How it works
 
-Herdr Desktop is a client of a normal herdr server. It connects over herdr's
+Cowbell is a client of a normal herdr server. It connects over herdr's
 stable client protocol (generation 1), renders the server's terminal grid on a
 canvas, and sends keyboard input back. Workspaces, tabs, panes and agent detection
 all live in herdr, so the terminal UI and the desktop app can share the same
-sessions.
+sessions. See [`gui/docs/protocol-choice.md`](gui/docs/protocol-choice.md) for why
+Cowbell uses this protocol.
 
 ```
 gui/
@@ -141,11 +148,31 @@ gui/
   crates/herdr-wire/  herdr client protocol types
 ```
 
-## Credits and license
+## Licence
 
-Herdr Desktop is a fork of [herdr](https://github.com/herdrdev/herdr) by the herdr
-authors, licensed under the [Apache License 2.0](LICENSE). The original herdr README
-is kept in [`README.herdr.md`](README.herdr.md). Icons are
+This repository carries more than one licence:
+
+- The herdr fork code at the repository root (everything outside `gui/`) is
+  Apache-2.0. See the root [`LICENSE`](LICENSE).
+- Cowbell's own code in `gui/` is licensed under **FSL-1.1-ALv2** (the
+  Functional Source License, Apache-2.0 future licence) from this change
+  onward. See [`gui/LICENSE`](gui/LICENSE). Each Cowbell release becomes
+  Apache-2.0 two years after its own publication.
+- Commits before this change are Apache-2.0.
+- [`gui/crates/herdr-wire`](gui/crates/herdr-wire) stays Apache-2.0: it is a
+  copy of herdr's own protocol code, not new Cowbell code. See
+  [`gui/crates/herdr-wire/LICENSE`](gui/crates/herdr-wire/LICENSE) and its
+  [`NOTICE`](gui/crates/herdr-wire/NOTICE).
+
+Third-party notices for every bundled dependency are generated into
+`gui/public/THIRD-PARTY-NOTICES.txt` (`npm run notices` in `gui/`), and are
+also available from Cowbell's own Help ▸ Licenses… menu.
+
+## Credits
+
+Cowbell is a fork of [herdr](https://github.com/herdrdev/herdr) by the herdr
+authors. The original herdr README is kept in
+[`README.herdr.md`](README.herdr.md). Icons are
 [Codicons](https://github.com/microsoft/vscode-codicons) © Microsoft (CC BY 4.0).
 
-This project is not affiliated with or endorsed by the herdr maintainers.
+Cowbell is not affiliated with or endorsed by herdr or Herdr, Inc.
