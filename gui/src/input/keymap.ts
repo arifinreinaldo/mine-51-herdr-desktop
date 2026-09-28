@@ -57,6 +57,10 @@ export interface ModifierKeysLike {
 export interface KeyboardEventLike extends ModifierKeysLike {
   key: string;
   code: string;
+  /** Real `KeyboardEvent.getModifierState`; optional so plain test fixtures
+   * can omit it (treated as "AltGraph is never set" -- `altGrTextCommit`
+   * then falls back to its Ctrl+Alt heuristic). */
+  getModifierState?: (key: string) => boolean;
 }
 
 /** Named (non-printable) keys that always map to a `ClientKeyCode`, keyed by `KeyboardEvent.key`. */
@@ -132,4 +136,32 @@ export function mapKeyboardEvent(event: KeyboardEventLike): MappedKey | null {
   }
 
   return null;
+}
+
+/**
+ * AltGr detection (terminal-parity spec P0 #2): on Windows, AltGr sets both
+ * `ctrlKey` and `altKey`, so left unhandled it would fall into
+ * `mapKeyboardEvent`'s Ctrl+Alt `Char` branch above and send a Ctrl+Alt key
+ * press instead of the composed character (German `AltGr+Q = @`, Polish
+ * `AltGr+A = ą`). Callers check this *before* `mapKeyboardEvent` and, on a
+ * match, send `TextCommit(event.key)` instead of a `Key` event.
+ *
+ * Two signals, either one enough:
+ * - `event.getModifierState("AltGraph")` is `true` -- the reliable signal
+ *   when the browser reports it (WebView2/Chromium do, on Windows).
+ * - Ctrl+Alt held and the key produced is printable and not a bare ASCII
+ *   letter -- a fallback heuristic for when `AltGraph` isn't reported. Ascii
+ *   letters are excluded so a real Ctrl+Alt+<letter> combo (unclaimed by
+ *   this GUI today, but not this function's business to assume never will
+ *   be) still falls through to the ordinary Ctrl+Alt `Char` path.
+ *
+ * Returns the text to commit, or `null` when this isn't an AltGr press.
+ */
+export function altGrTextCommit(event: KeyboardEventLike): string | null {
+  if (event.key.length !== 1) return null;
+  const isAltGraph = event.getModifierState?.("AltGraph") ?? false;
+  if (isAltGraph) return event.key;
+  if (!(event.ctrlKey && event.altKey)) return null;
+  if (/^[A-Za-z]$/.test(event.key)) return null;
+  return event.key;
 }

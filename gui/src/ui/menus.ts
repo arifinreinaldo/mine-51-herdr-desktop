@@ -37,6 +37,9 @@ export interface MenuBarContext {
   onSplitDown(): void;
   onClosePane(): void;
   onToggleZoom(): void;
+  /** Terminal-parity spec P1 #12 "Clear: the context menu, plus Pane ▸
+   * Clear (Ctrl+Shift+K)". */
+  onClearPane(): void;
 
   onJumpToNextNeedingAttention(): void;
   onToggleAgentList(): void;
@@ -155,6 +158,13 @@ function paneMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
       onSelect: ctx.onClosePane,
     },
     { id: "pane.toggleZoom", label: "Toggle Zoom", shortcut: shortcutDisplay("pane.toggleZoom"), onSelect: ctx.onToggleZoom },
+    {
+      id: "pane.clear",
+      label: "Clear",
+      shortcut: shortcutDisplay("pane.clear"),
+      separatorBefore: true,
+      onSelect: ctx.onClearPane,
+    },
   ];
 }
 

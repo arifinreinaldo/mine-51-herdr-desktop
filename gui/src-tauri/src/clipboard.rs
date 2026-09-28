@@ -111,6 +111,18 @@ pub fn write_clipboard_bytes(bytes: &[u8]) -> bool {
     clipboard.set_text(text).is_ok()
 }
 
+/// Reads plain text from the OS clipboard (terminal-parity spec P0 #4
+/// "Paste"): replaces `navigator.clipboard.readText()` on the frontend, so
+/// paste no longer depends on the webview's own clipboard-read permission
+/// prompt/policy. `None` (never panics) when there is no clipboard text
+/// available (e.g. the clipboard holds an image, or is empty/locked) or the
+/// read fails -- every caller already treats a clipboard read as
+/// best-effort, same as the write side above.
+pub fn read_clipboard_text() -> Option<String> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    clipboard.get_text().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +212,13 @@ mod tests {
     #[test]
     fn write_clipboard_bytes_rejects_non_utf8_without_panicking() {
         assert!(!write_clipboard_bytes(&[0xff, 0xfe, 0xfd]));
+    }
+
+    #[test]
+    fn read_clipboard_text_does_not_panic_with_no_desktop_clipboard() {
+        // Best-effort only, same rationale as the write-side test below: a
+        // sandboxed/headless test runner may have no OS clipboard at all.
+        let _ = read_clipboard_text();
     }
 
     #[test]

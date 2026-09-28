@@ -6,7 +6,7 @@ import { agentDisplayName, agentTaskTitle } from "./agentText";
 import { invokeSafe } from "./appApi";
 import { openOrRefreshAgentPopover } from "./appStatusBar";
 import { tabLabel, workspaceLabel } from "./appLookups";
-import { appState, highlightCards, hoveredHighlightPaneIds } from "./appState";
+import { appState, doneToastDedup, highlightCards, hoveredHighlightPaneIds } from "./appState";
 import type { AgentForDetection } from "./notifications/doneDetector";
 
 export function toDetectionAgents(): AgentForDetection[] {
@@ -51,6 +51,10 @@ export function handleDoneTransitions(transitions: AgentForDetection[]): void {
     }, 8100);
   } else {
     for (const t of transitions) {
+      // P1 #13: the dedup key here is the same one `handleSemanticNotification`
+      // below checks, so whichever source (this snapshot diff, or a
+      // `SemanticNotification`) sees this exact transition first wins.
+      if (!doneToastDedup.shouldShow(t.pane_id, t.state_change_seq)) continue;
       const { agentName, title } = agentDisplayInfo(t.pane_id);
       void invokeSafe("notify_agent_done", {
         workspace: workspaceLabel(t.workspace_id),
@@ -60,4 +64,39 @@ export function handleDoneTransitions(transitions: AgentForDetection[]): void {
       });
     }
   }
+}
+
+/** Raw `ServerMessage::SemanticNotification` payload shape (JSON field names
+ * verbatim, no `rename_all` on the Rust side -- `gui/crates/herdr-wire/src/
+ * server.rs:344-363`). */
+export interface RawSemanticNotification {
+  kind: "NeedsAttention" | "Finished" | "UpdateInstalled" | "Custom";
+  title: string;
+  body: string | null;
+  agent: string | null;
+  workspace_id: string | null;
+  tab_id: string | null;
+  pane_id: string | null;
+}
+
+/** `ServerMessage::SemanticNotification` (P1 #13): a second source for the
+ * same done desktop-toast the snapshot detector already drives above,
+ * de-duplicated against it by pane id and `state_change_seq`
+ * (`doneToastDedup`). Only `kind: "Finished"` maps to the done toast; other
+ * kinds aren't this item's concern. Only relevant while the window is
+ * unfocused -- while focused, the snapshot-driven in-app highlight card
+ * already covers it, and this never opens a second one. */
+export function handleSemanticNotification(notification: RawSemanticNotification): void {
+  if (notification.kind !== "Finished" || appState.windowFocused) return;
+  const paneId = notification.pane_id;
+  if (!paneId) return;
+  const agent = appState.snapshot?.agents.find((a) => a.pane_id === paneId);
+  const seq = agent?.state_change_seq ?? 0;
+  if (!doneToastDedup.shouldShow(paneId, seq)) return;
+  void invokeSafe("notify_agent_done", {
+    workspace: workspaceLabel(notification.workspace_id ?? ""),
+    tab: tabLabel(notification.tab_id ?? ""),
+    agent: notification.agent ?? agentDisplayInfo(paneId).agentName,
+    title: notification.body ?? notification.title,
+  });
 }

@@ -8,7 +8,7 @@ function fullFrame(): DecodedSurfaceFrame {
     surfaceRevision: 1,
     width: 2,
     height: 1,
-    cursor: { x: 0, y: 0, visible: true },
+    cursor: { x: 0, y: 0, visible: true, shape: "block", blink: true },
     rows: [
       {
         y: 0,
@@ -39,7 +39,7 @@ describe("applyDecodedFrame", () => {
     expect(grid.width).toBe(2);
     expect(grid.height).toBe(1);
     expect(grid.cells.map((c) => c.symbol)).toEqual(["a", "b"]);
-    expect(grid.cursor).toEqual({ x: 0, y: 0, visible: true });
+    expect(grid.cursor).toEqual({ x: 0, y: 0, visible: true, shape: "block", blink: true });
     expect(grid.surfaceRevision).toBe(1);
     expect(dirtyRows).toEqual([0]);
   });
@@ -51,7 +51,7 @@ describe("applyDecodedFrame", () => {
       surfaceRevision: 2,
       width: 2,
       height: 1,
-      cursor: { x: 1, y: 0, visible: true },
+      cursor: { x: 1, y: 0, visible: true, shape: "block", blink: true },
       rows: [{ y: 0, x: 1, cells: [{ symbol: "z", fg: 3, bg: 0, modifier: 0, skip: false }] }],
       rustUs: 0,
     };
@@ -66,7 +66,7 @@ describe("applyDecodedFrame", () => {
     // replaces the surface's cursor; `None` means "no cursor", not
     // "unchanged" (surface_patch.rs:50, code review finding #7).
     const { grid: base } = applyDecodedFrame(createEmptyGrid(), fullFrame());
-    expect(base.cursor).toEqual({ x: 0, y: 0, visible: true });
+    expect(base.cursor).toEqual({ x: 0, y: 0, visible: true, shape: "block", blink: true });
     const patch: DecodedSurfaceFrame = {
       kind: "rows",
       surfaceRevision: 2,

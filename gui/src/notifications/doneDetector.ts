@@ -79,6 +79,29 @@ function toBaselineMap(agents: readonly AgentForDetection[]): Map<string, AgentF
   return new Map(agents.map((agent) => [agent.pane_id, agent]));
 }
 
+/**
+ * Terminal-parity spec P1 #13 "Bell and notifications": `ServerMessage::
+ * SemanticNotification` is a second source for the same done toast this
+ * detector's own `diff()` already drives -- whichever arrives first (the
+ * next snapshot, or a `SemanticNotification{kind: Finished}`) must win, the
+ * other must be suppressed. Keyed by `pane_id:state_change_seq`, so a
+ * genuinely new transition (a higher `state_change_seq`) is never
+ * suppressed by an older one already shown.
+ */
+export class DoneToastDedup {
+  private shown = new Set<string>();
+
+  /** Returns `true` (and marks it shown) the first time this exact
+   * `pane_id`/`seq` pair is seen; `false` on every later call for the same
+   * pair. */
+  shouldShow(paneId: string, seq: number): boolean {
+    const key = `${paneId}:${seq}`;
+    if (this.shown.has(key)) return false;
+    this.shown.add(key);
+    return true;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // In-app highlight card stacking
 // ---------------------------------------------------------------------------

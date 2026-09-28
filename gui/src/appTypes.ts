@@ -36,6 +36,12 @@ export interface RawPane {
   workspace_id: string;
   tab_id: string;
   focused: boolean;
+  /** Terminal-parity spec P0 #5 "Terminal right-click menu": herdr's own
+   * `ClientShellPane.right_click_passthrough` (`src/protocol/wire.rs:1072`),
+   * already present on the JSON snapshot -- the compact binary surface
+   * stream and `pane_mouse_hit` omit it (it isn't cell geometry), so the
+   * right-click rule reads it from here instead. */
+  right_click_passthrough: boolean;
 }
 
 export interface RawAgent {

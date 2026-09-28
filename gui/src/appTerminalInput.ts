@@ -8,17 +8,21 @@
 
 import { Channel } from "@tauri-apps/api/core";
 import { invokeSafe } from "./appApi";
+import { refreshPaneCloseButton } from "./paneCloseButton";
+import { clearSelectionOnInput } from "./appTerminalMouse";
 import { keyboardCapture, terminalWrapEl } from "./appDom";
 import { targetPaneId } from "./appLookups";
 import { appState } from "./appState";
 import { applyDecodedFrame } from "./grid";
 import { decodeSurfaceFrame } from "./decoder";
+import { positionKeyboardCaptureAtCursor } from "./imePosition";
 import { focusKeyboardCapture, registerKeyboardCapture } from "./keyboard/focusCapture";
 
-function sendTextCommit(text: string): void {
+export function sendTextCommit(text: string): void {
   if (!text) return;
   const paneId = targetPaneId();
   if (!paneId) return;
+  clearSelectionOnInput(); // P0 #1: "... until the next click or input"
   void invokeSafe("send_input", { paneId, events: [{ TextCommit: text }] });
 }
 
@@ -26,6 +30,7 @@ export function sendPaste(text: string): void {
   if (!text) return;
   const paneId = targetPaneId();
   if (!paneId) return;
+  clearSelectionOnInput();
   void invokeSafe("send_input", { paneId, events: [{ Paste: text }] });
 }
 
@@ -48,6 +53,7 @@ function keyEvent(code: unknown, modifiers: number): unknown {
 export function sendKeyEvent(mapped: { code: unknown; modifiers: number }): void {
   const paneId = targetPaneId();
   if (!paneId) return;
+  clearSelectionOnInput();
   void invokeSafe("send_input", { paneId, events: [keyEvent(mapped.code, mapped.modifiers)] });
 }
 
@@ -95,7 +101,12 @@ function scheduleResize(): void {
   appState.resizeDebounceTimer = window.setTimeout(() => {
     appState.resizeDebounceTimer = undefined;
     appState.renderer?.measureAndResize();
-  }, 50);
+    refreshPaneCloseButton();
+    positionKeyboardCaptureAtCursor(); // P1 #16 "IME": cell size may have changed.
+    // 150ms of quiet before sending the size: every width change makes the
+    // shell reflow and redraw its input line (PSReadLine mangles it when
+    // several arrive mid-typing), so a window drag sends one size, not many.
+  }, 150);
 }
 
 /**
@@ -142,6 +153,8 @@ export async function subscribeSurface(): Promise<void> {
     appState.renderer?.recordDecodeMs(performance.now() - decodeStart);
     appState.renderer?.recordRustUs(frame.rustUs);
     appState.renderer?.setGrid(appState.grid, dirtyRows);
+    refreshPaneCloseButton();
+    positionKeyboardCaptureAtCursor(); // P1 #16 "IME"
   };
   await invokeSafe("subscribe_surface", { channel });
 }

@@ -17,7 +17,14 @@ import type { SelectionRowRect } from "./geometry";
 export class SelectionOverlay {
   private readonly rows: HTMLDivElement[] = [];
 
-  constructor(private readonly container: HTMLElement) {}
+  /** `rowClassName` (terminal-parity spec P0 #6 "Links"): the link-hover
+   * underline reuses this exact row-rect renderer with its own CSS class
+   * (`"terminal-link-hover-row"`), rather than duplicating this file for one
+   * different `className` string. */
+  constructor(
+    private readonly container: HTMLElement,
+    private readonly rowClassName: string = "terminal-selection-row",
+  ) {}
 
   /** `originLeftCss`/`originTopCss`: the pane's inner_rect origin in CSS
    * px, relative to `container` (typically `canvasRect - containerRect`
@@ -32,7 +39,7 @@ export class SelectionOverlay {
   ): void {
     while (this.rows.length < rects.length) {
       const div = document.createElement("div");
-      div.className = "terminal-selection-row";
+      div.className = this.rowClassName;
       this.container.appendChild(div);
       this.rows.push(div);
     }

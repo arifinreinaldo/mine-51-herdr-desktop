@@ -16,13 +16,14 @@ use herdr_wire::{
     ClientMessage, ClientShellSnapshot, ClientSurfaceSize, EndpointClientHello, ServerMessage,
     SNAPSHOT_CODEC_V1,
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::commands::Inner;
 use crate::conn::{ConnError, Connection};
 use crate::mirror::Delta;
 use crate::surface_encode::{
-    append_rust_us_trailer, encode_full_frame, encode_row_patch, EncodedRow,
+    append_cursor_shape_trailer, append_rust_us_trailer, encode_full_frame, encode_row_patch,
+    EncodedRow,
 };
 
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
@@ -111,6 +112,20 @@ pub async fn run_reconnect_loop(app: AppHandle, inner: Arc<Inner>) {
                     &socket_path_str,
                     Some(&conn.server_version),
                 );
+                // Terminal-parity spec P0 #3 "Focus reporting": once after
+                // connect, so a client that (re)attaches while the window is
+                // already focused doesn't have to wait for the next real
+                // focus/blur transition to become the foreground client
+                // (only the foreground client gets bell and OSC 52,
+                // `src/server/headless/notifications.rs:325,338`). The
+                // frontend's own DOM focus/blur listeners cover every
+                // transition after this.
+                if let Some(window) = app.get_webview_window("main") {
+                    let focused = window.is_focused().unwrap_or(true);
+                    let _ = conn
+                        .send(&ClientMessage::ClientShellFocus { focused })
+                        .await;
+                }
 
                 run_dispatch_loop(&app, &inner, &conn).await;
 
@@ -217,12 +232,18 @@ async fn run_dispatch_loop(app: &AppHandle, inner: &Arc<Inner>, conn: &Arc<Conne
                 let outcome = {
                     let mut mirror = mirror_lock(inner);
                     match mirror.apply_full(frame) {
-                        Ok(_) => Ok(encode_full_frame(
-                            mirror.surface_revision,
-                            mirror.width,
-                            mirror.height,
-                            mirror.cursor.as_ref(),
-                            &mirror.cells,
+                        Ok(_) => Ok((
+                            encode_full_frame(
+                                mirror.surface_revision,
+                                mirror.width,
+                                mirror.height,
+                                mirror.cursor.as_ref(),
+                                &mirror.cells,
+                            ),
+                            // Cloned out of the lock (spec P1 #15 "Rendering"):
+                            // `append_cursor_shape_trailer` runs after the
+                            // lock is dropped, alongside the rust_us trailer.
+                            mirror.cursor.clone(),
                         )),
                         // A corrupted/malformed full frame (finding #3): keep
                         // whatever the mirror already had and resync, same as
@@ -231,8 +252,9 @@ async fn run_dispatch_loop(app: &AppHandle, inner: &Arc<Inner>, conn: &Arc<Conne
                     }
                 };
                 match outcome {
-                    Ok(mut bytes) => {
+                    Ok((mut bytes, cursor)) => {
                         inner.record_attach();
+                        append_cursor_shape_trailer(&mut bytes, cursor.as_ref());
                         append_rust_us_trailer(&mut bytes, elapsed_us(rust_start));
                         push_surface_bytes(inner, bytes);
                     }
@@ -252,6 +274,13 @@ async fn run_dispatch_loop(app: &AppHandle, inner: &Arc<Inner>, conn: &Arc<Conne
             }
             Ok(ServerMessage::Clipboard { data }) => {
                 handle_clipboard(app, &data);
+            }
+            // Terminal-parity spec P1 #13 "Bell and notifications".
+            Ok(ServerMessage::TerminalBell { count }) => {
+                crate::notify::handle_terminal_bell(app, count).await;
+            }
+            Ok(ServerMessage::SemanticNotification(notification)) => {
+                crate::notify::handle_semantic_notification(app, notification);
             }
             Ok(ServerMessage::ServerShutdown { .. }) => break,
             Ok(_) => {
@@ -347,7 +376,9 @@ async fn handle_patch(
                         })
                         .collect::<Vec<_>>(),
                 );
-                Some(bytes)
+                // Cloned out of the lock (spec P1 #15), same as the full-frame
+                // arm above.
+                Some((bytes, mirror.cursor.clone()))
             }
             // `apply_patch` never actually constructs `Delta::Full`; treated
             // as "nothing to encode" rather than `unreachable!()` (finding
@@ -361,7 +392,8 @@ async fn handle_patch(
     };
 
     match outcome {
-        Some(mut bytes) => {
+        Some((mut bytes, cursor)) => {
+            append_cursor_shape_trailer(&mut bytes, cursor.as_ref());
             append_rust_us_trailer(&mut bytes, elapsed_us(rust_start));
             push_surface_bytes(inner, bytes);
         }

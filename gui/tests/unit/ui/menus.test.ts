@@ -33,6 +33,7 @@ function fakeContext(): MenuBarContext {
     onSplitDown: noop,
     onClosePane: noop,
     onToggleZoom: noop,
+    onClearPane: noop,
     onJumpToNextNeedingAttention: noop,
     onToggleAgentList: noop,
     agentSort: "priority",

@@ -16,7 +16,8 @@ use std::path::PathBuf;
 
 use herdr_gui_lib::mirror::Cell;
 use herdr_gui_lib::surface_encode::{
-    append_rust_us_trailer, encode_full_frame, encode_row_patch, EncodedRow,
+    append_cursor_shape_trailer, append_rust_us_trailer, encode_full_frame, encode_row_patch,
+    EncodedRow,
 };
 use herdr_wire::CursorState;
 
@@ -84,7 +85,7 @@ fn full_frame_basic() -> Fixture {
         "surfaceRevision": 7,
         "width": 3,
         "height": 2,
-        "cursor": { "x": 1, "y": 0, "visible": true },
+        "cursor": { "x": 1, "y": 0, "visible": true, "shape": "block", "blink": true },
         "rows": [
             { "y": 0, "x": 0, "cells": cells[0..3].iter().map(cell_json).collect::<Vec<_>>() },
             { "y": 1, "x": 0, "cells": cells[3..6].iter().map(cell_json).collect::<Vec<_>>() },
@@ -156,7 +157,7 @@ fn full_frame_with_rust_us() -> Fixture {
         "surfaceRevision": 7,
         "width": 2,
         "height": 1,
-        "cursor": { "x": 1, "y": 0, "visible": true },
+        "cursor": { "x": 1, "y": 0, "visible": true, "shape": "block", "blink": true },
         "rows": [
             { "y": 0, "x": 0, "cells": cells.iter().map(cell_json).collect::<Vec<_>>() },
         ],
@@ -198,6 +199,75 @@ fn row_patch_with_rust_us() -> Fixture {
     }
 }
 
+/// P1 #15 "Rendering": a full frame with the new cursor-shape trailer
+/// (shape byte, then the existing `rust_us` u32) -- exercises the "5+ bytes
+/// left" decode branch. `shape: 5` is DECSCUSR's blinking bar
+/// (`src/protocol/wire.rs:746-765`).
+fn full_frame_with_cursor_shape() -> Fixture {
+    let cursor = CursorState {
+        x: 1,
+        y: 0,
+        visible: true,
+        shape: 5,
+    };
+    let cells = vec![cell("h", 2, 0, 0, false), cell("i", 3, 0, 1, false)];
+    let mut bytes = encode_full_frame(7, 2, 1, Some(&cursor), &cells);
+    append_cursor_shape_trailer(&mut bytes, Some(&cursor));
+    append_rust_us_trailer(&mut bytes, 500);
+    let json = serde_json::json!({
+        "kind": "full",
+        "surfaceRevision": 7,
+        "width": 2,
+        "height": 1,
+        "cursor": { "x": 1, "y": 0, "visible": true, "shape": "bar", "blink": true },
+        "rows": [
+            { "y": 0, "x": 0, "cells": cells.iter().map(cell_json).collect::<Vec<_>>() },
+        ],
+        "rustUs": 500,
+    });
+    Fixture {
+        name: "full-frame-with-cursor-shape",
+        bytes,
+        json,
+    }
+}
+
+/// A row patch with no cursor at all: the cursor-shape trailer still writes
+/// its `0` sentinel (`append_cursor_shape_trailer`'s `unwrap_or(0)`), and the
+/// header's own absent-cursor sentinel still decodes to `cursor: null` --
+/// the trailer never overrides that. Exercises the "shape-then-rust_us"
+/// branch with no rust_us timing this frame would otherwise carry
+/// (`commands::sync_state`'s replay path is shape-only, covered by
+/// `gui/tests/unit/decoder.test.ts` directly since it has no Rust-side
+/// fixture of its own).
+fn row_patch_with_cursor_shape_no_cursor() -> Fixture {
+    let row0_cells = vec![cell("z", 1, 1, 0, false)];
+    let rows = vec![EncodedRow {
+        y: 0,
+        x: 0,
+        cells: &row0_cells,
+    }];
+    let mut bytes = encode_row_patch(3, 80, 24, None, &rows);
+    append_cursor_shape_trailer(&mut bytes, None);
+    append_rust_us_trailer(&mut bytes, 10);
+    let json = serde_json::json!({
+        "kind": "rows",
+        "surfaceRevision": 3,
+        "width": 80,
+        "height": 24,
+        "cursor": null,
+        "rows": [
+            { "y": 0, "x": 0, "cells": row0_cells.iter().map(cell_json).collect::<Vec<_>>() },
+        ],
+        "rustUs": 10,
+    });
+    Fixture {
+        name: "row-patch-with-cursor-shape-no-cursor",
+        bytes,
+        json,
+    }
+}
+
 #[test]
 fn golden_bytes_match_committed_fixtures() {
     let update = std::env::var("UPDATE_GOLDEN").as_deref() == Ok("1");
@@ -207,6 +277,8 @@ fn golden_bytes_match_committed_fixtures() {
         row_patch_basic(),
         full_frame_with_rust_us(),
         row_patch_with_rust_us(),
+        full_frame_with_cursor_shape(),
+        row_patch_with_cursor_shape_no_cursor(),
     ];
 
     if update {

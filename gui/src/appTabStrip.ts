@@ -72,6 +72,7 @@ export function renderTabsNow(): void {
     focused: t.focused,
     agent_status: t.agent_status,
     blockedAgeLabel: blockedAgeLabelFor(t.tab_id),
+    paneCount: appState.snapshot?.panes.filter((p) => p.tab_id === t.tab_id).length ?? 1,
   }));
   renderTabStrip(tabListEl, overlayRoot, rows, seenDoneTabs, {
     onFocusTab: (id) => {
@@ -122,6 +123,13 @@ export function renderTabsNow(): void {
       void (async () => {
         const paneId = await focusedPaneIdForTabAction(tabId);
         if (paneId) void api("pane.zoom", { pane_id: paneId });
+      })();
+    },
+    onClosePane: (tabId) => {
+      if (!requireConnected()) return;
+      void (async () => {
+        const paneId = await focusedPaneIdForTabAction(tabId);
+        if (paneId) void api("pane.close", { pane_id: paneId });
       })();
     },
   });

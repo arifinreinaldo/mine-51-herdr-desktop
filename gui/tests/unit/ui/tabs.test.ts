@@ -35,6 +35,7 @@ function makeCallbacks(overrides: Partial<TabCallbacks> = {}): TabCallbacks {
     onSplitRight: vi.fn(),
     onSplitDown: vi.fn(),
     onToggleZoom: vi.fn(),
+    onClosePane: vi.fn(),
     ...overrides,
   };
 }
@@ -234,5 +235,30 @@ describe("tabShortcutTooltip (keyboard shortcuts feature, item 6)", () => {
     guardedRender(callbacks); // tabs(): t1 (index 0), t2 (index 1, last)
     expect(listEl.querySelector('[data-tab-id="t1"]')?.getAttribute("title")).toBe("one (Alt+1)");
     expect(listEl.querySelector('[data-tab-id="t2"]')?.getAttribute("title")).toBe("two (Alt+2 / Alt+9)");
+  });
+});
+
+describe("tab context menu Close Pane", () => {
+  function openMenuFor(rows: TabRow[], callbacks: TabCallbacks): void {
+    renderTabStrip(listEl, overlayRoot, rows, seenTracker, callbacks);
+    const tabEl = listEl.querySelector<HTMLElement>(".tab")!;
+    tabEl.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
+  }
+
+  it("is hidden on a single-pane tab", () => {
+    openMenuFor([{ ...tabs()[0], paneCount: 1 }], makeCallbacks());
+    expect(overlayRoot.textContent).toContain("Split Right");
+    expect(overlayRoot.textContent).not.toContain("Close Pane");
+  });
+
+  it("shows on a split tab and closes a pane of that tab", () => {
+    const callbacks = makeCallbacks();
+    openMenuFor([{ ...tabs()[0], paneCount: 2 }], callbacks);
+    const item = Array.from(overlayRoot.querySelectorAll<HTMLElement>("*")).find(
+      (el) => el.children.length === 0 && el.textContent === "Close Pane",
+    );
+    expect(item).toBeDefined();
+    item!.click();
+    expect(callbacks.onClosePane).toHaveBeenCalledWith("t1");
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { KeyboardEventLike } from "../../src/input/keymap";
 import {
+  altGrTextCommit,
   mapKeyboardEvent,
   MODIFIER_ALT,
   MODIFIER_CONTROL,
@@ -82,5 +83,43 @@ describe("mapKeyboardEvent: modifiers", () => {
 describe("mapKeyboardEvent: printable text is not handled here", () => {
   it("returns null for plain printable characters (they go through TextCommit instead)", () => {
     expect(mapKeyboardEvent(key({ key: "a" }))).toBeNull();
+  });
+});
+
+// P0 #2 "AltGr": German AltGr+Q = @, Polish AltGr+A = ą (spec's own test
+// cases), both reported by Windows as Ctrl+Alt.
+describe("altGrTextCommit", () => {
+  it("AltGraph modifier state alone is enough, regardless of the Ctrl+Alt heuristic", () => {
+    const event = key({
+      key: "@",
+      code: "KeyQ",
+      ctrlKey: true,
+      altKey: true,
+      getModifierState: (k) => k === "AltGraph",
+    });
+    expect(altGrTextCommit(event)).toBe("@");
+  });
+
+  it("falls back to the Ctrl+Alt heuristic when AltGraph isn't reported", () => {
+    expect(altGrTextCommit(key({ key: "ą", code: "KeyA", ctrlKey: true, altKey: true }))).toBe("ą");
+  });
+
+  it("excludes a bare ASCII letter from the heuristic (leaves it to the ordinary Ctrl+Alt Char path)", () => {
+    expect(altGrTextCommit(key({ key: "k", code: "KeyK", ctrlKey: true, altKey: true }))).toBeNull();
+  });
+
+  it("is null with neither Ctrl nor Alt held", () => {
+    expect(altGrTextCommit(key({ key: "@", code: "KeyQ" }))).toBeNull();
+  });
+
+  it("is null for a multi-character key (named keys are never AltGr text)", () => {
+    expect(
+      altGrTextCommit(key({ key: "Enter", code: "Enter", ctrlKey: true, altKey: true })),
+    ).toBeNull();
+  });
+
+  it("is null with only Ctrl or only Alt held (not the AltGr combination)", () => {
+    expect(altGrTextCommit(key({ key: "@", code: "KeyQ", ctrlKey: true }))).toBeNull();
+    expect(altGrTextCommit(key({ key: "@", code: "KeyQ", altKey: true }))).toBeNull();
   });
 });

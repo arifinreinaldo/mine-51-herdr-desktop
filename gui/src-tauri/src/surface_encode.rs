@@ -125,6 +125,32 @@ pub fn append_rust_us_trailer(bytes: &mut Vec<u8>, rust_us: u32) {
     bytes.extend_from_slice(&rust_us.to_le_bytes());
 }
 
+/// Appends the cursor-shape trailer byte (terminal-parity spec P1 #15
+/// "Rendering"): the raw DECSCUSR parameter from `CursorState.shape`
+/// (`src/protocol/wire.rs:746-765`: 0 = terminal default, 1/2 = blinking/
+/// steady block, 3/4 = blinking/steady underline, 5/6 = blinking/steady
+/// bar), or `0` when there is no cursor this frame -- the frontend then
+/// treats `0` the same as "no shape info", matching the header's own
+/// `(0, 0, false)` sentinel for an absent cursor.
+///
+/// **Must be called before `append_rust_us_trailer`, never after or
+/// instead of it** (`dispatch.rs`'s three call sites do both, in that
+/// order): the decoder tells "shape present" from "shape absent" purely by
+/// how many trailing bytes remain after the row data (spec: "extend the §5
+/// binary format compatibly"), not from a flag byte, so the trailer order is
+/// itself part of the wire contract --
+/// - 0 bytes left: pre-trailer payload (every fixture before spec phase1.5
+///   §8a.4 existed) -- no shape, no `rust_us`.
+/// - exactly 4 bytes left: the original phase1.5 §8a.4 trailer -- `rust_us`
+///   only, no shape (`full-frame-with-rust-us.bin`/`row-patch-with-rust-us.bin`,
+///   generated before this feature and never touched by it, still decode
+///   exactly as before).
+/// - 5 or more bytes left: this feature's trailer -- one shape byte, then
+///   `rust_us`.
+pub fn append_cursor_shape_trailer(bytes: &mut Vec<u8>, cursor: Option<&CursorState>) {
+    bytes.push(cursor.map(|c| c.shape).unwrap_or(0));
+}
+
 /// Truncates `symbol` to at most 255 UTF-8 bytes, on a char boundary, so
 /// `sym_len` (a `u8`) never wraps and this never panics on a pathological
 /// grapheme cluster from server data (code review finding #3: the old
@@ -240,6 +266,34 @@ mod tests {
         );
         let trailer = &bytes_with_trailer[bytes_without_trailer.len()..];
         assert_eq!(u32::from_le_bytes(trailer.try_into().unwrap()), 1234);
+    }
+
+    #[test]
+    fn cursor_shape_trailer_writes_the_decscusr_param_before_rust_us() {
+        let cells = vec![cell("a", 1, 2, 3, false)];
+        let cursor = CursorState {
+            x: 0,
+            y: 0,
+            visible: true,
+            shape: 5, // blinking bar
+        };
+        let mut bytes = encode_full_frame(1, 1, 1, Some(&cursor), &cells);
+        let len_before = bytes.len();
+        append_cursor_shape_trailer(&mut bytes, Some(&cursor));
+        append_rust_us_trailer(&mut bytes, 99);
+        assert_eq!(bytes.len(), len_before + 1 + 4);
+        assert_eq!(bytes[len_before], 5, "shape byte comes first");
+        let rust_us = &bytes[len_before + 1..];
+        assert_eq!(u32::from_le_bytes(rust_us.try_into().unwrap()), 99);
+    }
+
+    #[test]
+    fn cursor_shape_trailer_writes_zero_with_no_cursor() {
+        let cells = vec![cell("a", 0, 0, 0, false)];
+        let mut bytes = encode_full_frame(1, 1, 1, None, &cells);
+        let len_before = bytes.len();
+        append_cursor_shape_trailer(&mut bytes, None);
+        assert_eq!(bytes[len_before], 0);
     }
 
     #[test]

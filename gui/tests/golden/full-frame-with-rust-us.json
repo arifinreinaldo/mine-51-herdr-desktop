@@ -1,5 +1,7 @@
 {
   "cursor": {
+    "blink": true,
+    "shape": "block",
     "visible": true,
     "x": 1,
     "y": 0

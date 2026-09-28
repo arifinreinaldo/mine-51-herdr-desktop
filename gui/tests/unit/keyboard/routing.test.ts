@@ -1,3 +1,9 @@
+// @vitest-environment jsdom
+//
+// jsdom, not the default "node" environment: `routing.ts` now imports
+// `copyMode.ts` (P1 #8), which imports `appApi.ts`/`appDom.ts`'s top-level
+// `document.getElementById(...)` lookups.
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hasTabUiFocus, routeKeydown, type KeyboardRoutingHandlers } from "../../../src/keyboard/routing";
 import { closeActiveOverlay, openOverlay } from "../../../src/ui/overlay";
@@ -27,9 +33,11 @@ function fakeHandlers(): KeyboardRoutingHandlers & {
   shortcuts: string[];
   terminalKeys: unknown[];
   pastes: number;
+  textCommits: string[];
 } {
   const shortcuts: string[] = [];
   const terminalKeys: unknown[] = [];
+  const textCommits: string[] = [];
   let pastes = 0;
   return {
     onShortcut: (a) => shortcuts.push(a.id),
@@ -37,8 +45,10 @@ function fakeHandlers(): KeyboardRoutingHandlers & {
     onPasteOverride: () => {
       pastes++;
     },
+    onTerminalTextCommit: (text) => textCommits.push(text),
     shortcuts,
     terminalKeys,
+    textCommits,
     get pastes() {
       return pastes;
     },
@@ -114,6 +124,42 @@ describe("routeKeydown", () => {
     routeKeydown(event, capture, capture, handlers);
     expect(handlers.terminalKeys).toEqual([]);
     expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  // P0 #2 "AltGr": checked before the ordinary key mapping, only while the
+  // terminal capture has focus.
+  it("AltGr (getModifierState) sends a text commit, not a key press", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    const event = fakeEvent({
+      key: "@",
+      code: "KeyQ",
+      ctrlKey: true,
+      altKey: true,
+      getModifierState: (k: string) => k === "AltGraph",
+    } as Partial<KeyboardEvent>);
+    routeKeydown(event, capture, capture, handlers);
+    expect(handlers.textCommits).toEqual(["@"]);
+    expect(handlers.terminalKeys).toEqual([]);
+    expect(event.preventDefault).toHaveBeenCalled();
+  });
+
+  it("AltGr heuristic fallback (Ctrl+Alt, no AltGraph, non-letter key) also sends a text commit", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    const event = fakeEvent({ key: "ą", code: "KeyA", ctrlKey: true, altKey: true });
+    routeKeydown(event, capture, capture, handlers);
+    expect(handlers.textCommits).toEqual(["ą"]);
+    expect(handlers.terminalKeys).toEqual([]);
+  });
+
+  it("Ctrl+Alt+<ascii letter> with no AltGraph stays the ordinary Ctrl+Alt Char path", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    const event = fakeEvent({ key: "k", code: "KeyK", ctrlKey: true, altKey: true });
+    routeKeydown(event, capture, capture, handlers);
+    expect(handlers.textCommits).toEqual([]);
+    expect(handlers.terminalKeys).toHaveLength(1);
   });
 
   // Keyboard shortcuts feature: Alt+1 (a new claimed class, step 2) is

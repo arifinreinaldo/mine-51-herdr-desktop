@@ -26,8 +26,9 @@
 //
 // "Tab UI focus" (spec §1) means `activeElement` is a `.tab`.
 
+import { handleCopyModeKeydown, isCopyModeActive } from "../copyMode";
 import type { KeyboardEventLike, MappedKey } from "../input/keymap";
-import { mapKeyboardEvent } from "../input/keymap";
+import { altGrTextCommit, mapKeyboardEvent } from "../input/keymap";
 import { findShortcut, type ShortcutAction } from "../shortcuts";
 import { closeActiveOverlay, isActiveOverlayEscapableFromOutside, isOverlayOpen } from "../ui/overlay";
 
@@ -38,6 +39,9 @@ export interface KeyboardRoutingHandlers {
    * while the terminal has focus it still means "paste from the clipboard"
    * (carried over from Phase 1's input handling). */
   onPasteOverride(): void;
+  /** Terminal-parity spec P0 #2 "AltGr": an AltGr press while the terminal
+   * capture has focus, sent as `TextCommit(text)` rather than a `Key` press. */
+  onTerminalTextCommit(text: string): void;
 }
 
 export function hasTabUiFocus(activeElement: Element | null): boolean {
@@ -105,6 +109,27 @@ export function routeKeydown(
   }
 
   if (activeElement === keyboardCaptureEl) {
+    // P1 #8 "Copy mode": checked first, and before `mapKeyboardEvent` gets a
+    // chance -- a plain letter key (h/j/k/l/w/b/e/v/y/g) is otherwise never
+    // seen by this router at all (`mapKeyboardEvent` returns `null` for
+    // plain printable characters, spec §6: they go through the textarea's
+    // own native `input` event -> `TextCommit` instead), so copy mode must
+    // `preventDefault()` here to stop that native `input` event from ever
+    // firing.
+    if (isCopyModeActive() && handleCopyModeKeydown(event)) {
+      event.preventDefault();
+      return;
+    }
+    // P0 #2 "AltGr": checked before the ordinary key mapping, since an
+    // unhandled AltGr press (Ctrl+Alt on Windows) would otherwise fall into
+    // `mapKeyboardEvent`'s own Ctrl+Alt `Char` branch and send the wrong
+    // thing (a Ctrl+Alt key press instead of the composed character).
+    const altGrText = altGrTextCommit(event);
+    if (altGrText !== null) {
+      event.preventDefault();
+      handlers.onTerminalTextCommit(altGrText);
+      return;
+    }
     const mapped = mapKeyboardEvent(event);
     if (mapped) {
       event.preventDefault();

@@ -20,10 +20,44 @@ export interface DecodedRow {
   cells: DecodedCell[];
 }
 
+/** Herdr's DECSCUSR cursor shape family, independent of blink (`shape` on
+ * the wire packs both into one 0-6 param, `src/protocol/wire.rs:746-765`). */
+export type CursorShapeKind = "block" | "underline" | "bar";
+
 export interface DecodedCursor {
   x: number;
   y: number;
   visible: boolean;
+  /** P1 #15 "Rendering": defaults to `"block"`/`blink: true` (DECSCUSR 0,
+   * "terminal default") when the frame carries no cursor-shape trailer at
+   * all -- every frame from before this feature, and any hand-built test
+   * fixture that doesn't set one. */
+  shape: CursorShapeKind;
+  blink: boolean;
+}
+
+/** Herdr's DECSCUSR cursor-shape parameter (`src/protocol/wire.rs:746-765`):
+ * 0 = terminal default, 1/2 = blinking/steady block, 3/4 = blinking/steady
+ * underline, 5/6 = blinking/steady bar. `0` and anything unrecognized both
+ * fall back to a blinking block, matching a real terminal's own "default"
+ * cursor. */
+export function cursorShapeFromParam(param: number): { shape: CursorShapeKind; blink: boolean } {
+  switch (param) {
+    case 2:
+      return { shape: "block", blink: false };
+    case 3:
+      return { shape: "underline", blink: true };
+    case 4:
+      return { shape: "underline", blink: false };
+    case 5:
+      return { shape: "bar", blink: true };
+    case 6:
+      return { shape: "bar", blink: false };
+    case 0:
+    case 1:
+    default:
+      return { shape: "block", blink: true };
+  }
 }
 
 export interface DecodedSurfaceFrame {
@@ -127,10 +161,7 @@ export function decodeSurfaceFrame(bytes: Uint8Array): DecodedSurfaceFrame {
   // patch's all-zero sentinel (the encoder's representation of `None`,
   // spec §5) decodes back to `null` here; `grid.ts` must treat that `null`
   // as "clear the cursor", not "keep the previous one".
-  const cursor: DecodedCursor | null =
-    kind === "rows" && cursorX === 0 && cursorY === 0 && !cursorVisible
-      ? null
-      : { x: cursorX, y: cursorY, visible: cursorVisible };
+  const isAbsentCursorSentinel = kind === "rows" && cursorX === 0 && cursorY === 0 && !cursorVisible;
 
   const rows: DecodedRow[] = [];
   for (let i = 0; i < rowCount; i++) {
@@ -151,12 +182,38 @@ export function decodeSurfaceFrame(bytes: Uint8Array): DecodedSurfaceFrame {
     rows.push({ y, x, cells });
   }
 
-  // Spec §8a.4: an optional trailing little-endian u32 `rust_us`, appended
-  // after everything the v1 layout already defines. Every existing
-  // consumer (including the pre-trailer golden fixtures) only ever read up
-  // through the last row, so a payload that ends right there -- no bytes
-  // left -- must decode exactly as before, with `rustUs` at its default 0.
-  const rustUs = reader.remaining() >= 4 ? reader.u32() : 0;
+  // Spec §8a.4 / P1 #15 "Rendering": up to two optional trailers, appended
+  // in this fixed order after everything the v1 layout already defines --
+  // an optional 1-byte cursor-shape param, then an optional little-endian
+  // u32 `rust_us`. There is no flag byte; which trailers are present is
+  // inferred purely from how many bytes are left, so every legal length
+  // must be distinguishable on its own:
+  //   0 bytes left -> neither (every fixture before spec phase1.5 §8a.4).
+  //   1 byte left  -> shape only (`commands::sync_state`'s replay frame,
+  //                   which has no `rust_us` timing to report).
+  //   4 bytes left -> `rust_us` only (the original §8a.4 trailer,
+  //                   `full-frame-with-rust-us.bin`/`row-patch-with-rust-us.bin`
+  //                   -- generated before this feature and never touched by
+  //                   it, so they must keep decoding exactly as before).
+  //   5+ bytes left -> shape, then `rust_us` (every frame from `dispatch.rs`
+  //                   once both trailers exist).
+  // Any other length (corrupt/truncated data) is treated as "neither",
+  // rather than misreading a partial trailer as one of the two known shapes.
+  let cursorShapeParam = 0;
+  let rustUs = 0;
+  const remaining = reader.remaining();
+  if (remaining >= 5) {
+    cursorShapeParam = reader.u8();
+    rustUs = reader.u32();
+  } else if (remaining === 4) {
+    rustUs = reader.u32();
+  } else if (remaining === 1) {
+    cursorShapeParam = reader.u8();
+  }
+
+  const cursor: DecodedCursor | null = isAbsentCursorSentinel
+    ? null
+    : { x: cursorX, y: cursorY, visible: cursorVisible, ...cursorShapeFromParam(cursorShapeParam) };
 
   return {
     kind,

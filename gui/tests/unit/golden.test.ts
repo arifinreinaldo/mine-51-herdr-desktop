@@ -20,6 +20,12 @@ const FIXTURES = [
   // when absent).
   "full-frame-with-rust-us",
   "row-patch-with-rust-us",
+  // Terminal-parity spec P1 #15 "Rendering": fixtures carrying the newer
+  // cursor-shape trailer byte, proving the decoder reads it (with and
+  // without an accompanying rust_us) without disturbing the two fixtures
+  // above, which never gained one.
+  "full-frame-with-cursor-shape",
+  "row-patch-with-cursor-shape-no-cursor",
 ];
 
 describe("golden surface bytes", () => {

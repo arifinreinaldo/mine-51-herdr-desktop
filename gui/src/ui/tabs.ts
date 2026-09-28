@@ -40,6 +40,9 @@ export interface TabRow {
    * age suffix '· 12m' when the tab is not selected." `""`/`undefined`
    * when the age isn't known yet -- no suffix, never "· ". */
   blockedAgeLabel?: string;
+  /** Close Pane shows only on a split tab: closing the only pane would
+   * close the tab (and maybe the workspace) without the last-tab confirm. */
+  paneCount?: number;
 }
 
 export interface TabCallbacks {
@@ -50,6 +53,7 @@ export interface TabCallbacks {
   onSplitRight(tabId: string): void;
   onSplitDown(tabId: string): void;
   onToggleZoom(tabId: string): void;
+  onClosePane(tabId: string): void;
 }
 
 /** A row inline rename can target: a tab (`{id: tab_id, label}`) or,
@@ -183,6 +187,15 @@ function openTabContextMenu(
       shortcut: "Alt+Shift+Z",
       onSelect: () => callbacks.onToggleZoom(tab.tab_id),
     },
+    ...((tab.paneCount ?? 1) > 1
+      ? [{
+          id: "close-pane",
+          label: "Close Pane",
+          shortcut: "Alt+Shift+W",
+          separatorBefore: true,
+          onSelect: () => callbacks.onClosePane(tab.tab_id),
+        }]
+      : []),
   ], { returnFocusTo: keyboardCaptureReturnTarget() });
 }
 

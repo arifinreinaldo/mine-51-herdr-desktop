@@ -8,7 +8,7 @@
 import { errorMessage, showErrorNotice } from "./appApi";
 import { debounce } from "./debounce";
 import { createEmptyGrid, type Grid } from "./grid";
-import { DoneTransitionDetector, HighlightCardStack } from "./notifications/doneDetector";
+import { DoneToastDedup, DoneTransitionDetector, HighlightCardStack } from "./notifications/doneDetector";
 import { SeenDoneTabsTracker } from "./notifications/seenDoneTabs";
 import { StatusAgeTracker } from "./notifications/statusAge";
 import type { TerminalRenderer } from "./render/renderer";
@@ -49,6 +49,10 @@ export const appState = {
 };
 
 export const doneDetector = new DoneTransitionDetector();
+/** P1 #13: shared between the snapshot-driven detector and
+ * `ServerMessage::SemanticNotification`, so the desktop-toast call they both
+ * feed never double-fires for the same transition. */
+export const doneToastDedup = new DoneToastDedup();
 export const seenDoneTabs = new SeenDoneTabsTracker();
 /** UX pass 1 spec §2 "Age": tracks how long each pane has been in its
  * current status, reset alongside `doneDetector` at the same three points

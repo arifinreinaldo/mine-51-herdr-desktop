@@ -7,9 +7,16 @@
 // `Ctrl+Shift+Tab`, `Ctrl+=`/`-`/`0`, `F2` (only when a tab has UI focus,
 // never when the terminal has focus), or `Ctrl+,`. **Every other key goes
 // to the terminal.** Plain `Ctrl+T` in particular belongs to Claude Code
-// ("toggle task checklist"), bash, and PSReadLine. `Ctrl+Shift+C`/
-// `Ctrl+Shift+V` stay reserved for a future copy and paste" -- deliberately
-// absent from this table.
+// ("toggle task checklist"), bash, and PSReadLine." `Ctrl+Shift+V` stays
+// reserved (`keyboard/routing.ts`'s own paste-override path handles it while
+// the terminal has focus, spec §1) -- deliberately absent from this table.
+//
+// The terminal-parity spec (P0 #1/#4, P1 #7/#8/#10/#12) claims six more
+// combos, none previously claimed: `Ctrl+Shift+C` (Copy), `Ctrl+Shift+F`
+// (Find), `Ctrl+Shift+K` (Clear), `Ctrl+Shift+Space` (Copy Mode) -- all
+// `Ctrl+Shift+*`, so no widening of `isAllowedShortcutClass` was needed --
+// and `Shift+Insert` (Paste) and `Shift+PgUp`/`PgDn`/`Home`/`End`
+// (scrollback), a brand-new bare-`Shift+<key>` class that *did* need one.
 
 export type MenuName = "Workspace" | "Tab" | "Pane" | "Agents" | "View" | "herdr" | "Help";
 
@@ -214,6 +221,84 @@ const NAMED_SHORTCUTS: readonly ShortcutAction[] = [
     display: "Ctrl+Shift+/",
     combo: combo(true, true, false, "Slash"),
   },
+  // Terminal-parity spec P0 #1: keeps the last mouse selection highlighted
+  // (`appTerminalMouse.ts`) and copies it via `pane.selection.read`; a no-op
+  // with no selection. Was sent to the terminal as Ctrl+Shift+'c' before
+  // this (`input/keymap.ts`'s Ctrl+Alt/Ctrl `Char` branch).
+  {
+    id: "pane.copy",
+    menu: "Pane",
+    label: "Copy",
+    display: "Ctrl+Shift+C",
+    combo: combo(true, true, false, "KeyC"),
+  },
+  // P1 #7: opens the find-in-scrollback bar docked at the pane's top-right.
+  {
+    id: "pane.find",
+    menu: "Pane",
+    label: "Find…",
+    display: "Ctrl+Shift+F",
+    combo: combo(true, true, false, "KeyF"),
+  },
+  // P1 #12: `pane.clear`, also reachable from the pane context menu.
+  {
+    id: "pane.clear",
+    menu: "Pane",
+    label: "Clear",
+    display: "Ctrl+Shift+K",
+    combo: combo(true, true, false, "KeyK"),
+  },
+  // P1 #8: enters/exits vim-like copy mode (`copy_mode.rs` parity).
+  {
+    id: "pane.copyMode",
+    menu: "Pane",
+    label: "Copy Mode",
+    display: "Ctrl+Shift+Space",
+    combo: combo(true, true, false, "Space"),
+  },
+  // P0 #4 "Paste": claimed in the capture layer, same reserved-combo
+  // treatment as Ctrl+Shift+V -- it never reaches `mapKeyboardEvent`'s own
+  // named-key table (`Insert`), which would otherwise send a plain
+  // Shift+Insert key press instead of pasting.
+  {
+    id: "pane.paste",
+    menu: "Pane",
+    label: "Paste",
+    display: "Shift+Insert",
+    combo: combo(false, true, false, "Insert"),
+  },
+  // P1 #10 "Scrollback keys": one page via `pane.scroll`, using
+  // `PaneSurfacePane.scroll`/`viewport_rows` -- distinct from plain
+  // PgUp/PgDn, which the server itself scrolls at a shell prompt
+  // (`src/server/pane_input.rs:293-309`).
+  {
+    id: "pane.scrollPageUp",
+    menu: "Pane",
+    label: "Scroll Page Up",
+    display: "Shift+PgUp",
+    combo: combo(false, true, false, "PageUp"),
+  },
+  {
+    id: "pane.scrollPageDown",
+    menu: "Pane",
+    label: "Scroll Page Down",
+    display: "Shift+PgDn",
+    combo: combo(false, true, false, "PageDown"),
+  },
+  {
+    id: "pane.scrollToTop",
+    menu: "Pane",
+    label: "Scroll to Top",
+    display: "Shift+Home",
+    combo: combo(false, true, false, "Home"),
+  },
+  {
+    id: "pane.scrollToBottom",
+    menu: "Pane",
+    label: "Scroll to Bottom",
+    display: "Shift+End",
+    combo: combo(false, true, false, "End"),
+  },
 ];
 
 const DIGIT_CODES = [
@@ -309,6 +394,11 @@ const ALLOWED_CTRL_ONLY_CODES = new Set(["Tab", "Equal", "Minus", "Digit0", "Com
  * here -- they already fall under the pre-existing `Ctrl+Shift+*` class
  * below. */
 const ALLOWED_ALT_ONLY_CODES = new Set<string>([...DIGIT_CODES, "Backquote"]);
+/** The terminal-parity spec's one new bare-`Shift+<key>` class: Paste
+ * (`Shift+Insert`) and the four scrollback keys (`Shift+PgUp`/`PgDn`/
+ * `Home`/`End`). `Ctrl+Shift+C`/`F`/`K`/`Space` need no addition here --
+ * they already fall under the pre-existing `Ctrl+Shift+*` class below. */
+const ALLOWED_SHIFT_ONLY_CODES = new Set(["Insert", "PageUp", "PageDown", "Home", "End"]);
 
 /** Spec §1's allowed shortcut classes, as a pure predicate -- used by the
  * self-check test so a future entry can't silently widen what the GUI
@@ -319,6 +409,7 @@ export function isAllowedShortcutClass(action: ShortcutAction): boolean {
   if (alt && shift && !ctrl) return true; // Alt+Shift+*
   if (ctrl && !shift && !alt && ALLOWED_CTRL_ONLY_CODES.has(code)) return true; // Ctrl+Tab/=/-/0/,
   if (alt && !shift && !ctrl && ALLOWED_ALT_ONLY_CODES.has(code)) return true; // Alt+1..9, Alt+`
+  if (shift && !ctrl && !alt && ALLOWED_SHIFT_ONLY_CODES.has(code)) return true; // Shift+Insert/PgUp/PgDn/Home/End
   if (!ctrl && !shift && !alt && code === "F2" && action.requiresTabFocus) return true; // F2, tab focus only
   return false;
 }

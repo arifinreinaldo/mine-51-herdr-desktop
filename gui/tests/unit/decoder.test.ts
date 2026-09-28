@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeSurfaceFrame } from "../../src/decoder";
+import { cursorShapeFromParam, decodeSurfaceFrame } from "../../src/decoder";
 
 /** Builds a minimal valid v1 frame (spec §5): kind=1, 1x1, one plain cell. */
 function buildMinimalFullFrame(): Uint8Array {
@@ -31,7 +31,7 @@ describe("decodeSurfaceFrame", () => {
     expect(decoded.surfaceRevision).toBe(1);
     expect(decoded.width).toBe(1);
     expect(decoded.height).toBe(1);
-    expect(decoded.cursor).toEqual({ x: 0, y: 0, visible: false });
+    expect(decoded.cursor).toEqual({ x: 0, y: 0, visible: false, shape: "block", blink: true });
     expect(decoded.rows).toEqual([{ y: 0, x: 0, cells: [{ symbol: "a", fg: 0, bg: 0, modifier: 0, skip: false }] }]);
   });
 
@@ -92,6 +92,45 @@ describe("decodeSurfaceFrame", () => {
     expect(decoded.rustUs).toBe(1_500_000);
     // The trailer must not disturb anything the payload already carried.
     expect(decoded.rows).toEqual([{ y: 0, x: 0, cells: [{ symbol: "a", fg: 0, bg: 0, modifier: 0, skip: false }] }]);
+  });
+
+  it("cursorShapeFromParam maps every DECSCUSR value (src/protocol/wire.rs:746-765)", () => {
+    expect(cursorShapeFromParam(0)).toEqual({ shape: "block", blink: true }); // terminal default
+    expect(cursorShapeFromParam(1)).toEqual({ shape: "block", blink: true });
+    expect(cursorShapeFromParam(2)).toEqual({ shape: "block", blink: false });
+    expect(cursorShapeFromParam(3)).toEqual({ shape: "underline", blink: true });
+    expect(cursorShapeFromParam(4)).toEqual({ shape: "underline", blink: false });
+    expect(cursorShapeFromParam(5)).toEqual({ shape: "bar", blink: true });
+    expect(cursorShapeFromParam(6)).toEqual({ shape: "bar", blink: false });
+    expect(cursorShapeFromParam(99)).toEqual({ shape: "block", blink: true }); // unknown -> default
+  });
+
+  it("decodes a cursor-shape-only trailer (1 byte left, no rust_us) -- commands::sync_state's replay frame", () => {
+    const bytes = Array.from(buildMinimalFullFrame());
+    bytes[17] = 1; // cursor_visible = true, so the cursor isn't the "absent" sentinel
+    bytes.push(5); // shape trailer only: blinking bar
+    const decoded = decodeSurfaceFrame(new Uint8Array(bytes));
+    expect(decoded.rustUs).toBe(0);
+    expect(decoded.cursor).toEqual({ x: 0, y: 0, visible: true, shape: "bar", blink: true });
+  });
+
+  it("decodes a shape-then-rust_us trailer (5+ bytes left)", () => {
+    const bytes = Array.from(buildMinimalFullFrame());
+    bytes[17] = 1; // cursor_visible = true
+    bytes.push(4); // shape: steady underline
+    bytes.push(0x60, 0xe3, 0x16, 0x00); // rust_us = 1_500_000, little-endian u32
+    const decoded = decodeSurfaceFrame(new Uint8Array(bytes));
+    expect(decoded.rustUs).toBe(1_500_000);
+    expect(decoded.cursor).toEqual({ x: 0, y: 0, visible: true, shape: "underline", blink: false });
+  });
+
+  it("a rust_us-only trailer (exactly 4 bytes left) still decodes with no shape info -- old golden fixtures", () => {
+    const bytes = Array.from(buildMinimalFullFrame());
+    bytes[17] = 1; // cursor_visible = true
+    bytes.push(0x60, 0xe3, 0x16, 0x00); // rust_us = 1_500_000
+    const decoded = decodeSurfaceFrame(new Uint8Array(bytes));
+    expect(decoded.rustUs).toBe(1_500_000);
+    expect(decoded.cursor).toEqual({ x: 0, y: 0, visible: true, shape: "block", blink: true });
   });
 
   it("decodes multiple rows in a row patch", () => {

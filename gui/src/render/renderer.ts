@@ -17,6 +17,7 @@ import {
   integralOriginShiftCssPx,
 } from "./metrics";
 import { mergeBackgroundRuns } from "./runs";
+import { underlineStyleFromModifier } from "./underline";
 
 export const FONT_STACK = '"Cascadia Mono","Cascadia Code",Consolas,monospace';
 export const MIN_FONT_SIZE_PX = 10;
@@ -145,6 +146,16 @@ const MODIFIER_DIM = 0x0002;
 const MODIFIER_ITALIC = 0x0004;
 const MODIFIER_UNDERLINED = 0x0008;
 const MODIFIER_REVERSED = 0x0040;
+// P1 #15 "Rendering" (`src/protocol/wire.rs:97-103`): bit7 HIDDEN, bit8
+// CROSSED_OUT (strikethrough). Bits 12-15 (the underline-style nibble) are
+// read separately, via `underlineStyleFromModifier`.
+const MODIFIER_HIDDEN = 0x0080;
+const MODIFIER_CROSSED_OUT = 0x0100;
+
+/** How long the DECSCUSR-default blinking cursor stays on (or off) per
+ * phase, matching a typical terminal's ~530ms blink cadence. Only the
+ * cursor blinks (spec P1 #15: "blinking text is P2"). */
+const CURSOR_BLINK_INTERVAL_MS = 530;
 
 export class TerminalRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -174,6 +185,11 @@ export class TerminalRenderer {
    * (named colour 0 = Reset, handled separately), 1-16 are the theme's 16
    * ANSI colours (spec §2.1's `terminal.ansi*` keys, in wire order). */
   private namedPalette: string[] = [];
+  /** P1 #15 "Rendering": whether a blinking cursor is in its "on" phase
+   * right now. Irrelevant (never consulted) for a non-blinking cursor --
+   * `paintCursor` only reads it when `grid.cursor.blink` is true, so this
+   * never needs resetting except for a crisper first paint on focus. */
+  private cursorBlinkOn = true;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -192,6 +208,20 @@ export class TerminalRenderer {
     this.theme = theme;
     this.namedPalette = ["transparent", ...theme.ansi];
     this.atlas = new GlyphAtlas(this.cellWidthPx, this.cellHeightPx);
+    // P1 #15 "Rendering": runs for the app's whole lifetime (one renderer
+    // instance, created once in `main.ts`), same as this codebase's other
+    // persistent intervals (the 30s age refresh, the 2s usage poll) -- there
+    // is nothing to tear down since the renderer itself never is.
+    window.setInterval(() => this.tickCursorBlink(), CURSOR_BLINK_INTERVAL_MS);
+  }
+
+  /** Toggles the blink phase and repaints the cursor's row, but only when a
+   * blinking cursor is actually present -- a steady cursor (or no cursor at
+   * all) never schedules a needless repaint every 530ms. */
+  private tickCursorBlink(): void {
+    if (!this.grid?.cursor?.blink) return;
+    this.cursorBlinkOn = !this.cursorBlinkOn;
+    this.markDirty([this.grid.cursor.y]);
   }
 
   getFontSizePx(): number {
@@ -219,6 +249,9 @@ export class TerminalRenderer {
 
   setFocused(focused: boolean): void {
     this.focused = focused;
+    // P1 #15: start every focus gain from the "on" phase, so the cursor is
+    // never invisible the instant focus returns.
+    if (focused) this.cursorBlinkOn = true;
     if (this.grid?.cursor) this.markDirty([this.grid.cursor.y]);
   }
 
@@ -432,6 +465,11 @@ export class TerminalRenderer {
     for (let x = 0; x < paintWidth; x++) {
       const cell = this.grid.cells[y * this.grid.width + x];
       if (!cell || cell.skip || !cell.symbol || cell.symbol === " ") continue;
+      // P1 #15 "Rendering": hidden (SGR 8) cells paint their background
+      // (already done above) but never their glyph or under/strike lines --
+      // the simplest faithful rendering of "invisible text", and cheaper
+      // than drawing the glyph in the background colour.
+      if ((cell.modifier & MODIFIER_HIDDEN) !== 0) continue;
       const codePoint = cell.symbol.codePointAt(0) ?? 0;
       const kind = classifyGlyph(codePoint);
       const cellX = x * this.cellWidthPx;
@@ -486,15 +524,70 @@ export class TerminalRenderer {
         slot.w,
         slot.h,
       );
-      if (underlined) {
-        this.ctx.strokeStyle = fg;
-        this.ctx.beginPath();
-        const lineY = rowTop + this.cellHeightPx - 1;
-        this.ctx.moveTo(cellX, lineY);
-        this.ctx.lineTo(cellX + this.cellWidthPx, lineY);
-        this.ctx.stroke();
-      }
+      const crossedOut = (cell.modifier & MODIFIER_CROSSED_OUT) !== 0;
+      if (underlined) this.drawUnderline(cellX, rowTop, fg, underlineStyleFromModifier(cell.modifier));
+      if (crossedOut) this.drawStrikethrough(cellX, rowTop, fg);
     }
+  }
+
+  /** P1 #15 "Rendering": herdr's underline-style nibble
+   * (`underlineStyleFromModifier`), single/double reusing the plain
+   * solid-line stroke this renderer already drew (finding-free, just no
+   * longer hardcoded to "single"); curly/dotted/dashed distinguish
+   * themselves with `setLineDash`/a small sine wave -- close enough to each
+   * SGR style's intent to read as visually distinct at terminal font sizes,
+   * without vendoring a full curly-underline glyph renderer. */
+  private drawUnderline(
+    cellX: number,
+    rowTop: number,
+    color: string,
+    style: ReturnType<typeof underlineStyleFromModifier>,
+  ): void {
+    const lineY = rowTop + this.cellHeightPx - 1;
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 1;
+    this.ctx.setLineDash([]);
+    if (style === "curly") {
+      const amplitude = Math.max(1, Math.round(this.cellHeightPx / 12));
+      const waveWidth = Math.max(2, Math.round(this.cellWidthPx / 2));
+      this.ctx.beginPath();
+      this.ctx.moveTo(cellX, lineY);
+      for (let x = 0; x < this.cellWidthPx; x += waveWidth) {
+        const midX = cellX + Math.min(this.cellWidthPx, x + waveWidth / 2);
+        const endX = cellX + Math.min(this.cellWidthPx, x + waveWidth);
+        const peak = (x / waveWidth) % 2 === 0 ? lineY - amplitude : lineY + amplitude;
+        this.ctx.quadraticCurveTo(midX, peak, endX, lineY);
+      }
+      this.ctx.stroke();
+      return;
+    }
+    if (style === "dotted") this.ctx.setLineDash([1, 1]);
+    else if (style === "dashed") this.ctx.setLineDash([3, 2]);
+    this.ctx.beginPath();
+    this.ctx.moveTo(cellX, lineY);
+    this.ctx.lineTo(cellX + this.cellWidthPx, lineY);
+    this.ctx.stroke();
+    if (style === "double") {
+      const secondLineY = lineY - 2;
+      this.ctx.beginPath();
+      this.ctx.moveTo(cellX, secondLineY);
+      this.ctx.lineTo(cellX + this.cellWidthPx, secondLineY);
+      this.ctx.stroke();
+    }
+    this.ctx.setLineDash([]);
+  }
+
+  /** P1 #15 "Rendering": CROSSED_OUT (bit8), one solid line through the
+   * cell's vertical middle. */
+  private drawStrikethrough(cellX: number, rowTop: number, color: string): void {
+    const lineY = rowTop + Math.round(this.cellHeightPx / 2);
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 1;
+    this.ctx.setLineDash([]);
+    this.ctx.beginPath();
+    this.ctx.moveTo(cellX, lineY + 0.5);
+    this.ctx.lineTo(cellX + this.cellWidthPx, lineY + 0.5);
+    this.ctx.stroke();
   }
 
   /**
@@ -564,29 +657,62 @@ export class TerminalRenderer {
   }
 
   private paintCursor(paintWidth: number, paintHeight: number): void {
-    if (!this.grid?.cursor || !this.grid.cursor.visible) return;
-    const { x, y } = this.grid.cursor;
+    const cursor = this.grid?.cursor;
+    if (!cursor || !cursor.visible) return;
+    const { x, y } = cursor;
     if (x < 0 || y < 0 || x >= paintWidth || y >= paintHeight) return;
     const cellX = x * this.cellWidthPx;
     const cellY = y * this.cellHeightPx;
     if (this.focused) {
-      this.ctx.fillStyle = this.theme.cursor;
-      this.ctx.fillRect(cellX, cellY, this.cellWidthPx, this.cellHeightPx);
-      const cell = this.grid.cells[y * this.grid.width + x];
-      if (cell && !cell.skip && cell.symbol && cell.symbol !== " ") {
-        this.ctx.fillStyle = this.theme.background;
-        this.ctx.textBaseline = "alphabetic";
-        this.ctx.font = `${fontPxForDpr(this.fontSizePx, this.dpr)}px ${FONT_STACK}`;
-        this.ctx.fillText(
-          cell.symbol,
-          cellX,
-          cellY + baselineYWithinRow(this.cellHeightPx, this.ascent, this.descent),
-        );
-      }
+      // P1 #15 "Rendering": "Honour blink on the cursor only" -- a blinking
+      // cursor simply isn't painted during its "off" phase; a steady cursor
+      // (`blink: false`) always paints, regardless of `cursorBlinkOn`'s
+      // stale value from some earlier blinking cursor.
+      if (cursor.blink && !this.cursorBlinkOn) return;
+      this.paintFocusedCursorShape(cursor.shape, cellX, cellY, x, y);
     } else {
+      // Unfocused: always the hollow box outline, whatever the shape/blink
+      // would be while focused -- matches most terminals' own convention
+      // and this renderer's pre-existing behaviour.
       this.ctx.strokeStyle = this.theme.cursor;
       this.ctx.lineWidth = 1;
       this.ctx.strokeRect(cellX + 0.5, cellY + 0.5, this.cellWidthPx - 1, this.cellHeightPx - 1);
+    }
+  }
+
+  /** Draws the focused cursor in its DECSCUSR shape (P1 #15 "Rendering"):
+   * `block` keeps this renderer's pre-existing filled-rect-plus-glyph-punch-
+   * through behaviour; `underline`/`bar` draw a thin bar at the cell's
+   * bottom/left edge instead, leaving the glyph itself untouched. */
+  private paintFocusedCursorShape(
+    shape: NonNullable<Grid["cursor"]>["shape"],
+    cellX: number,
+    cellY: number,
+    col: number,
+    row: number,
+  ): void {
+    this.ctx.fillStyle = this.theme.cursor;
+    if (shape === "underline") {
+      const thickness = Math.max(1, Math.round(this.cellHeightPx / 8));
+      this.ctx.fillRect(cellX, cellY + this.cellHeightPx - thickness, this.cellWidthPx, thickness);
+      return;
+    }
+    if (shape === "bar") {
+      const thickness = Math.max(1, Math.round(this.cellWidthPx / 8));
+      this.ctx.fillRect(cellX, cellY, thickness, this.cellHeightPx);
+      return;
+    }
+    this.ctx.fillRect(cellX, cellY, this.cellWidthPx, this.cellHeightPx);
+    const cell = this.grid?.cells[row * (this.grid?.width ?? 0) + col];
+    if (cell && !cell.skip && cell.symbol && cell.symbol !== " ") {
+      this.ctx.fillStyle = this.theme.background;
+      this.ctx.textBaseline = "alphabetic";
+      this.ctx.font = `${fontPxForDpr(this.fontSizePx, this.dpr)}px ${FONT_STACK}`;
+      this.ctx.fillText(
+        cell.symbol,
+        cellX,
+        cellY + baselineYWithinRow(this.cellHeightPx, this.ascent, this.descent),
+      );
     }
   }
 }

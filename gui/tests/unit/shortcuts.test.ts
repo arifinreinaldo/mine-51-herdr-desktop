@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { KeyCombo } from "../../src/shortcuts";
 import {
   cheatSheetEntries,
   filterCheatSheetEntries,
@@ -49,13 +50,41 @@ describe("SHORTCUTS", () => {
     expect(found).toBeUndefined();
   });
 
-  it("Ctrl+Shift+C and Ctrl+Shift+V stay reserved (not claimed)", () => {
+  // Terminal-parity spec P0 #1: Ctrl+Shift+C is now claimed as Copy (it used
+  // to be sent to the terminal as Ctrl+Shift+'c'); Ctrl+Shift+V stays
+  // reserved -- `keyboard/routing.ts`'s own paste-override path handles it
+  // while the terminal has focus, spec §1.
+  it("Ctrl+Shift+C is claimed as pane.copy; Ctrl+Shift+V stays reserved (not claimed)", () => {
     expect(
-      findShortcut({ ctrlKey: true, shiftKey: true, altKey: false, code: "KeyC" }, false),
-    ).toBeUndefined();
+      findShortcut({ ctrlKey: true, shiftKey: true, altKey: false, code: "KeyC" }, false)?.id,
+    ).toBe("pane.copy");
     expect(
       findShortcut({ ctrlKey: true, shiftKey: true, altKey: false, code: "KeyV" }, false),
     ).toBeUndefined();
+  });
+
+  // Terminal-parity spec P0 #4/P1 #7/#8/#10/#12: the new bare-Shift class
+  // (Paste, scrollback) and the remaining Ctrl+Shift+* claims (Find, Clear,
+  // Copy Mode) all resolve to their own shortcut ids.
+  it("resolves every new terminal-parity shortcut", () => {
+    const cases: Array<[Partial<KeyCombo>, string]> = [
+      [{ ctrl: true, shift: true, alt: false, code: "KeyF" }, "pane.find"],
+      [{ ctrl: true, shift: true, alt: false, code: "KeyK" }, "pane.clear"],
+      [{ ctrl: true, shift: true, alt: false, code: "Space" }, "pane.copyMode"],
+      [{ ctrl: false, shift: true, alt: false, code: "Insert" }, "pane.paste"],
+      [{ ctrl: false, shift: true, alt: false, code: "PageUp" }, "pane.scrollPageUp"],
+      [{ ctrl: false, shift: true, alt: false, code: "PageDown" }, "pane.scrollPageDown"],
+      [{ ctrl: false, shift: true, alt: false, code: "Home" }, "pane.scrollToTop"],
+      [{ ctrl: false, shift: true, alt: false, code: "End" }, "pane.scrollToBottom"],
+    ];
+    for (const [combo, id] of cases) {
+      expect(
+        findShortcut(
+          { ctrlKey: combo.ctrl ?? false, shiftKey: combo.shift ?? false, altKey: combo.alt ?? false, code: combo.code! },
+          false,
+        )?.id,
+      ).toBe(id);
+    }
   });
 });
 

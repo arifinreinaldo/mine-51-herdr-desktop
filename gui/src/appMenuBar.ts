@@ -18,7 +18,12 @@ import { applySidebarVisibility } from "./appSidebarResize";
 import { focusSidebarForKeyboard } from "./appSidebarPanel";
 import { appState, persistSettings, tabMru } from "./appState";
 import { focusAgentSequence, openOrRefreshAgentPopover } from "./appStatusBar";
-import { sendKeyEvent, sendPaste } from "./appTerminalInput";
+import { copyLastSelection } from "./appTerminalMouse";
+import { sendKeyEvent, sendPaste, sendTextCommit } from "./appTerminalInput";
+import { openFindBar } from "./ui/findBar";
+import { enterCopyMode } from "./copyMode";
+import { clearFocusedPane } from "./paneActions";
+import { scrollFocusedPaneByPage, scrollFocusedPaneToEdge } from "./scroll";
 import { importThemeFlow, newWorkspaceFlow } from "./appWorkspaceFlows";
 import { DEFAULT_FONT_SIZE_PX } from "./render/renderer";
 import type { AgentSort } from "./settings";
@@ -127,6 +132,7 @@ export const menuBarContext: MenuBarContext = {
     const paneId = focusedPaneId();
     if (paneId) void api("pane.zoom", { pane_id: paneId });
   },
+  onClearPane: clearFocusedPane,
   onJumpToNextNeedingAttention: () => {
     const order = appState.snapshot?.agent_order ?? [];
     const agents = appState.snapshot?.agents ?? [];
@@ -364,6 +370,16 @@ const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   "view.focusSidebar": () => focusSidebarForKeyboard(),
   "herdr.settings": () => menuBarContext.onOpenSettings(),
   "herdr.showShortcuts": () => menuBarContext.onOpenKeyboardShortcuts(),
+  // Terminal-parity spec.
+  "pane.copy": () => void copyLastSelection(), // P0 #1
+  "pane.paste": onPasteOverride, // P0 #4 "Shift+Insert", same as Ctrl+Shift+V
+  "pane.find": () => openFindBar(), // P1 #7
+  "pane.clear": clearFocusedPane, // P1 #12
+  "pane.copyMode": enterCopyMode, // P1 #8
+  "pane.scrollPageUp": () => void scrollFocusedPaneByPage("up"), // P1 #10
+  "pane.scrollPageDown": () => void scrollFocusedPaneByPage("down"),
+  "pane.scrollToTop": () => void scrollFocusedPaneToEdge("top"),
+  "pane.scrollToBottom": () => void scrollFocusedPaneToEdge("bottom"),
   ...RANGE_SHORTCUT_HANDLERS,
 };
 
@@ -382,8 +398,23 @@ export function onTerminalKey(mapped: { code: { kind: string; value?: unknown };
   sendKeyEvent({ code: keyCodeToWire(mapped.code), modifiers: mapped.modifiers });
 }
 
+/** Terminal-parity spec P0 #4 "Paste": a Rust `clipboard_read_text` command
+ * (using the `arboard` clipboard crate the mouse-selection pass already
+ * added, `src-tauri/src/clipboard.rs`) replaces
+ * `navigator.clipboard.readText()`, so this reserved Ctrl+Shift+V override
+ * no longer depends on the webview's own clipboard-read permission/policy.
+ * Paste still always goes through `Paste(text)` (`sendPaste`), so the
+ * server adds bracketed paste. */
 export function onPasteOverride(): void {
-  void navigator.clipboard.readText().then(sendPaste);
+  void invokeSafe<string | null>("clipboard_read_text").then((text) => {
+    if (text) sendPaste(text);
+  });
+}
+
+/** P0 #2 "AltGr": an AltGr press sends the composed character as a plain
+ * text commit, exactly like ordinary typed text. */
+export function onTerminalTextCommit(text: string): void {
+  sendTextCommit(text);
 }
 
 /** Ctrl+Shift+Alt+P (spec §8a.4 "Perf HUD"): outside the §1 allowed

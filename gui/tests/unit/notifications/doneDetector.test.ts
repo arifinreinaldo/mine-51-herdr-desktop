@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DoneToastDedup,
   DoneTransitionDetector,
   HighlightCardStack,
   type AgentForDetection,
@@ -122,5 +123,32 @@ describe("HighlightCardStack", () => {
     expect(stack.list()).toHaveLength(1);
     stack.prune(20000, new Set());
     expect(stack.list()).toHaveLength(0);
+  });
+});
+
+// Terminal-parity spec P1 #13: the same dedup key `appDoneNotifications.ts`
+// checks from both the snapshot-driven detector and `SemanticNotification`.
+describe("DoneToastDedup", () => {
+  it("shows the first time a pane_id/seq pair is seen", () => {
+    const dedup = new DoneToastDedup();
+    expect(dedup.shouldShow("p1", 5)).toBe(true);
+  });
+
+  it("suppresses a repeat of the exact same pane_id/seq pair", () => {
+    const dedup = new DoneToastDedup();
+    expect(dedup.shouldShow("p1", 5)).toBe(true);
+    expect(dedup.shouldShow("p1", 5)).toBe(false);
+  });
+
+  it("a higher seq for the same pane is a genuinely new transition", () => {
+    const dedup = new DoneToastDedup();
+    expect(dedup.shouldShow("p1", 5)).toBe(true);
+    expect(dedup.shouldShow("p1", 6)).toBe(true);
+  });
+
+  it("different panes never collide", () => {
+    const dedup = new DoneToastDedup();
+    expect(dedup.shouldShow("p1", 5)).toBe(true);
+    expect(dedup.shouldShow("p2", 5)).toBe(true);
   });
 });

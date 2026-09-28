@@ -396,6 +396,9 @@ button {
 #editor {
   display: grid;
   grid-template-rows: 35px 1fr;
+  /* The canvas carries an inline px width; an implicit `auto` column would
+     keep the old width as its minimum, so the terminal could never shrink. */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
 }
@@ -544,7 +547,9 @@ body.has-workspace-colors #tab-strip {
 #terminal-wrap {
   position: relative;
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
   padding: 8px;
   background: var(--terminal-background);
 }
@@ -564,6 +569,19 @@ body.has-workspace-colors #tab-strip {
   background: var(--terminal-selectionBackground);
   opacity: 0.5;
   pointer-events: none;
+}
+
+/* Ctrl+hover link underline (terminal-parity spec P0 #6 "Links"): reuses
+   `SelectionOverlay`'s row-rect renderer with its own class -- see
+   `mouse/selectionOverlay.ts`. */
+.terminal-link-hover-row {
+  position: absolute;
+  border-bottom: 1px solid var(--terminal-foreground);
+  pointer-events: none;
+}
+
+#terminal.is-link-hover {
+  cursor: pointer;
 }
 
 #keyboard-capture {
@@ -1281,6 +1299,13 @@ body.has-workspace-colors #tab-strip {
   transform: translate(-50%, 0);
 }
 
+/* Next to the pointer after a mouse selection (`copyNotice.ts`). */
+#copy-notice.is-at-pointer {
+  bottom: auto;
+  border-color: var(--focusBorder, #0078d4);
+  font-weight: 600;
+}
+
 /* Agent counts sit in one row inside the 22px status bar. */
 #status-agent-counts {
   display: flex;
@@ -1575,4 +1600,107 @@ body.has-workspace-colors #tab-strip {
 
 .wizard-usage-body p {
   margin-bottom: 6px;
+}
+
+/* Close Pane button on the focused pane of a split tab (`paneCloseButton.ts`). */
+.pane-close-button {
+  position: absolute;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tab-inactiveForeground, #9d9d9d);
+  cursor: pointer;
+}
+.pane-close-button:hover {
+  background: var(--toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+  color: var(--tab-activeForeground, #fff);
+}
+.pane-close-button[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Terminal-parity spec: find bar (P1 #7) and copy mode (P1 #8)           */
+/* ---------------------------------------------------------------------- */
+
+.find-bar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--menu-background, #252526);
+  border: 1px solid var(--menu-border, rgba(255, 255, 255, 0.15));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.find-bar__input {
+  width: 180px;
+  padding: 2px 6px;
+  border: 1px solid var(--menu-border, rgba(255, 255, 255, 0.15));
+  border-radius: 4px;
+  background: var(--terminal-background);
+  color: var(--terminal-foreground);
+  font-size: 12px;
+}
+
+.find-bar__count {
+  min-width: 3.5em;
+  text-align: right;
+  font-size: 12px;
+  color: var(--tab-inactiveForeground, #9d9d9d);
+}
+
+.terminal-find-match-row {
+  position: absolute;
+  background: var(--herdr-status-done, #4ec9b0);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.copy-mode-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--menu-background, #252526);
+  border: 1px solid var(--menu-border, rgba(255, 255, 255, 0.15));
+  color: var(--terminal-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.terminal-copymode-row {
+  position: absolute;
+  background: var(--terminal-selectionBackground);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.terminal-copymode-cursor {
+  position: absolute;
+  background: var(--terminal-cursor);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Terminal bell flash (P1 #13): a 200ms background pulse on the focused
+   tab, `notifications/bellFlash.ts`. */
+.tab-bell-flash {
+  background: var(--herdr-status-blocked, #e2c08d) !important;
+  transition: background 200ms ease-out;
 }

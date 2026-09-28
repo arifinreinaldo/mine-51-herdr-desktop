@@ -9,7 +9,7 @@
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::commands::{ApiError, AppState};
@@ -143,6 +143,36 @@ pub async fn notify_agent_done(
         tracing::warn!("failed to show agent-done toast: {err}");
     }
     Ok(())
+}
+
+/// `ServerMessage::TerminalBell{count}` (terminal-parity spec P1 #13 "Bell
+/// and notifications"): flashes the focused tab (emitted to the frontend
+/// unconditionally, so it flashes even while the window is focused), and --
+/// only while the window is unfocused -- also flashes the taskbar, same call
+/// as `notify_agent_done` above (`window.request_user_attention`). There is
+/// no sound (spec: "the bell never becomes annoying").
+pub async fn handle_terminal_bell(app: &AppHandle, count: u16) {
+    if let Some(window) = app.get_webview_window("main") {
+        if !window.is_focused().unwrap_or(true) {
+            let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+        }
+    }
+    let _ = app.emit("terminal-bell", count);
+}
+
+/// `ServerMessage::SemanticNotification` (terminal-parity spec P1 #13):
+/// forwarded to the frontend as-is. The done-toast dedup against the
+/// snapshot-driven `DoneTransitionDetector` (by pane id and
+/// `state_change_seq`) needs the current snapshot baseline, which only the
+/// TS side holds (`src/notifications/doneDetector.ts`), so this is a plain
+/// forward, not a decision point -- Rust's only other notification job
+/// (the desktop toast + taskbar flash) stays exactly as `notify_agent_done`
+/// already does it, called from TS once it decides a transition is new.
+pub fn handle_semantic_notification(
+    app: &AppHandle,
+    notification: herdr_wire::SemanticNotification,
+) {
+    let _ = app.emit("semantic-notification", notification);
 }
 
 #[cfg(test)]

@@ -1,0 +1,36 @@
+{
+  "kind": "full",
+  "surfaceRevision": 7,
+  "width": 2,
+  "height": 1,
+  "cursor": {
+    "x": 1,
+    "y": 0,
+    "visible": true,
+    "shape": "bar",
+    "blink": true
+  },
+  "rows": [
+    {
+      "y": 0,
+      "x": 0,
+      "cells": [
+        {
+          "symbol": "h",
+          "fg": 2,
+          "bg": 0,
+          "modifier": 0,
+          "skip": false
+        },
+        {
+          "symbol": "i",
+          "fg": 3,
+          "bg": 0,
+          "modifier": 1,
+          "skip": false
+        }
+      ]
+    }
+  ],
+  "rustUs": 500
+}

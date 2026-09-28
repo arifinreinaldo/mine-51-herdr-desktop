@@ -409,23 +409,48 @@ pub struct PaneMouseHit {
     pub mouse_reporting: bool,
     pub focused: bool,
     pub scroll: Option<PaneMouseScroll>,
+    /// The pane's `content_revision` at hit-test time (terminal-parity spec
+    /// P0 #1 "Keep the last selection ... content_revision"; P1 #9 double/
+    /// triple-click word/line selection): stamped onto a host-side
+    /// selection so a later `pane.selection.read` for it targets the exact
+    /// revision the selection was made against, mirroring
+    /// `ClientWordSelection.content_revision`
+    /// (`src/client/shell/word_selection.rs:41-47`), which reads the same
+    /// field off `PaneSurfacePane` (`herdr_wire::PaneSurfacePane.content_revision`).
+    pub content_revision: u64,
+    /// The pane's scrollbar track, if it has one (terminal-parity spec P1
+    /// #10 "Dragging the scrollbar thumb within `scrollbar_rect` ->
+    /// `pane.scroll`"): mirrors herdr's TUI client's own hit-test
+    /// (`src/client/shell/mouse.rs:2133-2144`), which checks this
+    /// **alongside**, not instead of, `inner_rect` -- the scrollbar column
+    /// sits just outside the pane's text area.
+    pub scrollbar_rect: Option<PaneMouseRect>,
+}
+
+fn rect_contains(rect: herdr_wire::SurfaceRect, col: u16, row: u16) -> bool {
+    col >= rect.x
+        && col < rect.x.saturating_add(rect.width)
+        && row >= rect.y
+        && row < rect.y.saturating_add(rect.height)
 }
 
 /// The actual hit-test, factored out of the `#[tauri::command]` wrapper so
 /// it's callable from a plain unit test without a `tauri::State`/`AppState`
 /// (there is no established pattern in this crate for constructing those in
-/// tests). Same containment rule as `pane_at`: `col`/`row` inside
-/// `pane.inner_rect`, half-open on the high edge.
+/// tests). A hit is `col`/`row` inside `pane.inner_rect` **or**
+/// `pane.scrollbar_rect` (half-open on the high edge, same as `pane_at`) --
+/// mirrors herdr's TUI client checking both independently
+/// (`src/client/shell/mouse.rs:1756-1761` for the pane text area,
+/// `:2133-2144` for the scrollbar column).
 fn resolve_pane_mouse_hit(panes: &[PaneSurfacePane], col: u16, row: u16) -> Option<PaneMouseHit> {
     panes.iter().find_map(|pane| {
-        let rect = pane.inner_rect;
-        let hit = col >= rect.x
-            && col < rect.x.saturating_add(rect.width)
-            && row >= rect.y
-            && row < rect.y.saturating_add(rect.height);
-        hit.then(|| PaneMouseHit {
+        let inner_hit = rect_contains(pane.inner_rect, col, row);
+        let scrollbar_hit = pane
+            .scrollbar_rect
+            .is_some_and(|rect| rect_contains(rect, col, row));
+        (inner_hit || scrollbar_hit).then(|| PaneMouseHit {
             pane_id: pane.pane_id.clone(),
-            inner_rect: rect.into(),
+            inner_rect: pane.inner_rect.into(),
             mouse_reporting: pane.mouse_reporting,
             focused: pane.focused,
             scroll: pane.scroll.map(|s| PaneMouseScroll {
@@ -433,6 +458,8 @@ fn resolve_pane_mouse_hit(panes: &[PaneSurfacePane], col: u16, row: u16) -> Opti
                 max_offset_from_bottom: s.max_offset_from_bottom,
                 viewport_rows: s.viewport_rows,
             }),
+            content_revision: pane.content_revision,
+            scrollbar_rect: pane.scrollbar_rect.map(Into::into),
         })
     })
 }
@@ -452,6 +479,88 @@ pub fn pane_mouse_hit(
     resolve_pane_mouse_hit(&mirror.panes, col, row)
 }
 
+/// The focused pane's outer rect, only while the tab is split: the
+/// frontend anchors its "close pane" button to it. `None` on a single-pane
+/// tab, where closing the pane would close the tab (and maybe the workspace).
+fn resolve_split_focused_pane_rect(panes: &[PaneSurfacePane]) -> Option<PaneMouseRect> {
+    if panes.len() < 2 {
+        return None;
+    }
+    panes
+        .iter()
+        .find(|pane| pane.focused)
+        .map(|pane| pane.rect.into())
+}
+
+#[tauri::command]
+pub fn split_focused_pane_rect(state: tauri::State<'_, AppState>) -> Option<PaneMouseRect> {
+    let mirror = lock_or_recover(&state.inner.mirror);
+    resolve_split_focused_pane_rect(&mirror.panes)
+}
+
+/// A pane's current scroll metrics by pane id, for keyboard-driven
+/// scrollback (terminal-parity spec P1 #10 "Scrollback keys"):
+/// Shift+PgUp/PgDn/Home/End act on the *focused* pane, which has no cell
+/// position to hit-test through `pane_mouse_hit` -- this is the same
+/// `PaneSurfacePane.scroll` data, looked up by id instead of by coordinate.
+#[tauri::command]
+pub fn pane_scroll_info(
+    state: tauri::State<'_, AppState>,
+    pane_id: String,
+) -> Option<PaneMouseScroll> {
+    let mirror = lock_or_recover(&state.inner.mirror);
+    mirror
+        .panes
+        .iter()
+        .find(|pane| pane.pane_id == pane_id)
+        .and_then(|pane| pane.scroll)
+        .map(|s| PaneMouseScroll {
+            offset_from_bottom: s.offset_from_bottom,
+            max_offset_from_bottom: s.max_offset_from_bottom,
+            viewport_rows: s.viewport_rows,
+        })
+}
+
+/// A pane's `content_revision`/`inner_rect`/scroll by pane id, for the two
+/// other keyboard-driven (no cell position to hit-test) features that need
+/// more than `pane_scroll_info` alone: find-in-scrollback (P1 #7, needs
+/// `content_revision` for `pane.copy_search`) and copy mode (P1 #8, needs
+/// `inner_rect.width` for motions like `$`/line-end and `content_revision`
+/// for `pane.copy_motion`).
+#[derive(Debug, Clone, Serialize)]
+pub struct PaneKeyboardInfo {
+    pub content_revision: u64,
+    pub inner_rect: PaneMouseRect,
+    pub scroll: Option<PaneMouseScroll>,
+}
+
+fn resolve_pane_keyboard_info(
+    panes: &[PaneSurfacePane],
+    pane_id: &str,
+) -> Option<PaneKeyboardInfo> {
+    panes
+        .iter()
+        .find(|pane| pane.pane_id == pane_id)
+        .map(|pane| PaneKeyboardInfo {
+            content_revision: pane.content_revision,
+            inner_rect: pane.inner_rect.into(),
+            scroll: pane.scroll.map(|s| PaneMouseScroll {
+                offset_from_bottom: s.offset_from_bottom,
+                max_offset_from_bottom: s.max_offset_from_bottom,
+                viewport_rows: s.viewport_rows,
+            }),
+        })
+}
+
+#[tauri::command]
+pub fn pane_keyboard_info(
+    state: tauri::State<'_, AppState>,
+    pane_id: String,
+) -> Option<PaneKeyboardInfo> {
+    let mirror = lock_or_recover(&state.inner.mirror);
+    resolve_pane_keyboard_info(&mirror.panes, &pane_id)
+}
+
 /// Writes `text` to the OS clipboard (`crate::clipboard`), for the mouse-
 /// selection auto-copy flow: `appTerminalMouse.ts` reads the selected text
 /// via the `pane.selection.read` endpoint (mirroring herdr's TUI client's
@@ -460,6 +569,72 @@ pub fn pane_mouse_hit(
 #[tauri::command]
 pub fn write_clipboard_text(text: String) -> bool {
     crate::clipboard::write_clipboard_bytes(text.as_bytes())
+}
+
+/// Reads plain text from the OS clipboard (terminal-parity spec P0 #4
+/// "Paste"): the Rust-side replacement for `navigator.clipboard.readText()`
+/// used by both Shift+Insert and the reserved Ctrl+Shift+V override
+/// (`keyboard/routing.ts`'s `onPasteOverride`). `None` when the clipboard
+/// has no text (or is unavailable) -- callers already treat "nothing to
+/// paste" as a no-op.
+#[tauri::command]
+pub fn clipboard_read_text() -> Option<String> {
+    crate::clipboard::read_clipboard_text()
+}
+
+/// Opens `url` in the OS's default browser via the opener plugin (terminal-
+/// parity spec P0 #6 "Links"), after the same strict scheme check herdr's
+/// TUI client applies before ever handing an unhandled link to the OS
+/// (`app::actions::safe_web_url`, `src/app/actions.rs:1035-1037`: only
+/// `http://`/`https://`, never `file:`/`javascript:`/anything else). The
+/// frontend already gates this call on `pane.link.activate`'s own
+/// `handled: false` response (spec fact "Link handling"), but the scheme is
+/// re-checked here too -- Rust, not the webview, is what actually shells out
+/// to the OS, so it must never trust an unvalidated string crossing the IPC
+/// boundary.
+#[tauri::command]
+pub fn open_external_url(app: AppHandle, url: String) -> Result<(), ApiError> {
+    if !is_safe_web_url(&url) {
+        return Err(ApiError {
+            code: "unsafe_url".to_string(),
+            message: format!("refusing to open non-http(s) url: {url}"),
+        });
+    }
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|err| ApiError {
+            code: "io_error".to_string(),
+            message: err.to_string(),
+        })
+}
+
+/// `http://`/`https://` only, byte-for-byte the same rule as herdr's TUI
+/// client's own `safe_web_url` (`src/app/actions.rs:1035-1037`): no
+/// `file:`, no `javascript:`, no scheme-relative or bare paths.
+fn is_safe_web_url(url: &str) -> bool {
+    url.starts_with("http://") || url.starts_with("https://")
+}
+
+/// Sends `ClientMessage::ClientShellFocus` (terminal-parity spec P0 #3
+/// "Focus reporting"): called from the frontend on every DOM `window` focus
+/// and blur (`main.ts`). `dispatch::run_reconnect_loop` separately sends one
+/// more, right after each (re)connect, using the window's *current* focus
+/// state -- so a reconnect that happens while the window is already
+/// focused still tells the server this client is foreground without
+/// waiting for the next real focus/blur transition. Only the foreground
+/// client gets bell and OSC 52 (`src/server/headless/notifications.rs:325,338`);
+/// a client becomes foreground again through `ClientShellFocus{true}`
+/// (`headless.rs:2241`).
+#[tauri::command]
+pub async fn set_client_focus(
+    state: tauri::State<'_, AppState>,
+    focused: bool,
+) -> Result<(), ApiError> {
+    let conn = current_connection(&state).await?;
+    conn.send(&ClientMessage::ClientShellFocus { focused })
+        .await
+        .map_err(ApiError::from)
 }
 
 /// Re-emits the last cached `snapshot`, `usage`, and `connection-status`,
@@ -490,13 +665,20 @@ pub async fn sync_state(state: tauri::State<'_, AppState>, app: AppHandle) -> Re
     let full_frame_bytes = {
         let mirror = lock_or_recover(&inner.mirror);
         mirror.has_surface().then(|| {
-            crate::surface_encode::encode_full_frame(
+            let mut bytes = crate::surface_encode::encode_full_frame(
                 mirror.surface_revision,
                 mirror.width,
                 mirror.height,
                 mirror.cursor.as_ref(),
                 &mirror.cells,
-            )
+            );
+            // Spec P1 #15 "Rendering": this replay frame carries the cursor
+            // shape trailer too, so a frontend that (re)registers its surface
+            // listener via `sync_state` sees the right shape immediately
+            // instead of the "no shape info" default until the next real
+            // frame arrives.
+            crate::surface_encode::append_cursor_shape_trailer(&mut bytes, mirror.cursor.as_ref());
+            bytes
         })
     };
     if let Some(bytes) = full_frame_bytes {
@@ -504,6 +686,32 @@ pub async fn sync_state(state: tauri::State<'_, AppState>, app: AppHandle) -> Re
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod safe_web_url_tests {
+    use super::is_safe_web_url;
+
+    #[test]
+    fn accepts_http_and_https() {
+        assert!(is_safe_web_url("http://example.com"));
+        assert!(is_safe_web_url("https://example.com/path?q=1"));
+    }
+
+    #[test]
+    fn rejects_non_web_schemes() {
+        assert!(!is_safe_web_url("file:///etc/passwd"));
+        assert!(!is_safe_web_url("javascript:alert(1)"));
+        assert!(!is_safe_web_url("ftp://example.com"));
+        assert!(!is_safe_web_url("data:text/html,hi"));
+    }
+
+    #[test]
+    fn rejects_scheme_relative_and_bare_paths() {
+        assert!(!is_safe_web_url("//example.com"));
+        assert!(!is_safe_web_url("example.com"));
+        assert!(!is_safe_web_url(""));
+    }
 }
 
 #[cfg(test)]
@@ -532,7 +740,7 @@ mod pane_mouse_hit_tests {
     ) -> PaneSurfacePane {
         PaneSurfacePane {
             pane_id: id.into(),
-            content_revision: 1,
+            content_revision: 42,
             rect: inner,
             inner_rect: inner,
             scrollbar_rect: None,
@@ -547,10 +755,92 @@ mod pane_mouse_hit_tests {
     }
 
     #[test]
+    fn split_focused_pane_rect_only_on_a_split_tab() {
+        let single = vec![pane("p1", rect(0, 0, 10, 5), false, true, None)];
+        assert!(resolve_split_focused_pane_rect(&single).is_none());
+        let split = vec![
+            pane("p1", rect(0, 0, 10, 5), false, false, None),
+            pane("p2", rect(10, 0, 8, 5), false, true, None),
+        ];
+        let r = resolve_split_focused_pane_rect(&split).expect("focused pane");
+        assert_eq!((r.x, r.y, r.width, r.height), (10, 0, 8, 5));
+    }
+
+    #[test]
     fn misses_outside_every_pane() {
         let panes = vec![pane("p1", rect(0, 0, 10, 5), false, true, None)];
         assert!(resolve_pane_mouse_hit(&panes, 10, 0).is_none()); // x == right edge, exclusive
         assert!(resolve_pane_mouse_hit(&panes, 0, 5).is_none()); // y == bottom edge, exclusive
+    }
+
+    #[test]
+    fn a_click_on_the_scrollbar_column_hits_even_though_its_outside_inner_rect() {
+        let mut p = pane("p1", rect(0, 0, 10, 5), false, true, None);
+        p.rect = rect(0, 0, 11, 5);
+        p.scrollbar_rect = Some(rect(10, 0, 1, 5)); // one column right of inner_rect
+        let panes = vec![p];
+
+        // Outside inner_rect (x=10 is inner_rect's exclusive right edge) but
+        // inside scrollbar_rect: still a hit.
+        let hit = resolve_pane_mouse_hit(&panes, 10, 2).expect("scrollbar column is a hit");
+        assert_eq!(hit.pane_id, "p1");
+        assert_eq!(
+            hit.scrollbar_rect,
+            Some(PaneMouseRect {
+                x: 10,
+                y: 0,
+                width: 1,
+                height: 5
+            })
+        );
+
+        // A hit *inside* inner_rect also reports the pane's scrollbar_rect.
+        let hit = resolve_pane_mouse_hit(&panes, 2, 2).expect("inside inner_rect");
+        assert_eq!(
+            hit.scrollbar_rect,
+            Some(PaneMouseRect {
+                x: 10,
+                y: 0,
+                width: 1,
+                height: 5
+            })
+        );
+
+        // Past both rects: a miss.
+        assert!(resolve_pane_mouse_hit(&panes, 11, 2).is_none());
+    }
+
+    #[test]
+    fn no_scrollbar_rect_means_none_in_the_hit() {
+        let panes = vec![pane("p1", rect(0, 0, 10, 5), false, true, None)];
+        let hit = resolve_pane_mouse_hit(&panes, 2, 2).unwrap();
+        assert_eq!(hit.scrollbar_rect, None);
+    }
+
+    #[test]
+    fn pane_keyboard_info_looks_up_by_id_not_coordinate() {
+        let scroll = herdr_wire::PaneSurfaceScrollMetrics {
+            offset_from_bottom: 3,
+            max_offset_from_bottom: 20,
+            viewport_rows: 10,
+        };
+        let panes = vec![
+            pane("a", rect(0, 0, 10, 5), false, true, None),
+            pane("b", rect(10, 0, 10, 5), false, false, Some(scroll)),
+        ];
+        assert!(resolve_pane_keyboard_info(&panes, "missing").is_none());
+        let info = resolve_pane_keyboard_info(&panes, "b").expect("pane b exists");
+        assert_eq!(info.content_revision, 42);
+        assert_eq!(
+            info.inner_rect,
+            PaneMouseRect {
+                x: 10,
+                y: 0,
+                width: 10,
+                height: 5
+            }
+        );
+        assert_eq!(info.scroll.unwrap().max_offset_from_bottom, 20);
     }
 
     #[test]
@@ -584,6 +874,7 @@ mod pane_mouse_hit_tests {
         assert!(!hit.mouse_reporting);
         assert!(hit.focused);
         assert!(hit.scroll.is_none());
+        assert_eq!(hit.content_revision, 42);
 
         let hit = resolve_pane_mouse_hit(&panes, 15, 4).expect("inside `right`");
         assert_eq!(hit.pane_id, "right");

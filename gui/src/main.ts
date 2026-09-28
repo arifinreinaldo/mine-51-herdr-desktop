@@ -6,10 +6,8 @@
 // startup sequence and the event listeners that fan out to them).
 
 import "./style.css";
-import { listen } from "@tauri-apps/api/event";
 
 import { invokeSafe, showErrorNotice } from "./appApi";
-import { renderConnectionBanner } from "./appConnectionBanner";
 import {
   canvas,
   keyboardCapture,
@@ -17,45 +15,38 @@ import {
   sidebarEl,
   statusUsageEl,
   terminalWrapEl,
-  titlebarCenterEl,
   winCloseEl,
   winMaximizeEl,
   winMinimizeEl,
 } from "./appDom";
+import { wireEvents } from "./appEvents";
+import { wireFocusReporting } from "./appFocusReporting";
+import { wireDragDropFiles } from "./dragDropFiles";
 import { applyCurrentTheme, currentThemeDef, rendererThemeFrom } from "./appLookups";
 import {
   initAutostartState,
   onPasteOverride,
   onShortcut,
   onTerminalKey,
-  refreshMenuBarContext,
+  onTerminalTextCommit,
   wireMenuBarNow,
   wirePerfHudToggle,
 } from "./appMenuBar";
-import { appState, doneDetector, statusAge, tabMru } from "./appState";
+import { appState, doneDetector, statusAge } from "./appState";
 import { renderSidebarNow } from "./appSidebarPanel";
 import { applySidebarVisibility, applySidebarWidth, wireNewWorkspaceControls, wireSidebarResize } from "./appSidebarResize";
-import {
-  openOrRefreshAgentPopover,
-  refreshAgentPopoverIfOpen,
-  renderStatusBarNow,
-  renderUsageBarNow,
-  wireUsageRefresh,
-} from "./appStatusBar";
+import { refreshAgentPopoverIfOpen, wireUsageRefresh } from "./appStatusBar";
 import { renderTabsNow, wireTabStripControls } from "./appTabStrip";
 import { subscribeSurface, wireInputHandlers, wireResizeObserver } from "./appTerminalInput";
 import { wireTerminalMouse } from "./appTerminalMouse";
-import type { RawSnapshot, UsageEventPayload } from "./appTypes";
-import { handleDoneTransitions, toDetectionAgents } from "./appDoneNotifications";
 import { refreshImportedThemes } from "./appWorkspaceFlows";
-import { showCopiedNotice } from "./copyNotice";
 import { hasTabUiFocus, installKeyboardRouting } from "./keyboard/routing";
 import type { Settings } from "./settings";
 import { TAB_RENDER_GUARD_REGION } from "./ui/tabs";
 import { onRenderGuardReleased } from "./ui/renderGuard";
 import { SIDEBAR_RENDER_GUARD_REGION } from "./ui/sidebar";
 import { TerminalRenderer } from "./render/renderer";
-import { formatTitlebarCenter, wireTitlebarControls } from "./ui/titlebar";
+import { wireTitlebarControls } from "./ui/titlebar";
 
 function paintChromeSkeleton(): void {
   sidebarEl.textContent = "";
@@ -85,67 +76,6 @@ function reportReadyAfterTwoFrames(startedAt: number): void {
       void invokeSafe("report_ready", { ms });
     });
   });
-}
-
-async function wireEvents(): Promise<void> {
-  await listen<RawSnapshot>("snapshot", (event) => {
-    const previousBootId = appState.snapshot?.boot_id;
-    const isFirstSnapshot = appState.snapshot === null;
-    appState.snapshot = event.payload;
-    appState.lastSnapshotAt = Date.now();
-    // Keyboard shortcut Alt+`: feed the MRU tracker from every snapshot's
-    // focused tab, across all workspaces (not just the current one).
-    tabMru.record(appState.snapshot.focused_tab_id);
-    // Finding #11: "the next snapshot is authoritative" -- any new
-    // snapshot, whether or not it is the one confirming a pending
-    // `tab.move`, ends the optimistic reorder window.
-    appState.optimisticTabOrder = null;
-    if (previousBootId !== undefined && previousBootId !== appState.snapshot.boot_id) {
-      doneDetector.resetBaseline();
-      statusAge.reset();
-    } else {
-      handleDoneTransitions(doneDetector.diff(toDetectionAgents()));
-    }
-    statusAge.update(toDetectionAgents(), appState.lastSnapshotAt);
-    renderSidebarNow();
-    renderTabsNow();
-    renderStatusBarNow();
-    // UX pass 1 spec §2 refresh (finding #2): keep the open agent
-    // popover's rows/ages in sync with each snapshot too, not just the
-    // 30s tick below -- without this, a pinned list could show a status
-    // that changed several snapshots ago.
-    refreshAgentPopoverIfOpen();
-    refreshMenuBarContext();
-    titlebarCenterEl.textContent = formatTitlebarCenter(
-      appState.snapshot.tabs.find((t) => t.focused)?.label ?? null,
-      appState.snapshot.workspaces.find((w) => w.focused)?.label ?? null,
-    );
-    // UX pass 1 spec §3 "the list reopens pinned at startup": deferred to
-    // the first real snapshot (rather than true `main()` start) so it has
-    // actual agent rows to show, not an empty popover.
-    if (isFirstSnapshot && appState.settings.agentListPinned) openOrRefreshAgentPopover(false);
-  });
-  await listen<UsageEventPayload>("usage", (event) => {
-    appState.usagePayload = event.payload;
-    renderUsageBarNow();
-  });
-  await listen<{ status: string; socketPath: string; serverVersion: string | null }>("connection-status", (event) => {
-    appState.lastConnectionStatus = event.payload.status;
-    if (event.payload.serverVersion) appState.serverVersion = event.payload.serverVersion;
-    if (appState.lastConnectionStatus !== "connected") {
-      doneDetector.resetBaseline();
-      statusAge.reset();
-    }
-    // Spec §4: the terminal canvas dims alongside the status-bar counts
-    // (handled by `renderStatusBarNow` below) while not connected.
-    canvas.classList.toggle("is-disconnected", appState.lastConnectionStatus !== "connected");
-    renderConnectionBanner(appState.lastConnectionStatus, event.payload.socketPath);
-    renderStatusBarNow();
-  });
-  // OSC 52 clipboard passthrough (`dispatch::handle_clipboard` in the Rust
-  // backend, fired by `ServerMessage::Clipboard`): the same "Copied" toast
-  // as mouse-selection auto-copy, since both wrote to the same clipboard.
-  await listen("clipboard-copied", () => showCopiedNotice());
 }
 
 async function main(): Promise<void> {
@@ -193,13 +123,9 @@ async function main(): Promise<void> {
   wireTitlebarControls(winMinimizeEl, winMaximizeEl, winCloseEl);
   wireMenuBarNow();
   wirePerfHudToggle();
-  installKeyboardRouting(keyboardCapture, { onShortcut, onTerminalKey, onPasteOverride });
-  window.addEventListener("focus", () => {
-    appState.windowFocused = true;
-  });
-  window.addEventListener("blur", () => {
-    appState.windowFocused = false;
-  });
+  installKeyboardRouting(keyboardCapture, { onShortcut, onTerminalKey, onPasteOverride, onTerminalTextCommit });
+  wireFocusReporting();
+  wireDragDropFiles();
   // Phase 1.6 spec §6.2 "No painting while minimized": WebView2 reports a
   // minimized window as `document.hidden` (Chromium's own Page Visibility
   // behavior), so this one listener covers both "minimized" and "hidden".
