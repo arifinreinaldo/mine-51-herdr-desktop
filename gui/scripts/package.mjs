@@ -35,6 +35,18 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const guiRoot = path.resolve(here, "..");
 const targetDir = path.resolve(guiRoot, "target-agent");
+// `--fast` (npm run package:fast): a test build in about a minute instead of
+// half an hour. It turns off the release profile's fat LTO and single codegen
+// unit (gui/Cargo.toml) and lifts the 2-job cap. The exe is somewhat larger
+// and marginally slower. Publish only a default (full) build.
+const fast = process.argv.includes("--fast");
+const fastEnv = fast
+  ? {
+      CARGO_PROFILE_RELEASE_LTO: "false",
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16",
+      CARGO_PROFILE_RELEASE_INCREMENTAL: "true",
+    }
+  : { CARGO_BUILD_JOBS: "2" };
 
 function run(command, args) {
   console.log(`$ ${command} ${args.join(" ")}`);
@@ -50,8 +62,8 @@ function run(command, args) {
     env: {
       ...process.env,
       CARGO_TARGET_DIR: targetDir,
-      CARGO_BUILD_JOBS: "2",
       HERDR_GUI_EMBED_ENGINE: "1",
+      ...fastEnv,
     },
   });
   if (result.error) {

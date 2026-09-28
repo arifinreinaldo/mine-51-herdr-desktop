@@ -11,7 +11,9 @@ publish = false
 # bin target; without it, Cargo's default name mangling collides on Windows
 # (see the `npm create tauri-app` scaffold comment for this exact issue).
 name = "herdr_gui_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Desktop only needs the rlib; staticlib/cdylib are for Tauri mobile and
+# cost two extra link steps on every build.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
