@@ -15,7 +15,8 @@
     "e2e": "wdio run tests/e2e/wdio.conf.ts",
     "bench:startup": "node scripts/bench-startup.mjs",
     "package": "node scripts/package.mjs",
-    "package:fast": "node scripts/package.mjs --fast"
+    "package:fast": "node scripts/package.mjs --fast",
+    "e2e:live": "node scripts/e2e-live.mjs"
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.36"
