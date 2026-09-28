@@ -1,11 +1,14 @@
-// Canvas click-to-focus-pane, the keyboard-capture textarea's IME/paste
-// wiring, and the resize/DPR watchers that drive the renderer's own
-// metrics recompute (finding #16 extraction from `main.ts`; the renderer
-// itself still owns metrics/paint).
+// The keyboard-capture textarea's IME/paste wiring, and the resize/DPR
+// watchers that drive the renderer's own metrics recompute (finding #16
+// extraction from `main.ts`; the renderer itself still owns metrics/paint).
+// Canvas click-to-focus-pane moved to `appTerminalMouse.ts`'s pointerdown
+// handler (herdr-native mouse selection): that handler already resolves
+// the pane and focuses it on every Down, mirroring herdr's own TUI client
+// exactly, so a separate `click`-driven focus here would focus twice.
 
 import { Channel } from "@tauri-apps/api/core";
-import { api, invokeSafe } from "./appApi";
-import { canvas, keyboardCapture, terminalWrapEl } from "./appDom";
+import { invokeSafe } from "./appApi";
+import { keyboardCapture, terminalWrapEl } from "./appDom";
 import { targetPaneId } from "./appLookups";
 import { appState } from "./appState";
 import { applyDecodedFrame } from "./grid";
@@ -58,21 +61,6 @@ export async function sendCommandLineToPane(paneId: string, command: string): Pr
   await invokeSafe("send_input", { paneId, events: [keyEvent("Enter", 0)] });
 }
 
-async function onCanvasClick(event: MouseEvent): Promise<void> {
-  focusKeyboardCapture();
-  const renderer = appState.renderer;
-  if (!renderer) return;
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const { width: cellWidthPx, height: cellHeightPx } = renderer.getCellSizeDevicePx();
-  const col = Math.floor(((event.clientX - rect.left) * dpr) / Math.max(1, cellWidthPx));
-  const row = Math.floor(((event.clientY - rect.top) * dpr) / Math.max(1, cellHeightPx));
-  const paneId = await invokeSafe<string | null>("pane_at", { col, row });
-  if (paneId && paneId !== targetPaneId()) {
-    void api("pane.focus", { pane_id: paneId });
-  }
-}
-
 function onCompositionEnd(event: CompositionEvent): void {
   keyboardCapture.value = "";
   sendTextCommit(event.data);
@@ -94,7 +82,6 @@ function onPaste(event: ClipboardEvent): void {
 
 export function wireInputHandlers(): void {
   registerKeyboardCapture(keyboardCapture);
-  canvas.addEventListener("click", (event) => void onCanvasClick(event));
   keyboardCapture.addEventListener("compositionend", onCompositionEnd);
   keyboardCapture.addEventListener("input", onInput);
   keyboardCapture.addEventListener("paste", onPaste);

@@ -556,6 +556,16 @@ body.has-workspace-colors #tab-strip {
   outline: none;
 }
 
+/* Herdr-native mouse selection highlight (`mouse/selectionOverlay.ts`): one
+   div per visible selected row, positioned in CSS px over the canvas. Not
+   part of the canvas's own paint pipeline -- see that file's header. */
+.terminal-selection-row {
+  position: absolute;
+  background: var(--terminal-selectionBackground);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 #keyboard-capture {
   position: absolute;
   top: 0;
@@ -1242,6 +1252,33 @@ body.has-workspace-colors #tab-strip {
   font-size: 12px;
   max-width: 360px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* "Copied" toast (mouse-selection auto-copy and OSC 52 passthrough), a
+   transient, non-modal notice near the status bar (spec: ~1.5s, never
+   blocking input) -- shown via `.is-visible`, not `[hidden]` removal, so
+   the fade transition has something to animate. */
+#copy-notice {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translate(-50%, 4px);
+  background: var(--statusBar-background);
+  color: var(--statusBar-foreground);
+  border: 1px solid var(--herdr-border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  z-index: 200;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+#copy-notice.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 /* Agent counts sit in one row inside the 22px status bar. */

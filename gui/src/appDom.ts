@@ -18,6 +18,7 @@ export const terminalWrapEl = document.getElementById("terminal-wrap") as HTMLDi
 export const keyboardCapture = document.getElementById("keyboard-capture") as HTMLTextAreaElement;
 export const perfHudEl = document.getElementById("perf-hud") as HTMLDivElement;
 export const errorNoticesEl = document.getElementById("error-notices") as HTMLDivElement;
+export const copyNoticeEl = document.getElementById("copy-notice") as HTMLDivElement;
 export const statusAgentCountsEl = document.getElementById("status-agent-counts") as HTMLDivElement;
 export const statusConnectionEl = document.getElementById("status-connection") as HTMLDivElement;
 export const statusUsageEl = document.getElementById("status-usage") as HTMLDivElement;

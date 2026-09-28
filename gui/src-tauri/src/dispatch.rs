@@ -250,10 +250,13 @@ async fn run_dispatch_loop(app: &AppHandle, inner: &Arc<Inner>, conn: &Arc<Conne
                 // kind such as endpoint.agent-completions.v1/
                 // endpoint.agent-view.v1) is ignored, per spec §1.
             }
+            Ok(ServerMessage::Clipboard { data }) => {
+                handle_clipboard(app, &data);
+            }
             Ok(ServerMessage::ServerShutdown { .. }) => break,
             Ok(_) => {
                 // Not decoded/used by the GUI in Phase 1 (Terminal,
-                // Graphics, Notify, Clipboard, ...).
+                // Graphics, Notify, ...).
             }
             Err(ConnError::Closed) => break,
             Err(err) => {
@@ -261,6 +264,24 @@ async fn run_dispatch_loop(app: &AppHandle, inner: &Arc<Inner>, conn: &Arc<Conne
                 break;
             }
         }
+    }
+}
+
+/// `ServerMessage::Clipboard` is OSC 52 passthrough: a pane application
+/// (vim, tmux, ...) wrote to the clipboard itself, and the server decoded
+/// that write and is forwarding it to the foreground client
+/// (`src/server/headless/notifications.rs`'s `AppEvent::ClipboardWrite`
+/// arm) -- unrelated to mouse-selection copy, which goes through the
+/// `pane.selection.read` endpoint instead (`appTerminalMouse.ts`). Never
+/// logs the decoded bytes: clipboard contents can be arbitrarily
+/// sensitive.
+fn handle_clipboard(app: &AppHandle, data: &str) {
+    let Some(bytes) = crate::clipboard::decode_clipboard_payload(data) else {
+        tracing::warn!("dropped invalid or oversize clipboard payload from server");
+        return;
+    };
+    if crate::clipboard::write_clipboard_bytes(&bytes) {
+        let _ = app.emit("clipboard-copied", ());
     }
 }
 

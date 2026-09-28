@@ -64,6 +64,16 @@ tauri-plugin-single-instance = "2"
 # addendum §11.1): already resolved in the tree at this exact version via
 # `zip`'s own dependency chain (see Cargo.lock), so this adds no second copy.
 sha2 = "0.10"
+# Native OS clipboard writes (mouse-selection auto-copy, and OSC 52
+# passthrough from `ServerMessage::Clipboard`, spec: herdr-native mouse
+# selection). Chosen over `tauri-plugin-clipboard-manager`: this codebase's
+# established pattern (dialog/notification/opener) does native-OS work from
+# a plain Rust `#[tauri::command]` with no webview ACL entry, never a
+# plugin the webview calls directly -- a plugin would add a capability
+# permission line and a `lib.rs` registration for no simplification, since
+# it would still only ever be called from Rust here too. `arboard` is the
+# plain crate for exactly that: no plugin, no capability surface.
+arboard = "3"
 # WebView2 memory target (Phase 1.6 §6.1): dropped to LOW while the window
 # is minimized/hidden, back to NORMAL on restore. Windows only -- `wry`
 # already depends on this exact version, so this adds no second copy.

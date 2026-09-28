@@ -1,6 +1,7 @@
 //! herdr GUI Tauri backend (spec §4). See each module's doc comment for what
 //! is stubbed vs. implemented for real.
 
+pub mod clipboard;
 pub mod commands;
 pub mod conn;
 pub mod dispatch;
@@ -71,6 +72,8 @@ pub fn run(start: Instant) {
             commands::report_ready,
             commands::subscribe_surface,
             commands::pane_at,
+            commands::pane_mouse_hit,
+            commands::write_clipboard_text,
             commands::sync_state,
             window_chrome::window_minimize,
             window_chrome::window_toggle_maximize,

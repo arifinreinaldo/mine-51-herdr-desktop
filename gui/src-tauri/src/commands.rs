@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
-use herdr_wire::{ClientMessage, ClientPaneInputEvent, ClientSurfaceSize};
+use herdr_wire::{ClientMessage, ClientPaneInputEvent, ClientSurfaceSize, PaneSurfacePane};
 use serde::Serialize;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager};
@@ -361,6 +361,107 @@ pub fn pane_at(state: tauri::State<'_, AppState>, col: u16, row: u16) -> Option<
     })
 }
 
+/// A pane's cell-space geometry, as `appTerminalMouse.ts` needs it: the
+/// same `inner_rect` origin both `pane_at` and herdr's own TUI client
+/// (`src/client/shell/mouse.rs::pane_mouse_position`) subtract from a raw
+/// cell position to get pane-local coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PaneMouseRect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+impl From<herdr_wire::SurfaceRect> for PaneMouseRect {
+    fn from(rect: herdr_wire::SurfaceRect) -> Self {
+        Self {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        }
+    }
+}
+
+/// Mirrors `herdr_wire::PaneSurfaceScrollMetrics`, re-exposed as its own
+/// (smaller, `Copy`) type so `PaneMouseHit` doesn't need to derive
+/// `Serialize` through a wire type it doesn't otherwise own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct PaneMouseScroll {
+    pub offset_from_bottom: u64,
+    pub max_offset_from_bottom: u64,
+    pub viewport_rows: u64,
+}
+
+/// What `appTerminalMouse.ts` needs to decide how to handle a mouse event
+/// at one cell, mirroring herdr's TUI client's own per-event decision
+/// (`src/client/shell/mouse.rs::handle_mouse`): forward raw mouse bytes to
+/// the pane only when `mouse_reporting` is set (`push_pane_mouse_event`),
+/// otherwise track a host-side text selection
+/// (`crate::selection::Selection`) using `scroll` to convert a viewport row
+/// to the pane's absolute screen-buffer row
+/// (`src/selection.rs::absolute_row_for_viewport_row`).
+#[derive(Debug, Clone, Serialize)]
+pub struct PaneMouseHit {
+    pub pane_id: String,
+    pub inner_rect: PaneMouseRect,
+    pub mouse_reporting: bool,
+    pub focused: bool,
+    pub scroll: Option<PaneMouseScroll>,
+}
+
+/// The actual hit-test, factored out of the `#[tauri::command]` wrapper so
+/// it's callable from a plain unit test without a `tauri::State`/`AppState`
+/// (there is no established pattern in this crate for constructing those in
+/// tests). Same containment rule as `pane_at`: `col`/`row` inside
+/// `pane.inner_rect`, half-open on the high edge.
+fn resolve_pane_mouse_hit(panes: &[PaneSurfacePane], col: u16, row: u16) -> Option<PaneMouseHit> {
+    panes.iter().find_map(|pane| {
+        let rect = pane.inner_rect;
+        let hit = col >= rect.x
+            && col < rect.x.saturating_add(rect.width)
+            && row >= rect.y
+            && row < rect.y.saturating_add(rect.height);
+        hit.then(|| PaneMouseHit {
+            pane_id: pane.pane_id.clone(),
+            inner_rect: rect.into(),
+            mouse_reporting: pane.mouse_reporting,
+            focused: pane.focused,
+            scroll: pane.scroll.map(|s| PaneMouseScroll {
+                offset_from_bottom: s.offset_from_bottom,
+                max_offset_from_bottom: s.max_offset_from_bottom,
+                viewport_rows: s.viewport_rows,
+            }),
+        })
+    })
+}
+
+/// Hit-tests `mirror.panes[].inner_rect` like `pane_at`, but returns the
+/// covering pane's full mouse-relevant geometry in one round trip instead
+/// of just its id -- `appTerminalMouse.ts` needs `mouse_reporting`/`scroll`/
+/// `focused` on every pointerdown and wheel tick, and a second IPC call per
+/// event would fight the "throttle to one per animation frame" budget.
+#[tauri::command]
+pub fn pane_mouse_hit(
+    state: tauri::State<'_, AppState>,
+    col: u16,
+    row: u16,
+) -> Option<PaneMouseHit> {
+    let mirror = lock_or_recover(&state.inner.mirror);
+    resolve_pane_mouse_hit(&mirror.panes, col, row)
+}
+
+/// Writes `text` to the OS clipboard (`crate::clipboard`), for the mouse-
+/// selection auto-copy flow: `appTerminalMouse.ts` reads the selected text
+/// via the `pane.selection.read` endpoint (mirroring herdr's TUI client's
+/// `request_selection_copy`) and hands the result here, the same native
+/// write path `dispatch::handle_clipboard` uses for OSC 52 passthrough.
+#[tauri::command]
+pub fn write_clipboard_text(text: String) -> bool {
+    crate::clipboard::write_clipboard_bytes(text.as_bytes())
+}
+
 /// Re-emits the last cached `snapshot`, `usage`, and `connection-status`,
 /// and pushes an encoded full frame of the mirror (if any) to the
 /// subscribed surface channel (spec §4 v3 "`sync_state`"). The frontend
@@ -403,4 +504,109 @@ pub async fn sync_state(state: tauri::State<'_, AppState>, app: AppHandle) -> Re
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod pane_mouse_hit_tests {
+    use super::*;
+    use herdr_wire::SurfaceRect;
+
+    fn rect(x: u16, y: u16, width: u16, height: u16) -> SurfaceRect {
+        SurfaceRect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    /// Same shape `mirror.rs`'s own tests use for a `PaneSurfacePane`
+    /// fixture, extended with the fields this module actually varies
+    /// (`mouse_reporting`/`focused`/`scroll`).
+    fn pane(
+        id: &str,
+        inner: SurfaceRect,
+        mouse_reporting: bool,
+        focused: bool,
+        scroll: Option<herdr_wire::PaneSurfaceScrollMetrics>,
+    ) -> PaneSurfacePane {
+        PaneSurfacePane {
+            pane_id: id.into(),
+            content_revision: 1,
+            rect: inner,
+            inner_rect: inner,
+            scrollbar_rect: None,
+            scroll,
+            focused,
+            mouse_reporting,
+            sgr_pixel_mouse: false,
+            alternate_screen_active: false,
+            pixel_width: 0,
+            pixel_height: 0,
+        }
+    }
+
+    #[test]
+    fn misses_outside_every_pane() {
+        let panes = vec![pane("p1", rect(0, 0, 10, 5), false, true, None)];
+        assert!(resolve_pane_mouse_hit(&panes, 10, 0).is_none()); // x == right edge, exclusive
+        assert!(resolve_pane_mouse_hit(&panes, 0, 5).is_none()); // y == bottom edge, exclusive
+    }
+
+    #[test]
+    fn hits_return_pane_local_geometry_and_flags() {
+        let panes = vec![
+            pane("left", rect(0, 0, 10, 5), false, true, None),
+            pane(
+                "right",
+                rect(10, 0, 10, 5),
+                true,
+                false,
+                Some(herdr_wire::PaneSurfaceScrollMetrics {
+                    offset_from_bottom: 3,
+                    max_offset_from_bottom: 20,
+                    viewport_rows: 5,
+                }),
+            ),
+        ];
+
+        let hit = resolve_pane_mouse_hit(&panes, 2, 3).expect("inside `left`");
+        assert_eq!(hit.pane_id, "left");
+        assert_eq!(
+            hit.inner_rect,
+            PaneMouseRect {
+                x: 0,
+                y: 0,
+                width: 10,
+                height: 5
+            }
+        );
+        assert!(!hit.mouse_reporting);
+        assert!(hit.focused);
+        assert!(hit.scroll.is_none());
+
+        let hit = resolve_pane_mouse_hit(&panes, 15, 4).expect("inside `right`");
+        assert_eq!(hit.pane_id, "right");
+        assert!(hit.mouse_reporting);
+        assert!(!hit.focused);
+        let scroll = hit.scroll.expect("right pane has scroll metrics");
+        assert_eq!(scroll.offset_from_bottom, 3);
+        assert_eq!(scroll.max_offset_from_bottom, 20);
+        assert_eq!(scroll.viewport_rows, 5);
+    }
+
+    #[test]
+    fn first_matching_pane_wins_on_overlap() {
+        // Mirrors `pane_at`'s own `find_map` (first match wins): overlapping
+        // panes should not occur in a real surface, but the tie-break rule
+        // still needs a defined, tested answer.
+        let panes = vec![
+            pane("first", rect(0, 0, 10, 10), false, true, None),
+            pane("second", rect(0, 0, 10, 10), true, true, None),
+        ];
+        assert_eq!(
+            resolve_pane_mouse_hit(&panes, 5, 5).unwrap().pane_id,
+            "first"
+        );
+    }
 }

@@ -39,17 +39,24 @@ export interface MappedKey {
   modifiers: number;
 }
 
-/**
- * A minimal, framework-independent subset of `KeyboardEvent`, so the mapper
- * (and its tests) don't need a DOM environment.
- */
-export interface KeyboardEventLike {
-  key: string;
-  code: string;
+/** The four modifier flags every DOM input event (`KeyboardEvent`,
+ * `PointerEvent`, `WheelEvent`, ...) carries, factored out so
+ * `modifierBits` works for mouse events too (`mouse/mouseWire.ts`'s
+ * `domModifierBits` is a thin re-export of this), not just keyboard ones. */
+export interface ModifierKeysLike {
   ctrlKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
   metaKey: boolean;
+}
+
+/**
+ * A minimal, framework-independent subset of `KeyboardEvent`, so the mapper
+ * (and its tests) don't need a DOM environment.
+ */
+export interface KeyboardEventLike extends ModifierKeysLike {
+  key: string;
+  code: string;
 }
 
 /** Named (non-printable) keys that always map to a `ClientKeyCode`, keyed by `KeyboardEvent.key`. */
@@ -72,7 +79,11 @@ const NAMED_KEYS: Record<string, ClientKeyCode> = {
 /** Bare modifier keypresses that must not be mapped on their own. */
 const BARE_MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta"]);
 
-function modifierBits(event: KeyboardEventLike): number {
+/** Shared with `mouse/mouseWire.ts` (`domModifierBits`): both keyboard and
+ * mouse events carry the same crossterm-shaped modifier byte, so there is
+ * exactly one place that reads `shiftKey`/`ctrlKey`/`altKey`/`metaKey` off a
+ * DOM event into it. */
+export function modifierBits(event: ModifierKeysLike): number {
   let bits = 0;
   if (event.shiftKey) bits |= MODIFIER_SHIFT;
   if (event.ctrlKey) bits |= MODIFIER_CONTROL;

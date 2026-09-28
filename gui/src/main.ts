@@ -44,9 +44,11 @@ import {
 } from "./appStatusBar";
 import { renderTabsNow, wireTabStripControls } from "./appTabStrip";
 import { subscribeSurface, wireInputHandlers, wireResizeObserver } from "./appTerminalInput";
+import { wireTerminalMouse } from "./appTerminalMouse";
 import type { RawSnapshot, UsageEventPayload } from "./appTypes";
 import { handleDoneTransitions, toDetectionAgents } from "./appDoneNotifications";
 import { refreshImportedThemes } from "./appWorkspaceFlows";
+import { showCopiedNotice } from "./copyNotice";
 import { hasTabUiFocus, installKeyboardRouting } from "./keyboard/routing";
 import type { Settings } from "./settings";
 import { TAB_RENDER_GUARD_REGION } from "./ui/tabs";
@@ -140,6 +142,10 @@ async function wireEvents(): Promise<void> {
     renderConnectionBanner(appState.lastConnectionStatus, event.payload.socketPath);
     renderStatusBarNow();
   });
+  // OSC 52 clipboard passthrough (`dispatch::handle_clipboard` in the Rust
+  // backend, fired by `ServerMessage::Clipboard`): the same "Copied" toast
+  // as mouse-selection auto-copy, since both wrote to the same clipboard.
+  await listen("clipboard-copied", () => showCopiedNotice());
 }
 
 async function main(): Promise<void> {
@@ -177,6 +183,7 @@ async function main(): Promise<void> {
   onRenderGuardReleased(TAB_RENDER_GUARD_REGION, () => renderTabsNow());
   onRenderGuardReleased(SIDEBAR_RENDER_GUARD_REGION, () => renderSidebarNow());
   wireInputHandlers();
+  wireTerminalMouse();
   wireResizeObserver();
   wireSidebarResize();
   wireNewWorkspaceControls();
