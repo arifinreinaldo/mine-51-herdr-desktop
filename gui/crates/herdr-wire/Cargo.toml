@@ -3,6 +3,7 @@ name = "herdr-wire"
 version = "0.1.0"
 edition = "2021"
 description = "herdr client-owned-shell wire protocol types and framing, copied from herdr's src/protocol/wire.rs"
+license = "Apache-2.0"
 publish = false
 
 [dependencies]

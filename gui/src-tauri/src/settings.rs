@@ -2,7 +2,9 @@
 //!
 //! `%APPDATA%\herdr-gui\settings.json`, resolved with `env::var("APPDATA")`
 //! like `lib.rs::log_dir` -- **not** `app_config_dir()`, which gives
-//! `dev.herdr.gui`. Rust commands `settings_get` and `settings_set` do an
+//! `dev.cowbell.app` (the Tauri `identifier`, Cowbell rebrand spec §A;
+//! this data folder is kept unchanged by that rebrand). Rust commands
+//! `settings_get` and `settings_set` do an
 //! atomic write (write to a sibling `.tmp` file, then rename over the
 //! target, which is atomic on the same filesystem). A corrupt file yields
 //! defaults plus a `corrupted: true` flag the frontend turns into a notice.

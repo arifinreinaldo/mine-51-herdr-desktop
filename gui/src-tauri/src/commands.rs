@@ -616,6 +616,15 @@ fn is_safe_web_url(url: &str) -> bool {
     url.starts_with("http://") || url.starts_with("https://")
 }
 
+/// The About dialog's version line (Cowbell rebrand spec §A5): reads
+/// `tauri.conf.json`'s `version` back out of the already-generated
+/// `PackageInfo`, the same value `tauri-codegen` embeds at build time --
+/// never a second hand-copied version string to keep in sync.
+#[tauri::command]
+pub fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 /// Sends `ClientMessage::ClientShellFocus` (terminal-parity spec P0 #3
 /// "Focus reporting"): called from the frontend on every DOM `window` focus
 /// and blur (`main.ts`). `dispatch::run_reconnect_loop` separately sends one

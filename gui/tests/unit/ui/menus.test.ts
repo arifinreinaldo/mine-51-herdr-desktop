@@ -63,6 +63,7 @@ function fakeContext(): MenuBarContext {
     onDetach: noop,
     onReconnect: noop,
     onAbout: noop,
+    onOpenLicenses: noop,
   };
 }
 

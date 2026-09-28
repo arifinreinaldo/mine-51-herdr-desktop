@@ -207,8 +207,9 @@ pub struct Connection {
     next_request_id: AtomicU64,
     reader_task: tokio::task::JoinHandle<()>,
     /// The server's own version string from the welcome handshake (finding
-    /// #14 "About shows the server version": spec §4 "About herdr GUI" ->
-    /// "version + server version from the welcome message").
+    /// #14 "About shows the server version": spec §4 "About herdr GUI"
+    /// (now "About Cowbell") -> "version + server version from the welcome
+    /// message").
     pub server_version: String,
 }
 

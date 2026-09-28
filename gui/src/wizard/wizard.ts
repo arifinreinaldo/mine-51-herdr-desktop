@@ -13,7 +13,6 @@ import { focusKeyboardCapture } from "../keyboard/focusCapture";
 import { button, el } from "./dom";
 import {
   completeStep,
-  engineInstallOffered,
   engineStepNeedsInstallFlow,
   goToStep,
   initialWizardState,
@@ -42,11 +41,6 @@ interface EngineStatusWire {
   path?: string;
   version?: string;
   error?: string;
-  bundledVersion: string;
-  needsInstall: boolean;
-  /** Spec addendum §11.1: false for a dev build with no bundled herdr
-   * engine (`HERDR_GUI_EMBED_ENGINE` unset at build time). */
-  installAvailable: boolean;
 }
 
 let wizardOpen = false;
@@ -232,40 +226,25 @@ function renderEngineStep(
       return;
     }
 
-    // Finding #5 "older herdr never upgraded": Missing/Broken, or Found
-    // but outdated (never a downgrade -- `needsInstall` already encodes
-    // that on the Rust side).
+    // Cowbell rebrand spec §B: Missing or Broken -- this build has no
+    // bundled herdr release to compare against, only "installed or not".
     container.appendChild(
       el(
         "p",
         undefined,
-        status.kind === "found"
-          ? `herdr ${status.version} found — update to ${status.bundledVersion}.`
-          : status.kind === "broken"
-            ? `herdr at ${status.path} did not run correctly: ${status.error}`
-            : "herdr is not installed.",
+        status.kind === "broken"
+          ? `herdr at ${status.path} did not run correctly: ${status.error}`
+          : "herdr is not installed.",
       ),
     );
 
-    // Spec addendum §11.1: "An empty payload (a dev build) -> ... Setup
-    // shows 'This build has no bundled herdr engine. Install herdr from
-    // herdr.dev'. It never crashes" -- no [Install] button offered at all
-    // in that case, since it would only ever fail.
-    if (!engineInstallOffered(status)) {
-      container.appendChild(
-        el("p", "wizard-note", "This build has no bundled herdr engine. Install herdr from herdr.dev"),
-      );
-      container.appendChild(footer(false, onSkip));
-      return;
-    }
-
     const logEl = el("pre", "wizard-log");
     let consentShown = false;
-    const installBtn = button(`Install herdr ${status.bundledVersion}`, () => {
+    const installBtn = button("Install herdr", () => {
       if (consentShown) return;
       consentShown = true;
       const consentBox = el("div", "wizard-consent");
-      consentBox.appendChild(el("p", "wizard-consent__label", "This will run install.ps1 in local-package mode (no network) to install the bundled herdr release."));
+      consentBox.appendChild(el("p", "wizard-consent__label", "Installs herdr with its official installer from herdr.dev."));
       const actions = el("div", "wizard-consent__actions");
       const cancelBtn = button("Cancel", () => void render(), "btn");
       // Finding #13 "double-click install": disable both buttons on the
@@ -304,7 +283,7 @@ function renderEngineStep(
       summary.herdrInstalled = true;
       await render(true);
     } else {
-      container.appendChild(el("p", undefined, "Install failed -- see the log above."));
+      container.appendChild(el("p", undefined, "Install failed -- see the log above. See https://herdr.dev for manual install."));
     }
   }
 

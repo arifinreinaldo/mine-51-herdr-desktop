@@ -7,6 +7,11 @@
 //! (spec §3.4 "using a fake filesystem or dependency injection" / "through
 //! an injected spawner") so the decision logic is unit-testable without a
 //! real herdr binary or a real Windows job object.
+//!
+//! Cowbell rebrand (`cowbell-rebrand-spec.md` §B): this build no longer
+//! bundles a herdr release. "Install herdr" runs herdr's own official
+//! installer from herdr.dev over HTTPS instead of extracting and verifying
+//! an embedded zip.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -26,32 +31,6 @@ mod creation_flags {
     pub const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     pub const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-}
-
-// ---------------------------------------------------------------------
-// §2.1 pin file
-// ---------------------------------------------------------------------
-
-/// `packaging/herdr-package.json` (spec §2.1): the pinned herdr release
-/// this build bundles.
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct HerdrPin {
-    pub version: String,
-    pub url: String,
-    pub sha256: String,
-}
-
-pub fn parse_pin(json: &str) -> Result<HerdrPin, String> {
-    serde_json::from_str(json).map_err(|err| err.to_string())
-}
-
-/// The pin file embedded at compile time (`include_str!`): this is the same
-/// file `scripts/fetch-herdr-package.mjs` reads to download and verify the
-/// bundled zip, so the running binary's install args can never drift from
-/// what actually got bundled.
-pub fn bundled_pin() -> HerdrPin {
-    const PIN_JSON: &str = include_str!("../../packaging/herdr-package.json");
-    parse_pin(PIN_JSON).expect("packaging/herdr-package.json must be valid JSON")
 }
 
 // ---------------------------------------------------------------------
@@ -143,36 +122,6 @@ fn is_semverish(s: &str) -> bool {
             .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// `major.minor.patch` as a comparable tuple, ignoring any
-/// pre-release/build suffix (herdr releases don't currently use one; a
-/// missing/non-numeric component parses as 0 rather than panicking on
-/// unexpected input).
-fn numeric_parts(version: &str) -> Vec<u64> {
-    version
-        .split(['-', '+'])
-        .next()
-        .unwrap_or("")
-        .split('.')
-        .map(|p| p.parse::<u64>().unwrap_or(0))
-        .collect()
-}
-
-pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-    numeric_parts(a).cmp(&numeric_parts(b))
-}
-
-/// The engine needs an install when it is `Missing`, `Broken`, or older than
-/// `bundled_version` (spec §3.2): "a same or newer version is kept and
-/// never downgraded."
-pub fn needs_install(status: &EngineStatus, bundled_version: &str) -> bool {
-    match status {
-        EngineStatus::Missing | EngineStatus::Broken { .. } => true,
-        EngineStatus::Found { version, .. } => {
-            compare_versions(version, bundled_version) == std::cmp::Ordering::Less
-        }
-    }
-}
-
 fn apply_no_window(cmd: &mut AsyncCommand) {
     // `tokio::process::Command::creation_flags` is a native inherent method
     // on Windows (it forwards to `std::process::Command`'s own), so no
@@ -214,142 +163,7 @@ pub async fn locate_herdr() -> EngineStatus {
 }
 
 // ---------------------------------------------------------------------
-// §11.1 embedded engine payload (portable build)
-// ---------------------------------------------------------------------
-
-/// The embedded herdr engine payload (Phase 1.6 addendum §11.1): `build.rs`
-/// copies the verified `resources/herdr/herdr-windows-x86_64.zip` and
-/// `install.ps1` into `OUT_DIR` when `HERDR_GUI_EMBED_ENGINE=1` (set by
-/// `scripts/package.mjs`); otherwise it writes empty placeholder files, so
-/// this always compiles -- a dev build, `npm run check`, or a fresh clone
-/// with no downloaded zip yet all get an "unavailable" payload rather than
-/// a build failure.
-static EMBEDDED_ENGINE_ZIP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/herdr-engine.zip"));
-static EMBEDDED_INSTALL_PS1: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/herdr-install.ps1"));
-
-/// Pure core of `embedded_payload_available` (spec §3.4-style dependency
-/// injection): both files must be non-empty, since `build.rs` writes an
-/// empty placeholder for either one when `HERDR_GUI_EMBED_ENGINE` is unset.
-pub fn embedded_payload_available_from(zip_bytes: &[u8], install_ps1_bytes: &[u8]) -> bool {
-    !zip_bytes.is_empty() && !install_ps1_bytes.is_empty()
-}
-
-/// Wizard step 1's `installAvailable` (spec §11.1): false for a dev build
-/// with no bundled herdr engine.
-pub fn embedded_payload_available() -> bool {
-    embedded_payload_available_from(EMBEDDED_ENGINE_ZIP, EMBEDDED_INSTALL_PS1)
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-#[derive(Debug)]
-pub enum ExtractError {
-    /// `build.rs` wrote empty placeholders (`HERDR_GUI_EMBED_ENGINE` was
-    /// unset for this build) -- spec §11.1 "An empty payload... never
-    /// crashes."
-    EmptyPayload,
-    /// The embedded zip's SHA-256 does not match the pin: spec §11.1
-    /// "Re-verify the zip SHA-256 against the pin before running
-    /// install.ps1... a tampered payload is rejected."
-    ShaMismatch {
-        expected: String,
-        actual: String,
-    },
-    Io(String),
-}
-
-impl std::fmt::Display for ExtractError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ExtractError::EmptyPayload => {
-                write!(f, "this build has no bundled herdr engine")
-            }
-            ExtractError::ShaMismatch { expected, actual } => write!(
-                f,
-                "the embedded herdr package failed SHA-256 verification \
-                 (expected {expected}, got {actual}) -- refusing to install"
-            ),
-            ExtractError::Io(err) => write!(f, "{err}"),
-        }
-    }
-}
-
-/// Extracts the embedded payload to
-/// `temp_root/herdr-gui-engine-<pin.version>/` (spec §11.1), re-verifying
-/// the zip's SHA-256 against the pin first: a tampered payload is refused
-/// before `install.ps1` (or anything else) ever runs.
-pub fn extract_embedded_payload(
-    zip_bytes: &[u8],
-    install_ps1_bytes: &[u8],
-    pin: &HerdrPin,
-    temp_root: &Path,
-) -> Result<PathBuf, ExtractError> {
-    if zip_bytes.is_empty() || install_ps1_bytes.is_empty() {
-        return Err(ExtractError::EmptyPayload);
-    }
-    let actual = sha256_hex(zip_bytes);
-    if !actual.eq_ignore_ascii_case(&pin.sha256) {
-        return Err(ExtractError::ShaMismatch {
-            expected: pin.sha256.clone(),
-            actual,
-        });
-    }
-    let dir = temp_root.join(format!("herdr-gui-engine-{}", pin.version));
-    std::fs::create_dir_all(&dir).map_err(|err| ExtractError::Io(err.to_string()))?;
-    std::fs::write(dir.join("herdr-windows-x86_64.zip"), zip_bytes)
-        .map_err(|err| ExtractError::Io(err.to_string()))?;
-    std::fs::write(dir.join("install.ps1"), install_ps1_bytes)
-        .map_err(|err| ExtractError::Io(err.to_string()))?;
-    Ok(dir)
-}
-
-/// Deletes the extraction directory (spec §11.1 "the directory is deleted
-/// after the install"). Best-effort: a failure to remove a temp dir must
-/// never fail the install itself.
-pub fn cleanup_extracted_payload(dir: &Path) {
-    let _ = std::fs::remove_dir_all(dir);
-}
-
-#[derive(Debug)]
-pub enum EmbeddedInstallError {
-    Extract(ExtractError),
-    Install(InstallError),
-}
-
-impl std::fmt::Display for EmbeddedInstallError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EmbeddedInstallError::Extract(err) => write!(f, "{err}"),
-            EmbeddedInstallError::Install(err) => write!(f, "{err}"),
-        }
-    }
-}
-
-/// Ties extraction + `run_install` + cleanup together (spec §11.1): the
-/// extraction directory is always deleted afterward, whether the install
-/// itself succeeded or failed.
-pub async fn run_install_from_embedded(
-    zip_bytes: &[u8],
-    install_ps1_bytes: &[u8],
-    pin: &HerdrPin,
-    temp_root: &Path,
-    on_line: impl FnMut(&str),
-) -> Result<(), EmbeddedInstallError> {
-    let dir = extract_embedded_payload(zip_bytes, install_ps1_bytes, pin, temp_root)
-        .map_err(EmbeddedInstallError::Extract)?;
-    let result = run_install(&dir, pin, on_line).await;
-    cleanup_extracted_payload(&dir);
-    result.map_err(EmbeddedInstallError::Install)
-}
-
-// ---------------------------------------------------------------------
-// §3.2 install
+// §3.2 install (Cowbell rebrand spec §B: herdr's own online installer)
 // ---------------------------------------------------------------------
 
 /// `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe` (spec
@@ -368,28 +182,23 @@ pub fn powershell_exe_path() -> PathBuf {
     powershell_exe_path_from(std::env::var("SystemRoot").ok().as_deref())
 }
 
-/// Builds the exact `install.ps1` argument list (spec §3.2). Each argument
-/// is a separate `Vec` entry (never joined into one string), so a
-/// `resources_dir` containing spaces needs no manual quoting: `Command`
-/// quotes each argument itself when it spawns the process.
-pub fn install_args(resources_dir: &Path, pin: &HerdrPin) -> Vec<String> {
-    let install_ps1 = resources_dir.join("install.ps1");
-    let zip_path = resources_dir.join("herdr-windows-x86_64.zip");
+/// The exact command herdr's own README documents for Windows
+/// (`README.herdr.md:48`): HTTPS only, a `const` so it can never drift from
+/// what `herdr_install_args` actually runs.
+const HERDR_INSTALL_URL: &str = "https://herdr.dev/install.ps1";
+
+/// Builds the exact `powershell.exe` argument array for "Install herdr"
+/// (spec §B): `irm <url> | iex` is one argument (a single `-Command`
+/// string) -- never shell-parsed, never string-concatenated with anything
+/// user-controlled.
+pub fn herdr_install_args() -> Vec<String> {
     vec![
         "-NoProfile".to_string(),
         "-NonInteractive".to_string(),
         "-ExecutionPolicy".to_string(),
         "Bypass".to_string(),
-        "-File".to_string(),
-        install_ps1.to_string_lossy().into_owned(),
-        "-LocalPackagePath".to_string(),
-        zip_path.to_string_lossy().into_owned(),
-        "-LocalPackageFormat".to_string(),
-        "zip".to_string(),
-        "-LocalPackageIdentity".to_string(),
-        pin.version.clone(),
-        "-LocalPackageSha256".to_string(),
-        pin.sha256.clone(),
+        "-Command".to_string(),
+        format!("irm {HERDR_INSTALL_URL} | iex"),
     ]
 }
 
@@ -429,16 +238,12 @@ const INSTALL_LOG_TAIL_LINES: usize = 20;
 /// `install.ps1` (or something it launches) stalls.
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
 
-/// Runs `install.ps1` (spec §3.2), streaming each stdout/stderr line to
-/// `on_line` as it arrives, and keeping the last 20 lines for the error
-/// message on a non-zero exit.
-pub async fn run_install(
-    resources_dir: &Path,
-    pin: &HerdrPin,
-    on_line: impl FnMut(&str),
-) -> Result<(), InstallError> {
+/// Runs herdr's official installer (spec §B), streaming each stdout/stderr
+/// line to `on_line` as it arrives, and keeping the last 20 lines for the
+/// error message on a non-zero exit.
+pub async fn run_install(on_line: impl FnMut(&str)) -> Result<(), InstallError> {
     let mut cmd = AsyncCommand::new(powershell_exe_path());
-    cmd.args(install_args(resources_dir, pin));
+    cmd.args(herdr_install_args());
     run_install_command(cmd, on_line, INSTALL_TIMEOUT).await
 }
 
@@ -781,71 +586,30 @@ pub async fn force_start_server(
 
 use crate::commands::{ApiError, AppState};
 
-/// Wizard step 1's wire shape (finding #5 "older herdr never upgraded"):
-/// `EngineStatus` flattened alongside the bundled pin's version and the
-/// same `needs_install` decision table `engine_install`'s consent flow
-/// already relies on, so the wizard can tell "found, nothing to do" apart
-/// from "found, but outdated -- offer an upgrade" without a second round
-/// trip.
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EngineStatusWire {
-    #[serde(flatten)]
-    pub status: EngineStatus,
-    pub bundled_version: String,
-    pub needs_install: bool,
-    /// Phase 1.6 addendum §11.1: false for a dev build with no bundled
-    /// herdr engine (`HERDR_GUI_EMBED_ENGINE` unset at build time) -- the
-    /// Setup wizard shows a fallback message instead of an [Install]
-    /// button that would only fail.
-    pub install_available: bool,
-}
-
-/// Wizard step 1 (spec §4.1): "Show the result of §3.1."
+/// Wizard step 1 (spec §4.1): "Show the result of §3.1." Cowbell rebrand
+/// spec §B: no bundled-version comparison any more (there is no pinned
+/// version to compare against, only "installed or not") -- `EngineStatus`
+/// flattened as-is, `kind`/`path`/`version`/`error` and nothing else.
 #[tauri::command]
-pub async fn engine_status() -> EngineStatusWire {
-    let status = locate_herdr().await;
-    let bundled_version = bundled_pin().version;
-    let needs_upgrade = needs_install(&status, &bundled_version);
-    EngineStatusWire {
-        status,
-        bundled_version,
-        needs_install: needs_upgrade,
-        install_available: embedded_payload_available(),
-    }
+pub async fn engine_status() -> EngineStatus {
+    locate_herdr().await
 }
 
-/// Wizard step 1's `[Install herdr <ver>]` button (spec §3.2/§4.1/§11.1).
-/// Extracts the embedded payload to `%TEMP%\herdr-gui-engine-<ver>\`,
-/// re-verifies its SHA-256 against the pin, then streams each
-/// `install.ps1` line as an `engine-install-log` event; on failure the
-/// error message is the last 20 lines (spec §3.2 "shows the last 20
-/// lines") or the verification failure. The extraction directory is
-/// deleted afterward either way (spec §11.1).
+/// Wizard step 1's `[Install herdr]` button (spec §B/§4.1). Runs herdr's
+/// own official installer from herdr.dev, streaming each line as an
+/// `engine-install-log` event; on failure the error includes the last 20
+/// lines (spec §3.2 "shows the last 20 lines") plus a pointer to the manual
+/// install page (spec §B "On failure...").
 #[tauri::command]
 pub async fn engine_install(app: tauri::AppHandle) -> Result<(), ApiError> {
     use tauri::Emitter;
-    if !embedded_payload_available() {
-        return Err(ApiError {
-            code: "no_embedded_engine".to_string(),
-            message: "This build has no bundled herdr engine. Install herdr from herdr.dev"
-                .to_string(),
-        });
-    }
-    let pin = bundled_pin();
-    run_install_from_embedded(
-        EMBEDDED_ENGINE_ZIP,
-        EMBEDDED_INSTALL_PS1,
-        &pin,
-        &std::env::temp_dir(),
-        |line| {
-            let _ = app.emit("engine-install-log", line);
-        },
-    )
+    run_install(|line| {
+        let _ = app.emit("engine-install-log", line);
+    })
     .await
     .map_err(|err| ApiError {
         code: "install_failed".to_string(),
-        message: err.to_string(),
+        message: format!("{err}\n\nSee https://herdr.dev for manual install."),
     })
 }
 
@@ -979,6 +743,176 @@ pub async fn autostart_set(app: tauri::AppHandle, enabled: bool) -> Result<(), A
     })
 }
 
+// ---------------------------------------------------------------------
+// A1: "Start at Login" migration (Cowbell rebrand spec §A1)
+// ---------------------------------------------------------------------
+//
+// `tauri-plugin-autostart` defaults its Windows autostart entry's `app_name`
+// to `app.package_info().name` when no explicit name is configured
+// (`tauri-plugin-autostart-2.5.1/src/lib.rs:178-182`, and this crate's
+// `lib.rs` calls `tauri_plugin_autostart::init` with no `.app_name()`
+// override). `PackageInfo.name` is `tauri.conf.json`'s `productName` when
+// one is set (`tauri-codegen-2.6.3/src/context.rs:268-269`). The `auto-launch`
+// crate's Windows backend then uses that name **verbatim** as the HKCU
+// `SOFTWARE\Microsoft\Windows\CurrentVersion\Run` value's *name* (not just
+// its data): `set_value(&self.app_name, ...)`
+// (`auto-launch-0.5.0/src/windows.rs:6,39-43`). Renaming `productName` from
+// "Herdr Desktop" to "Cowbell" therefore orphans any existing "Herdr
+// Desktop" Run entry -- this migrates it once, on startup.
+
+/// The old Run value name (the pre-rebrand `productName`).
+const OLD_AUTOSTART_APP_NAME: &str = "Herdr Desktop";
+
+/// What `migrate_old_autostart_entry` decided to do, derived purely from
+/// the old Run value's data (or its absence) -- unit-testable with no real
+/// registry access (spec §A1.3 "a pure function: old value present/absent
+/// -> action").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutostartMigration {
+    /// No old "Herdr Desktop" Run value: nothing to migrate.
+    NoOldEntry,
+    /// An old Run value exists, but its data doesn't look like a path to an
+    /// `.exe` (defensive: never touch a value that merely happens to share
+    /// the old name for some unrelated reason).
+    NotAnExePath,
+    /// Delete the old value and enable autostart under the new name.
+    Migrate,
+}
+
+/// Pure decision (spec §A1.3): `old_value` is the raw Run value data
+/// (`"<exe path> <args>"`, `auto-launch-0.5.0/src/windows.rs:42`) read from
+/// the registry under `OLD_AUTOSTART_APP_NAME`, or `None` when that value
+/// doesn't exist.
+pub fn decide_autostart_migration(old_value: Option<&str>) -> AutostartMigration {
+    match old_value {
+        None => AutostartMigration::NoOldEntry,
+        Some(value) if value.trim().to_ascii_lowercase().ends_with(".exe") => {
+            AutostartMigration::Migrate
+        }
+        Some(_) => AutostartMigration::NotAnExePath,
+    }
+}
+
+/// The index of the first run of 2+ ASCII spaces in `s`, if any -- `reg.exe
+/// query`'s own column separator between the name/type/data fields on a
+/// value line. A *single* space never splits a field: both a value name
+/// ("Herdr Desktop") and a data path ("C:\Program Files\...") routinely
+/// contain one of their own.
+fn find_field_boundary(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    (0..bytes.len()).find(|&i| bytes[i] == b' ' && bytes.get(i + 1) == Some(&b' '))
+}
+
+/// Splits one `reg.exe query` value line (already left-trimmed) into
+/// `(name, type, data)` on runs of 2+ spaces. `None` when the line doesn't
+/// have both boundaries (not a value line at all -- e.g. the key path
+/// header line `reg.exe` prints first).
+fn split_reg_query_fields(trimmed_line: &str) -> Option<(&str, &str, &str)> {
+    let name_end = find_field_boundary(trimmed_line)?;
+    let (name, after_name) = (
+        &trimmed_line[..name_end],
+        trimmed_line[name_end..].trim_start(),
+    );
+    let type_end = find_field_boundary(after_name)?;
+    let (reg_type, data) = (&after_name[..type_end], after_name[type_end..].trim_start());
+    Some((name, reg_type, data))
+}
+
+/// Parses one value's data out of `reg.exe query`'s output. Each matching
+/// value renders as a line shaped `    <name>    <type>    <data>`. Pure
+/// text parsing, no registry access -- unit-testable against captured
+/// sample output.
+pub fn parse_reg_query_value(output: &str, value_name: &str) -> Option<String> {
+    for line in output.lines() {
+        let Some((name, _reg_type, data)) = split_reg_query_fields(line.trim_start()) else {
+            continue;
+        };
+        if name == value_name {
+            // `reg.exe`'s own data can trail a space (e.g. `auto-launch`
+            // writes `"<path> "` when there are no launch args --
+            // `windows.rs:42`'s `format!("{} {}", path, args.join(" "))`).
+            return Some(data.trim_end().to_string());
+        }
+    }
+    None
+}
+
+const RUN_KEY: &str = r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+/// Task Manager's Startup tab state for each Run value. `auto-launch` writes
+/// it too; the first byte `02` means enabled, anything else means the user
+/// disabled the entry.
+const STARTUP_APPROVED_KEY: &str =
+    r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+
+/// True when the old entry's StartupApproved data (reg.exe prints
+/// REG_BINARY as hex, e.g. `0300000000000000`) says the user disabled it in
+/// Task Manager. An absent value means enabled.
+pub fn startup_approved_disabled(hex: Option<&str>) -> bool {
+    hex.is_some_and(|hex| !hex.trim().starts_with("02"))
+}
+
+/// `reg.exe query <key> /v "Herdr Desktop"` (spec §A1.1): reads the old
+/// value's data, or `None` if it doesn't exist. Shells out to the
+/// built-in `reg.exe` rather than adding a registry-access crate dependency
+/// (hard constraint: no new cargo dependencies) -- the same fixed-command,
+/// argument-array, no-console-window pattern this module already uses for
+/// `herdr.exe`/`powershell.exe`/`cmd.exe`.
+async fn read_old_autostart_value(key: &str) -> Option<String> {
+    let mut cmd = AsyncCommand::new("reg.exe");
+    cmd.args(["query", key, "/v", OLD_AUTOSTART_APP_NAME]);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_no_window(&mut cmd);
+    let output = cmd.output().await.ok()?;
+    if !output.status.success() {
+        return None; // reg.exe exits non-zero when the value is absent
+    }
+    parse_reg_query_value(
+        &String::from_utf8_lossy(&output.stdout),
+        OLD_AUTOSTART_APP_NAME,
+    )
+}
+
+/// `reg.exe delete <key> /v "Herdr Desktop" /f` (spec §A1.2).
+async fn delete_old_autostart_value(key: &str) -> std::io::Result<std::process::ExitStatus> {
+    let mut cmd = AsyncCommand::new("reg.exe");
+    cmd.args(["delete", key, "/v", OLD_AUTOSTART_APP_NAME, "/f"]);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    apply_no_window(&mut cmd);
+    cmd.status().await
+}
+
+/// Runs the migration once, silently, on startup (spec §A1.2/.3): reads the
+/// old Run value; if `decide_autostart_migration` says `Migrate`, enables
+/// autostart under the new name via the already-registered
+/// `tauri-plugin-autostart` manager, then deletes the old values. A missing
+/// or unrelated old value is a no-op. Since the old value is deleted as part
+/// of migrating, a later startup always finds `NoOldEntry` -- "once" falls
+/// out of that, with no separate persisted flag needed. Errors are
+/// swallowed: autostart is a convenience, never something that should fail
+/// startup.
+///
+/// Order matters: the new entry is enabled first and the old one removed
+/// only after that succeeded, so a failed write never loses Start at Login.
+/// An entry the user disabled in Task Manager stays off: the old values go,
+/// and nothing new is enabled.
+pub async fn migrate_old_autostart_entry(app: tauri::AppHandle) {
+    use tauri_plugin_autostart::ManagerExt;
+    let raw = read_old_autostart_value(RUN_KEY).await;
+    if decide_autostart_migration(raw.as_deref()) != AutostartMigration::Migrate {
+        return;
+    }
+    let approved = read_old_autostart_value(STARTUP_APPROVED_KEY).await;
+    if !startup_approved_disabled(approved.as_deref()) && app.autolaunch().enable().is_err() {
+        return; // keep the old entry: the user still starts at login
+    }
+    let _ = delete_old_autostart_value(RUN_KEY).await;
+    let _ = delete_old_autostart_value(STARTUP_APPROVED_KEY).await;
+}
+
 /// Finding #10 "Node gate": after a winget Node install, the GUI's own
 /// process still has the `PATH` it was launched with baked into its
 /// environment block -- only a fresh process picks up the new one. This is
@@ -997,32 +931,6 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
     use std::io;
-
-    // -- pin file --
-
-    #[test]
-    fn parses_the_pin_file() {
-        let json = r#"{"version":"0.9.1","url":"https://example/x.zip","sha256":"abc"}"#;
-        let pin = parse_pin(json).unwrap();
-        assert_eq!(pin.version, "0.9.1");
-        assert_eq!(pin.url, "https://example/x.zip");
-        assert_eq!(pin.sha256, "abc");
-    }
-
-    #[test]
-    fn rejects_a_pin_file_missing_a_field() {
-        assert!(parse_pin(r#"{"version":"0.9.1"}"#).is_err());
-    }
-
-    #[test]
-    fn the_bundled_pin_matches_packaging_json() {
-        let pin = bundled_pin();
-        assert_eq!(pin.version, "0.9.1");
-        assert_eq!(
-            pin.sha256,
-            "04ce380cac5af27bfcf75d0951ac49b7afe4c984aee8852985806d4f71f93a6e"
-        );
-    }
 
     // -- semver --
 
@@ -1050,70 +958,6 @@ mod tests {
     #[test]
     fn rejects_non_semver_text() {
         assert_eq!(parse_semver("not a version"), None);
-    }
-
-    #[test]
-    fn compares_versions_numerically() {
-        assert_eq!(compare_versions("0.9.1", "0.9.2"), std::cmp::Ordering::Less);
-        assert_eq!(
-            compare_versions("0.9.2", "0.9.1"),
-            std::cmp::Ordering::Greater
-        );
-        assert_eq!(
-            compare_versions("0.9.1", "0.9.1"),
-            std::cmp::Ordering::Equal
-        );
-        assert_eq!(
-            compare_versions("1.0.0", "0.9.9"),
-            std::cmp::Ordering::Greater
-        );
-        assert_eq!(
-            compare_versions("0.10.0", "0.9.9"),
-            std::cmp::Ordering::Greater
-        );
-    }
-
-    // -- upgrade decision table (spec §3.2/§3.4) --
-
-    #[test]
-    fn missing_needs_install() {
-        assert!(needs_install(&EngineStatus::Missing, "0.9.1"));
-    }
-
-    #[test]
-    fn broken_needs_install() {
-        let status = EngineStatus::Broken {
-            path: PathBuf::from("herdr.exe"),
-            error: "boom".to_string(),
-        };
-        assert!(needs_install(&status, "0.9.1"));
-    }
-
-    #[test]
-    fn older_found_needs_install() {
-        let status = EngineStatus::Found {
-            path: PathBuf::from("herdr.exe"),
-            version: "0.9.0".to_string(),
-        };
-        assert!(needs_install(&status, "0.9.1"));
-    }
-
-    #[test]
-    fn same_version_found_does_not_need_install() {
-        let status = EngineStatus::Found {
-            path: PathBuf::from("herdr.exe"),
-            version: "0.9.1".to_string(),
-        };
-        assert!(!needs_install(&status, "0.9.1"));
-    }
-
-    #[test]
-    fn newer_found_does_not_need_install_never_downgraded() {
-        let status = EngineStatus::Found {
-            path: PathBuf::from("herdr.exe"),
-            version: "0.9.5".to_string(),
-        };
-        assert!(!needs_install(&status, "0.9.1"));
     }
 
     // -- binary resolution order (spec §3.1/§3.4, fake filesystem) --
@@ -1174,61 +1018,20 @@ mod tests {
         assert_eq!(pick_first_existing(&candidates, |_| false), None);
     }
 
-    // -- install.ps1 argument builder (spec §3.2/§3.4) --
+    // -- herdr's online installer argument builder (spec §B) --
 
     #[test]
-    fn install_args_builds_exact_expected_arguments() {
-        let pin = HerdrPin {
-            version: "0.9.1".to_string(),
-            url: "https://example/x.zip".to_string(),
-            sha256: "04ce380cac5af27bfcf75d0951ac49b7afe4c984aee8852985806d4f71f93a6e".to_string(),
-        };
-        let resources_dir = Path::new("C:/Program Files/herdr-gui/resources/herdr");
-        let args = install_args(resources_dir, &pin);
+    fn herdr_install_args_builds_the_exact_expected_arguments() {
         assert_eq!(
-            args,
+            herdr_install_args(),
             vec![
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
                 "Bypass",
-                "-File",
-                resources_dir.join("install.ps1").to_string_lossy().as_ref(),
-                "-LocalPackagePath",
-                resources_dir
-                    .join("herdr-windows-x86_64.zip")
-                    .to_string_lossy()
-                    .as_ref(),
-                "-LocalPackageFormat",
-                "zip",
-                "-LocalPackageIdentity",
-                "0.9.1",
-                "-LocalPackageSha256",
-                "04ce380cac5af27bfcf75d0951ac49b7afe4c984aee8852985806d4f71f93a6e",
+                "-Command",
+                "irm https://herdr.dev/install.ps1 | iex",
             ]
-        );
-    }
-
-    #[test]
-    fn install_args_keeps_a_spaced_path_as_one_argument() {
-        let pin = HerdrPin {
-            version: "0.9.1".to_string(),
-            url: "u".to_string(),
-            sha256: "s".to_string(),
-        };
-        let resources_dir = Path::new("C:/Users/Jane Doe/AppData/herdr/resources/herdr");
-        let args = install_args(resources_dir, &pin);
-        let file_arg = &args[5];
-        assert_eq!(
-            file_arg,
-            &resources_dir.join("install.ps1").to_string_lossy()
-        );
-        // Exactly one argument, not split on the space -- `Command` quotes
-        // each argument itself on spawn, so this vec entry must stay whole.
-        assert!(!args.iter().any(|a| a == "Jane" || a == "Doe"));
-        assert!(
-            args.iter().any(|a| a.contains("Jane Doe")),
-            "the spaced path must survive whole in one argument"
         );
     }
 
@@ -1512,235 +1315,23 @@ mod tests {
         );
     }
 
-    // -- engine_status wire shape (finding #5 "older herdr never
-    // upgraded") --
+    // -- engine_status wire shape --
 
     #[test]
-    fn engine_status_wire_flattens_status_alongside_bundled_version_and_needs_install() {
-        let wire = EngineStatusWire {
-            status: EngineStatus::Found {
-                path: PathBuf::from("C:/herdr.exe"),
-                version: "0.9.0".to_string(),
-            },
-            bundled_version: "0.9.1".to_string(),
-            needs_install: true,
-            install_available: true,
+    fn engine_status_serializes_found_with_a_flat_kind_tag() {
+        let status = EngineStatus::Found {
+            path: PathBuf::from("C:/herdr.exe"),
+            version: "0.9.5".to_string(),
         };
-        let value = serde_json::to_value(&wire).unwrap();
+        let value = serde_json::to_value(&status).unwrap();
         assert_eq!(value["kind"], "found");
-        assert_eq!(value["version"], "0.9.0");
-        assert_eq!(value["bundledVersion"], "0.9.1");
-        assert_eq!(value["needsInstall"], true);
+        assert_eq!(value["version"], "0.9.5");
     }
 
     #[test]
-    fn engine_status_wire_never_offers_an_upgrade_for_a_newer_found_version() {
-        let wire = EngineStatusWire {
-            status: EngineStatus::Found {
-                path: PathBuf::from("C:/herdr.exe"),
-                version: "0.9.5".to_string(),
-            },
-            bundled_version: "0.9.1".to_string(),
-            needs_install: needs_install(
-                &EngineStatus::Found {
-                    path: PathBuf::from("C:/herdr.exe"),
-                    version: "0.9.5".to_string(),
-                },
-                "0.9.1",
-            ),
-            install_available: true,
-        };
-        let value = serde_json::to_value(&wire).unwrap();
-        assert_eq!(value["needsInstall"], false, "never downgrade");
-    }
-
-    // -- installAvailable wire field (spec addendum §11.1 "Empty payload ->
-    // installAvailable:false") --
-
-    #[test]
-    fn engine_status_wire_carries_install_available_true() {
-        let wire = EngineStatusWire {
-            status: EngineStatus::Missing,
-            bundled_version: "0.9.1".to_string(),
-            needs_install: true,
-            install_available: true,
-        };
-        let value = serde_json::to_value(&wire).unwrap();
-        assert_eq!(value["installAvailable"], true);
-    }
-
-    #[test]
-    fn engine_status_wire_carries_install_available_false() {
-        let wire = EngineStatusWire {
-            status: EngineStatus::Missing,
-            bundled_version: "0.9.1".to_string(),
-            needs_install: true,
-            install_available: false,
-        };
-        let value = serde_json::to_value(&wire).unwrap();
-        assert_eq!(value["installAvailable"], false);
-    }
-
-    // -- embedded engine payload (spec addendum §11.1) --
-
-    #[test]
-    fn embedded_payload_available_when_both_files_are_non_empty() {
-        assert!(embedded_payload_available_from(
-            b"zip-bytes",
-            b"install-ps1-bytes"
-        ));
-    }
-
-    #[test]
-    fn embedded_payload_unavailable_when_the_zip_is_empty() {
-        assert!(!embedded_payload_available_from(b"", b"install-ps1-bytes"));
-    }
-
-    #[test]
-    fn embedded_payload_unavailable_when_install_ps1_is_empty() {
-        assert!(!embedded_payload_available_from(b"zip-bytes", b""));
-    }
-
-    #[test]
-    fn embedded_payload_unavailable_when_both_are_empty() {
-        assert!(!embedded_payload_available_from(b"", b""));
-    }
-
-    #[test]
-    fn the_compiled_test_binary_has_no_embedded_engine() {
-        // `HERDR_GUI_EMBED_ENGINE` is never set for `cargo test`/`npm run
-        // check` (spec §11.1: "Without the variable... it writes empty
-        // placeholder files"), so build.rs must have written two empty
-        // placeholders into this very binary's OUT_DIR.
-        assert!(
-            !embedded_payload_available(),
-            "cargo test/npm run check must never embed the real engine payload"
-        );
-    }
-
-    fn sha256_hex_of(bytes: &[u8]) -> String {
-        // Exercises the same private helper indirectly through
-        // `extract_embedded_payload`'s own success path below, rather than
-        // reaching into a private fn from the test module -- this local
-        // helper just builds the pin's expected hash for test fixtures.
-        use sha2::{Digest, Sha256};
-        Sha256::digest(bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect()
-    }
-
-    fn test_pin(version: &str, zip_bytes: &[u8]) -> HerdrPin {
-        HerdrPin {
-            version: version.to_string(),
-            url: "https://example/x.zip".to_string(),
-            sha256: sha256_hex_of(zip_bytes),
-        }
-    }
-
-    #[test]
-    fn extract_embedded_payload_writes_both_files_when_the_hash_matches() {
-        let zip_bytes = b"fake-zip-bytes";
-        let pin = test_pin("9.9.9-extract-ok", zip_bytes);
-        let temp_root = std::env::temp_dir();
-        let dir = extract_embedded_payload(zip_bytes, b"fake-install-ps1", &pin, &temp_root)
-            .expect("hash matches, extraction must succeed");
-        assert_eq!(
-            std::fs::read(dir.join("herdr-windows-x86_64.zip")).unwrap(),
-            zip_bytes
-        );
-        assert_eq!(
-            std::fs::read(dir.join("install.ps1")).unwrap(),
-            b"fake-install-ps1"
-        );
-        cleanup_extracted_payload(&dir);
-        assert!(
-            !dir.exists(),
-            "cleanup must remove the extraction directory"
-        );
-    }
-
-    #[test]
-    fn extract_embedded_payload_rejects_a_tampered_zip() {
-        let pin = test_pin("9.9.9-extract-tamper", b"the-real-bytes");
-        let temp_root = std::env::temp_dir();
-        let dir_would_be = temp_root.join("herdr-gui-engine-9.9.9-extract-tamper");
-        let _ = std::fs::remove_dir_all(&dir_would_be);
-
-        let result =
-            extract_embedded_payload(b"tampered-bytes", b"fake-install-ps1", &pin, &temp_root);
-        assert!(matches!(result, Err(ExtractError::ShaMismatch { .. })));
-        assert!(
-            !dir_would_be.exists(),
-            "a tampered payload must never be written to disk"
-        );
-    }
-
-    #[test]
-    fn extract_embedded_payload_rejects_an_empty_payload() {
-        let pin = test_pin("0.0.0", b"irrelevant");
-        let result = extract_embedded_payload(b"", b"", &pin, &std::env::temp_dir());
-        assert!(matches!(result, Err(ExtractError::EmptyPayload)));
-    }
-
-    #[test]
-    fn extract_embedded_payload_rejects_when_only_install_ps1_is_empty() {
-        let pin = test_pin("0.0.0", b"zip-bytes");
-        let result = extract_embedded_payload(b"zip-bytes", b"", &pin, &std::env::temp_dir());
-        assert!(matches!(result, Err(ExtractError::EmptyPayload)));
-    }
-
-    #[tokio::test]
-    async fn run_install_from_embedded_extracts_runs_and_cleans_up() {
-        // A fake install.ps1 that accepts the same named parameters the
-        // real one takes (spec §3.2's `install_args`), so it round-trips
-        // through the exact same argument builder the real install uses.
-        let fake_install_ps1 = b"param($LocalPackagePath,$LocalPackageFormat,$LocalPackageIdentity,$LocalPackageSha256)\nWrite-Output ran-ok";
-        let zip_bytes = b"zip-content";
-        let pin = test_pin("9.9.9-embed-ok", zip_bytes);
-        let temp_root = std::env::temp_dir();
-        let mut lines = Vec::new();
-        let result =
-            run_install_from_embedded(zip_bytes, fake_install_ps1, &pin, &temp_root, |line| {
-                lines.push(line.to_string())
-            })
-            .await;
-        assert!(result.is_ok(), "{result:?}");
-        assert!(lines.iter().any(|l| l.contains("ran-ok")));
-        let dir = temp_root.join("herdr-gui-engine-9.9.9-embed-ok");
-        assert!(
-            !dir.exists(),
-            "the temp dir must be deleted after the install"
-        );
-    }
-
-    #[tokio::test]
-    async fn run_install_from_embedded_never_spawns_anything_on_a_tampered_payload() {
-        let pin = test_pin("9.9.9-embed-tamper", b"expected-bytes");
-        let result = run_install_from_embedded(
-            b"actually-different-bytes",
-            b"Write-Output should-never-run",
-            &pin,
-            &std::env::temp_dir(),
-            |_line| panic!("a tampered payload must never reach install.ps1's output"),
-        )
-        .await;
-        assert!(matches!(
-            result,
-            Err(EmbeddedInstallError::Extract(
-                ExtractError::ShaMismatch { .. }
-            ))
-        ));
-    }
-
-    #[tokio::test]
-    async fn run_install_from_embedded_refuses_an_empty_payload_with_no_crash() {
-        let pin = test_pin("9.9.9-embed-empty", b"irrelevant");
-        let result = run_install_from_embedded(b"", b"", &pin, &std::env::temp_dir(), |_| {}).await;
-        assert!(matches!(
-            result,
-            Err(EmbeddedInstallError::Extract(ExtractError::EmptyPayload))
-        ));
+    fn engine_status_serializes_missing_with_no_extra_fields() {
+        let value = serde_json::to_value(&EngineStatus::Missing).unwrap();
+        assert_eq!(value["kind"], "missing");
     }
 
     // -- gemini command builder (finding #7 "gemini detection") --
@@ -1828,5 +1419,95 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("timed out"));
         assert!(start.elapsed() < Duration::from_secs(10));
+    }
+
+    // -- A1 autostart migration (spec §A1.3, pure decision + pure parser) --
+
+    #[test]
+    fn task_manager_disabled_state_is_read_from_the_first_byte() {
+        assert!(!startup_approved_disabled(None)); // no value: enabled
+        assert!(!startup_approved_disabled(Some("020000000000000000000000")));
+        assert!(startup_approved_disabled(Some("0300000060B5B4E3D7C4DB01")));
+        // reg.exe prints REG_BINARY data as hex in the data column
+        let out = "\r\nHKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run\r\n    Herdr Desktop    REG_BINARY    0300000060B5B4E3D7C4DB01\r\n\r\n";
+        let hex = parse_reg_query_value(out, OLD_AUTOSTART_APP_NAME);
+        assert!(startup_approved_disabled(hex.as_deref()));
+    }
+
+    #[test]
+    fn migration_is_a_noop_with_no_old_value() {
+        assert_eq!(
+            decide_autostart_migration(None),
+            AutostartMigration::NoOldEntry
+        );
+    }
+
+    #[test]
+    fn migration_runs_when_the_old_value_points_at_an_exe() {
+        // The real shape `auto-launch`'s Windows backend writes
+        // (`auto-launch-0.5.0/src/windows.rs:42`): the bare exe path, a
+        // trailing space, and no quoting even though the path has spaces
+        // -- `format!("{} {}", app_path, args.join(" "))` with no args.
+        assert_eq!(
+            decide_autostart_migration(Some(
+                r"C:\Users\jane\AppData\Local\Programs\Herdr Desktop\Herdr Desktop.exe "
+            )),
+            AutostartMigration::Migrate
+        );
+    }
+
+    #[test]
+    fn migration_is_case_insensitive_on_the_exe_extension() {
+        assert_eq!(
+            decide_autostart_migration(Some(r"C:\portable\Herdr Desktop.EXE")),
+            AutostartMigration::Migrate
+        );
+    }
+
+    #[test]
+    fn migration_ignores_a_value_that_does_not_look_like_an_exe_path() {
+        assert_eq!(
+            decide_autostart_migration(Some("not an exe path")),
+            AutostartMigration::NotAnExePath
+        );
+    }
+
+    #[test]
+    fn migration_ignores_an_empty_value() {
+        assert_eq!(
+            decide_autostart_migration(Some("")),
+            AutostartMigration::NotAnExePath
+        );
+    }
+
+    #[test]
+    fn parses_a_reg_query_value_with_trailing_args() {
+        let output = "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\n    Herdr Desktop    REG_SZ    C:\\Users\\jane\\Herdr Desktop.exe \n\n";
+        assert_eq!(
+            parse_reg_query_value(output, "Herdr Desktop"),
+            Some("C:\\Users\\jane\\Herdr Desktop.exe".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_a_reg_query_value_with_no_trailing_args() {
+        let output = "HKEY_CURRENT_USER\\...\\Run\n    Herdr Desktop    REG_SZ    C:\\portable\\Herdr Desktop.exe\n";
+        assert_eq!(
+            parse_reg_query_value(output, "Herdr Desktop"),
+            Some("C:\\portable\\Herdr Desktop.exe".to_string())
+        );
+    }
+
+    #[test]
+    fn returns_none_when_the_value_name_is_absent() {
+        let output =
+            "HKEY_CURRENT_USER\\...\\Run\n    Cowbell    REG_SZ    C:\\portable\\Cowbell.exe\n";
+        assert_eq!(parse_reg_query_value(output, "Herdr Desktop"), None);
+    }
+
+    #[test]
+    fn does_not_match_a_longer_name_that_merely_starts_with_the_value_name() {
+        let output = "HKEY_CURRENT_USER\\...\\Run\n    Herdr Desktop Beta    REG_SZ    C:\\x.exe\n";
+        assert_eq!(parse_reg_query_value(output, "Herdr Desktop"), None);
     }
 }

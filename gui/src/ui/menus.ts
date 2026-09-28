@@ -78,6 +78,7 @@ export interface MenuBarContext {
 
   onReconnect(): void;
   onAbout(): void;
+  onOpenLicenses(): void;
 }
 
 function workspaceMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
@@ -297,7 +298,8 @@ function helpMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
       separatorBefore: true,
       onSelect: ctx.onOpenKeyboardShortcuts,
     },
-    { id: "help.about", label: "About herdr GUI", onSelect: ctx.onAbout },
+    { id: "help.about", label: "About Cowbell", onSelect: ctx.onAbout },
+    { id: "help.licenses", label: "Licenses…", onSelect: ctx.onOpenLicenses },
   ];
 }
 

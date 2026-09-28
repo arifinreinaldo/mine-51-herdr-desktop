@@ -33,6 +33,7 @@ import { openModal } from "./ui/modal";
 import { wireMenuBar, type MenuBarContext } from "./ui/menus";
 import { closeActiveOverlay } from "./ui/overlay";
 import { openKeyboardShortcutsModal } from "./ui/shortcutsModal";
+import { openLicensesModal } from "./ui/licensesModal";
 import { openSetupWizard } from "./wizard/wizard";
 import { startTabInlineRename, type TabRow } from "./ui/tabs";
 import { resolveIndexForShortcut } from "./workspace/focusByIndex";
@@ -264,10 +265,16 @@ export const menuBarContext: MenuBarContext = {
   onDetach: () => void invokeSafe("window_close"),
   onReconnect: () => void invokeSafe("reconnect"),
   onAbout: () => {
-    openModal("About herdr GUI", (body) => {
-      const p = document.createElement("p");
-      p.textContent = "herdr GUI — Phase 1.5";
-      body.appendChild(p);
+    openModal("About Cowbell", (body) => {
+      const tagline = document.createElement("p");
+      tagline.textContent = "Cowbell — a desktop for herdr";
+      body.appendChild(tagline);
+      const versionEl = document.createElement("p");
+      versionEl.textContent = "Version …";
+      body.appendChild(versionEl);
+      void invokeSafe<string>("app_version").then((version) => {
+        if (version) versionEl.textContent = `Version ${version}`;
+      });
       // Finding #14 "About shows the server version": plumbed through the
       // `connection-status` event's `serverVersion` (from the welcome
       // handshake), cached module-side so it survives a re-render.
@@ -276,10 +283,24 @@ export const menuBarContext: MenuBarContext = {
         ? `Server version: ${appState.serverVersion}`
         : "Server version: unknown (not connected)";
       body.appendChild(serverVersionEl);
+      const licence = document.createElement("p");
+      licence.textContent = "Licensed under FSL-1.1-ALv2. herdr is © Herdr, Inc. and contributors, Apache-2.0.";
+      body.appendChild(licence);
+      const nonAffiliation = document.createElement("p");
+      nonAffiliation.textContent = "Cowbell is not affiliated with or endorsed by herdr or Herdr, Inc.";
+      body.appendChild(nonAffiliation);
       const attribution = document.createElement("p");
       attribution.textContent = "Codicons © Microsoft, CC-BY-4.0";
       body.appendChild(attribution);
+      const licensesBtn = document.createElement("button");
+      licensesBtn.className = "btn modal-copy-btn";
+      licensesBtn.textContent = "Licenses…";
+      licensesBtn.addEventListener("click", () => openLicensesModal());
+      body.appendChild(licensesBtn);
     });
+  },
+  onOpenLicenses: () => {
+    openLicensesModal();
   },
 };
 

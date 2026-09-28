@@ -79,6 +79,7 @@ pub fn run(start: Instant) {
             commands::write_clipboard_text,
             commands::clipboard_read_text,
             commands::open_external_url,
+            commands::app_version,
             commands::sync_state,
             commands::set_client_focus,
             window_chrome::window_minimize,
@@ -112,7 +113,14 @@ pub fn run(start: Instant) {
                 app_handle.clone(),
                 inner.clone(),
             ));
-            tauri::async_runtime::spawn(run_usage_poll_loop(app_handle, inner.clone()));
+            tauri::async_runtime::spawn(run_usage_poll_loop(app_handle.clone(), inner.clone()));
+            // Cowbell rebrand spec §A1: migrates the pre-rebrand "Herdr
+            // Desktop" Start-at-Login entry to the new "Cowbell" name, once,
+            // silently. Release builds only: a dev build must never move the
+            // user's Start-at-Login entry to `target\debug\herdr-gui.exe`.
+            if !tauri::is_dev() {
+                tauri::async_runtime::spawn(engine::migrate_old_autostart_entry(app_handle));
+            }
             if let Some(window) = app.get_webview_window("main") {
                 memory::wire_memory_target(&window);
             }

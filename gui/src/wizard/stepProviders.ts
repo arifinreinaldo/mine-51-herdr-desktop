@@ -193,7 +193,7 @@ function renderProviderCard(
         // here can't see a Node a winget install just added -- only a
         // fresh process can.
         cardEl.appendChild(
-          el("p", "wizard-provider-card__meta", "Restart herdr GUI so it sees the new Node on PATH."),
+          el("p", "wizard-provider-card__meta", "Restart Cowbell so it sees the new Node on PATH."),
         );
         actions.appendChild(button("Restart GUI", () => void invokeSafe("restart_gui"), "btn btn--primary"));
       } else {

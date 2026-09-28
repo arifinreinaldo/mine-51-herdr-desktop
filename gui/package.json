@@ -2,6 +2,7 @@
   "name": "herdr-gui",
   "private": true,
   "version": "0.1.0",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,7 +17,8 @@
     "bench:startup": "node scripts/bench-startup.mjs",
     "package": "node scripts/package.mjs",
     "package:fast": "node scripts/package.mjs --fast",
-    "e2e:live": "node scripts/e2e-live.mjs"
+    "e2e:live": "node scripts/e2e-live.mjs",
+    "notices": "node scripts/gen-notices.mjs"
   },
   "dependencies": {
     "@vscode/codicons": "^0.0.36"

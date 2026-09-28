@@ -181,30 +181,17 @@ export function canExecute(flow: ConsentFlow | null): boolean {
 }
 
 // ---------------------------------------------------------------------
-// Engine step upgrade decision (finding #5 "older herdr never upgraded")
+// Engine step install decision (Cowbell rebrand spec §B: no bundled
+// version any more, so "found" is always enough)
 // ---------------------------------------------------------------------
 
-/** Whether wizard step 1 should show the "not installed"/"needs an
- * upgrade" consent-install flow, rather than the "found, starting the
- * server" flow. The Rust side's `needs_install` (already covered by its
- * own decision-table tests) is the source of truth for "outdated"; this
- * only decides which of the step's two UI branches to render from that
- * decision plus `kind`. Missing/Broken always need the install flow,
- * regardless of `needsInstall` (which is only meaningful for `Found`). */
-export function engineStepNeedsInstallFlow(status: { kind: string; needsInstall: boolean }): boolean {
-  return status.kind !== "found" || status.needsInstall;
-}
-
-// ---------------------------------------------------------------------
-// Embedded engine payload (spec addendum §11.1 "installAvailable")
-// ---------------------------------------------------------------------
-
-/** Whether wizard step 1's install-flow branch should offer the [Install]
- * button at all (spec addendum §11.1): false for a dev build with no
- * bundled herdr engine (`installAvailable: false`) -- the step shows a
- * fallback message instead of a button that would only fail. */
-export function engineInstallOffered(status: { installAvailable: boolean }): boolean {
-  return status.installAvailable;
+/** Whether wizard step 1 should show the "not installed" consent-install
+ * flow, rather than the "found, starting the server" flow. Cowbell rebrand
+ * spec §B: this build no longer bundles a herdr release to compare
+ * versions against, so Missing/Broken need the install flow and Found
+ * never does. */
+export function engineStepNeedsInstallFlow(status: { kind: string }): boolean {
+  return status.kind !== "found";
 }
 
 // ---------------------------------------------------------------------

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "herdr GUI: a Tauri 2 client for the herdr terminal multiplexer server"
 edition = "2021"
 build = "build.rs"
+license-file = "../LICENSE"
 publish = false
 
 [lib]
@@ -62,10 +63,6 @@ tauri-plugin-autostart = "2"
 # addendum §11 item 4. Registered first in `lib.rs`'s builder, before every
 # other plugin.
 tauri-plugin-single-instance = "2"
-# The embedded engine payload's SHA-256 re-verify at install time (Phase 1.6
-# addendum §11.1): already resolved in the tree at this exact version via
-# `zip`'s own dependency chain (see Cargo.lock), so this adds no second copy.
-sha2 = "0.10"
 # Native OS clipboard writes (mouse-selection auto-copy, and OSC 52
 # passthrough from `ServerMessage::Clipboard`, spec: herdr-native mouse
 # selection). Chosen over `tauri-plugin-clipboard-manager`: this codebase's

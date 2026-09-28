@@ -21,9 +21,9 @@ export function wireTitlebarControls(
   });
 }
 
-/** `<title> — <workspace> — herdr` style centre text (mock: "camera —
- * flutter_rad_pvmi — herdr"), from the focused tab/workspace labels. */
+/** `<title> — <workspace> — Cowbell` style centre text (mock: "camera —
+ * flutter_rad_pvmi — Cowbell"), from the focused tab/workspace labels. */
 export function formatTitlebarCenter(tabLabel: string | null, workspaceLabel: string | null): string {
-  const parts = [tabLabel, workspaceLabel, "herdr"].filter((p): p is string => Boolean(p));
+  const parts = [tabLabel, workspaceLabel, "Cowbell"].filter((p): p is string => Boolean(p));
   return parts.join(" — ");
 }

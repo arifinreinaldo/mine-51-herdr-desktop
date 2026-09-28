@@ -10,7 +10,7 @@
 //
 // Preconditions:
 // - The gui-test herdr server runs (`scripts\test-session.bat`).
-// - No other Herdr Desktop window is open. The app is single-instance, so a
+// - No other Cowbell window is open. The app is single-instance, so a
 //   second launch only focuses the open window.
 //
 // The script creates its own tab in gui-test, closes it at the end, and
@@ -232,7 +232,7 @@ async function main() {
   let cdp;
   try {
     cdp = await connectCdp().catch((err) => {
-      if (appExited) throw new Error("the app exited at once: close any open Herdr Desktop window first");
+      if (appExited) throw new Error("the app exited at once: close any open Cowbell window first");
       throw err;
     });
     await waitFor("the GUI to connect", () => cdp.evaluate(`document.body.innerText.includes("herdr connected")`), 20000);

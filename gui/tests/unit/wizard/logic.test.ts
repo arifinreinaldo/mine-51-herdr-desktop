@@ -3,7 +3,6 @@ import {
   canExecute,
   completeStep,
   deriveProviderCardState,
-  engineInstallOffered,
   engineStepNeedsInstallFlow,
   goToStep,
   grantConsent,
@@ -264,37 +263,20 @@ describe("consent gate", () => {
   });
 });
 
-// -- engine step upgrade decision (spec finding #5 "older herdr never
-// upgraded", never downgrade) --
+// -- engine step install decision (Cowbell rebrand spec §B: no bundled
+// version to compare against any more) --
 
 describe("engineStepNeedsInstallFlow", () => {
-  it("does not need the install flow when found and not needing an upgrade", () => {
-    expect(engineStepNeedsInstallFlow({ kind: "found", needsInstall: false })).toBe(false);
+  it("does not need the install flow when found", () => {
+    expect(engineStepNeedsInstallFlow({ kind: "found" })).toBe(false);
   });
 
-  it("needs the install flow when found but outdated (an upgrade is offered)", () => {
-    expect(engineStepNeedsInstallFlow({ kind: "found", needsInstall: true })).toBe(true);
+  it("needs the install flow when missing", () => {
+    expect(engineStepNeedsInstallFlow({ kind: "missing" })).toBe(true);
   });
 
-  it("needs the install flow when missing, regardless of needsInstall", () => {
-    expect(engineStepNeedsInstallFlow({ kind: "missing", needsInstall: false })).toBe(true);
-  });
-
-  it("needs the install flow when broken, regardless of needsInstall", () => {
-    expect(engineStepNeedsInstallFlow({ kind: "broken", needsInstall: false })).toBe(true);
-  });
-});
-
-// -- embedded engine payload (spec addendum §11.1 "installAvailable",
-// §11.5 "the payload-present and payload-absent paths") --
-
-describe("engineInstallOffered", () => {
-  it("offers the Install button when the build has an embedded payload", () => {
-    expect(engineInstallOffered({ installAvailable: true })).toBe(true);
-  });
-
-  it("does not offer it for a dev build with no bundled engine", () => {
-    expect(engineInstallOffered({ installAvailable: false })).toBe(false);
+  it("needs the install flow when broken", () => {
+    expect(engineStepNeedsInstallFlow({ kind: "broken" })).toBe(true);
   });
 });
 

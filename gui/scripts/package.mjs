@@ -1,24 +1,23 @@
 #!/usr/bin/env node
-// `npm run package` (spec addendum §11 item 1): fetches the pinned herdr
-// zip, then runs a release `tauri build --no-bundle`, producing one
-// self-contained portable `.exe` -- no NSIS installer, no shortcuts, no
-// uninstaller, no registry entries.
+// `npm run package` (spec addendum §11 item 1): runs `npm run notices` (spec
+// D), then a release `tauri build --no-bundle`, producing one self-contained
+// portable `.exe` -- no NSIS installer, no shortcuts, no uninstaller, no
+// registry entries.
 //
 // `CARGO_TARGET_DIR` is set to the **absolute** `gui/target-agent`: the
 // Tauri CLI runs `cargo` from `src-tauri`, so a relative `target-agent`
 // would land at `src-tauri/target-agent` instead of `gui/target-agent`.
 // `CARGO_BUILD_JOBS=2` caps the peak build memory on this machine.
 //
-// `HERDR_GUI_EMBED_ENGINE=1` tells `src-tauri/build.rs` to copy the
-// verified pinned zip + `install.ps1` into `OUT_DIR`, so `engine.rs`'s
-// `include_bytes!` embeds the real engine payload in this build (spec
-// §11.1) -- unset (as in `npm run check`), it embeds two empty
-// placeholders instead.
+// Cowbell rebrand (spec cowbell-rebrand-spec.md §B): this build no longer
+// bundles a herdr release. "Install herdr" (`src-tauri/src/engine.rs`) runs
+// herdr's own official installer from herdr.dev at runtime instead.
 //
-// The built exe lands at `<target-agent>/release/herdr-gui.exe`; this
-// script copies (never moves -- the plain build artifact stays where cargo
-// put it) and renames it to
-// `<target-agent>/release/portable/Herdr Desktop.exe`.
+// The built exe lands at `<target-agent>/release/herdr-gui.exe` (the Cargo
+// binary name is unchanged -- spec "Keep unchanged: the crate and lib names
+// ... and the Cargo binary name"); this script copies (never moves -- the
+// plain build artifact stays where cargo put it) and renames it to
+// `<target-agent>/release/portable/Cowbell.exe`.
 //
 // That fixed name can already be open -- running it is exactly how someone
 // notices they want a fresh build. Overwriting a running .exe on Windows
@@ -48,7 +47,7 @@ const fastEnv = fast
     }
   : { CARGO_BUILD_JOBS: "2" };
 
-function run(command, args) {
+function run(command, args, extraEnv = {}) {
   console.log(`$ ${command} ${args.join(" ")}`);
   const result = spawnSync(command, args, {
     cwd: guiRoot,
@@ -61,9 +60,7 @@ function run(command, args) {
     // space would silently split into multiple arguments.
     env: {
       ...process.env,
-      CARGO_TARGET_DIR: targetDir,
-      HERDR_GUI_EMBED_ENGINE: "1",
-      ...fastEnv,
+      ...extraEnv,
     },
   });
   if (result.error) {
@@ -76,31 +73,34 @@ function run(command, args) {
   }
 }
 
-// `process.execPath` (this same Node binary) with an explicit args array:
-// no shell, so a path containing a space needs no quoting. Runs first, so
-// the zip `build.rs` embeds is always the freshly-verified one.
-run(process.execPath, [path.join(guiRoot, "scripts", "fetch-herdr-package.mjs")]);
+// Spec D: "scripts/package.mjs runs it before the build" -- regenerates
+// `public/THIRD-PARTY-NOTICES.txt` from the current dependency graph before
+// every packaged build, so a stale notices file never ships.
+run(process.execPath, [path.join(guiRoot, "scripts", "gen-notices.mjs")]);
 
 // Tauri's CLI ships its own JS entry point (`@tauri-apps/cli/tauri.js`),
 // so it too runs directly under this Node binary with an args array --
 // no shell, and so no unquoted-path risk, and no dependence on `npx`
 // resolving a `.cmd` shim on Windows.
 const tauriCliEntry = path.join(guiRoot, "node_modules", "@tauri-apps", "cli", "tauri.js");
-run(process.execPath, [tauriCliEntry, "build", "--no-bundle"]);
+run(process.execPath, [tauriCliEntry, "build", "--no-bundle"], {
+  CARGO_TARGET_DIR: targetDir,
+  ...fastEnv,
+});
 
 const builtExe = path.join(targetDir, "release", "herdr-gui.exe");
 const portableDir = path.join(targetDir, "release", "portable");
-const portableExe = path.join(portableDir, "Herdr Desktop.exe");
+const portableExe = path.join(portableDir, "Cowbell.exe");
 mkdirSync(portableDir, { recursive: true });
 
-/** `Herdr Desktop-<yyyyMMdd-HHmm>.exe`, next to the fixed-name copy. */
+/** `Cowbell-<yyyyMMdd-HHmm>.exe`, next to the fixed-name copy. */
 function timestampedPortableExePath() {
   const now = new Date();
   const pad2 = (n) => String(n).padStart(2, "0");
   const stamp =
     `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}` +
     `-${pad2(now.getHours())}${pad2(now.getMinutes())}`;
-  return path.join(portableDir, `Herdr Desktop-${stamp}.exe`);
+  return path.join(portableDir, `Cowbell-${stamp}.exe`);
 }
 
 try {
