@@ -488,8 +488,8 @@ body.has-workspace-colors #tab-strip {
   background: var(--tab-activeBackground);
   color: var(--tab-activeForeground);
   box-shadow:
-    inset 0 1px 0 var(--tab-activeBorderTop),
-    inset 0 3px 0 var(--current-ws-color, transparent);
+    inset 0 3px 0 var(--current-ws-color, transparent),
+    inset 0 1px 0 var(--tab-activeBorderTop);
   margin-bottom: -1px;
 }
 
