@@ -10,6 +10,7 @@ import { overlayRoot, tabListEl, tabOverflowEl, tabPlusEl } from "./appDom";
 import { focusedWorkspaceTabs, tabLabel } from "./appLookups";
 import { appState, seenDoneTabs, statusAge } from "./appState";
 import type { RawSnapshot, RawTab } from "./appTypes";
+import { seenTrackingInput } from "./notifications/seenDoneTabs";
 import { formatAge, oldestAgeMs } from "./notifications/statusAge";
 import { isRenderGuarded } from "./ui/renderGuard";
 import { renderTabStrip, TAB_RENDER_GUARD_REGION, type TabRow } from "./ui/tabs";
@@ -58,6 +59,16 @@ function blockedAgeLabelFor(tabId: string): string {
   return formatAge(oldestAgeMs(blockedPaneIds, (paneId) => statusAge.ageMs(paneId, now)));
 }
 
+/** Feeds the "seen done" tracker from the snapshot: every tab in every
+ * workspace, and a tab is focused only while the window has focus. Call it
+ * before anything reads `seenDoneTabs` (tab dots, status-bar counts, the
+ * agent list, done highlight cards). */
+export function updateSeenDoneTabs(): void {
+  const snapshot = appState.snapshot;
+  if (!snapshot) return;
+  seenDoneTabs.update(seenTrackingInput(snapshot.tabs, snapshot.focused_workspace_id, appState.windowFocused));
+}
+
 export function renderTabsNow(): void {
   // Finding #5: a snapshot mid-rename or mid-drag must not rebuild the tab
   // strip -- that destroys the rename `<input>` (and its focus/typed text)
@@ -65,7 +76,6 @@ export function renderTabsNow(): void {
   // (wired in `main()`) re-renders with whatever is current once it ends.
   if (isRenderGuarded(TAB_RENDER_GUARD_REGION)) return;
   const tabs = focusedWorkspaceTabs();
-  seenDoneTabs.update(tabs.map((t) => ({ tab_id: t.tab_id, agent_status: t.agent_status, focused: t.focused })));
   const rows: TabRow[] = tabs.map((t) => ({
     tab_id: t.tab_id,
     label: t.label,

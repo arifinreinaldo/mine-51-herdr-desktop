@@ -8,7 +8,7 @@ import { api } from "./appApi";
 import { requireConnected } from "./appConnectionGuard";
 import { overlayRoot, statusAgentCountsEl, statusConnectionEl, statusUsageEl } from "./appDom";
 import { currentThemeDef, tabLabel, workspaceLabel } from "./appLookups";
-import { appState, highlightCards, hoveredHighlightPaneIds, persistSettings, statusAge } from "./appState";
+import { appState, highlightCards, hoveredHighlightPaneIds, persistSettings, seenDoneTabs, statusAge } from "./appState";
 import { resolveWorkspacePaletteColor } from "./themes/tokens";
 import {
   formatAsOfClock,
@@ -27,7 +27,9 @@ import type { UsageState as FormatUsageState } from "./usage";
 function computeAgentCounts(): AgentCounts {
   const counts: AgentCounts = { working: 0, blocked: 0, done: 0, idle: 0 };
   for (const agent of appState.snapshot?.agents ?? []) {
-    if (agent.agent_status in counts) counts[agent.agent_status as keyof AgentCounts]++;
+    // A done agent whose tab the user has already seen counts as idle.
+    const status = seenDoneTabs.effectiveStatus(agent.tab_id, agent.agent_status);
+    if (status in counts) counts[status as keyof AgentCounts]++;
   }
   return counts;
 }
@@ -39,7 +41,7 @@ function agentPopoverRows(): AgentPopoverRow[] {
     tab_id: a.tab_id,
     workspace_label: workspaceLabel(a.workspace_id),
     tab_label: tabLabel(a.tab_id),
-    agent_status: a.agent_status,
+    agent_status: seenDoneTabs.effectiveStatus(a.tab_id, a.agent_status),
     agentName: agentDisplayName(a),
     title: agentTaskTitle(a),
     colorHex: (() => {

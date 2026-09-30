@@ -46,4 +46,31 @@ export class SeenDoneTabsTracker {
   isSeen(tabId: string): boolean {
     return this.seen.has(tabId);
   }
+
+  /** What to show for a tab or agent in it: a done status the user has
+   * already seen counts as idle (tab dot, status-bar counts, agent list). */
+  effectiveStatus(tabId: string, status: AgentStatus): AgentStatus {
+    return status === "done" && this.seen.has(tabId) ? "idle" : status;
+  }
+}
+
+export interface SnapshotTabForSeen extends TabForSeenTracking {
+  workspace_id: string;
+}
+
+/** The `update` input for a snapshot: every tab in every workspace (so a
+ * background workspace keeps its seen state), where a tab counts as focused
+ * only if it is the focused tab of the focused workspace AND the Cowbell
+ * window has focus. The user has not seen a tab while working in another app,
+ * or while another workspace is in front. */
+export function seenTrackingInput(
+  tabs: readonly SnapshotTabForSeen[],
+  focusedWorkspaceId: string | null | undefined,
+  windowFocused: boolean,
+): TabForSeenTracking[] {
+  return tabs.map((t) => ({
+    tab_id: t.tab_id,
+    agent_status: t.agent_status,
+    focused: t.focused && windowFocused && t.workspace_id === focusedWorkspaceId,
+  }));
 }

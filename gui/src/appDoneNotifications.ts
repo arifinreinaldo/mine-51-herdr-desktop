@@ -6,7 +6,7 @@ import { agentDisplayName, agentTaskTitle } from "./agentText";
 import { invokeSafe } from "./appApi";
 import { openOrRefreshAgentPopover } from "./appStatusBar";
 import { tabLabel, workspaceLabel } from "./appLookups";
-import { appState, doneToastDedup, highlightCards, hoveredHighlightPaneIds } from "./appState";
+import { appState, doneToastDedup, highlightCards, hoveredHighlightPaneIds, seenDoneTabs } from "./appState";
 import type { AgentForDetection } from "./notifications/doneDetector";
 
 export function toDetectionAgents(): AgentForDetection[] {
@@ -32,7 +32,10 @@ function agentDisplayInfo(paneId: string): { agentName: string; title: string } 
   };
 }
 
-export function handleDoneTransitions(transitions: AgentForDetection[]): void {
+export function handleDoneTransitions(all: AgentForDetection[]): void {
+  // A done in a tab the user is already looking at (window focused, tab in
+  // front) is seen at once: no card, no popover, and it counts as idle.
+  const transitions = all.filter((t) => !seenDoneTabs.isSeen(t.tab_id));
   if (transitions.length === 0) return;
   const now = Date.now();
   for (const t of transitions) highlightCards.push(t, now);

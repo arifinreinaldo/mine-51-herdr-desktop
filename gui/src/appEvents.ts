@@ -8,7 +8,7 @@ import { renderConnectionBanner } from "./appConnectionBanner";
 import { refreshMenuBarContext } from "./appMenuBar";
 import { appState, doneDetector, statusAge, tabMru } from "./appState";
 import { openOrRefreshAgentPopover, refreshAgentPopoverIfOpen, renderStatusBarNow, renderUsageBarNow } from "./appStatusBar";
-import { renderTabsNow } from "./appTabStrip";
+import { renderTabsNow, updateSeenDoneTabs } from "./appTabStrip";
 import { renderSidebarNow } from "./appSidebarPanel";
 import type { RawSnapshot, UsageEventPayload } from "./appTypes";
 import { handleDoneTransitions, handleSemanticNotification, toDetectionAgents, type RawSemanticNotification } from "./appDoneNotifications";
@@ -26,6 +26,9 @@ export async function wireEvents(): Promise<void> {
     // Keyboard shortcut Alt+`: feed the MRU tracker from every snapshot's
     // focused tab, across all workspaces (not just the current one).
     tabMru.record(appState.snapshot.focused_tab_id);
+    // Before the done detector, so a done in the tab the user is looking at
+    // is already "seen" and raises no highlight card.
+    updateSeenDoneTabs();
     // Finding #11: "the next snapshot is authoritative" -- any new
     // snapshot, whether or not it is the one confirming a pending
     // `tab.move`, ends the optimistic reorder window.
@@ -79,6 +82,16 @@ export async function wireEvents(): Promise<void> {
   // backend, fired by `ServerMessage::Clipboard`): the same "Copied" toast
   // as mouse-selection auto-copy, since both wrote to the same clipboard.
   await listen("clipboard-copied", () => showCopiedNotice());
+  // Coming back to the window is a visit to its focused tab: a done agent
+  // there becomes seen now, not at the next snapshot. `windowFocused` is set
+  // here too, so this does not depend on the order of the focus listeners.
+  window.addEventListener("focus", () => {
+    appState.windowFocused = true;
+    updateSeenDoneTabs();
+    renderTabsNow();
+    renderStatusBarNow();
+    refreshAgentPopoverIfOpen();
+  });
   // Terminal-parity spec P1 #13 "Bell and notifications".
   await listen<number>("terminal-bell", () => flashFocusedTab());
   await listen<RawSemanticNotification>("semantic-notification", (event) => handleSemanticNotification(event.payload));
