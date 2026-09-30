@@ -41,9 +41,14 @@ export function flutterRunAlive(deviceId: string): Promise<boolean> {
   return invoke<boolean>("flutter_run_alive", { deviceId });
 }
 
-/** Starts a scrcpy window for the device. Rejects `scrcpy_not_found` when scrcpy is missing. */
-export function androidMirror(deviceId: string): Promise<void> {
-  return invoke<void>("android_mirror", { deviceId });
+/** Starts a scrcpy window for the device (and, on Windows, its mirror tools window). Rejects `scrcpy_not_found` when scrcpy is missing. */
+export function androidMirror(deviceId: string, deviceName?: string): Promise<void> {
+  return invoke<void>("android_mirror", { deviceId, deviceName });
+}
+
+/** Mirror tools window only: resizes it (expanded or the strip) and resolves the side it docks on. The first call is its ready signal. */
+export function mirrorToolsResize(expanded: boolean): Promise<"left" | "right"> {
+  return invoke<"left" | "right">("mirror_tools_resize", { expanded });
 }
 
 /** `adb install -r` of an absolute `.apk` path. Resolves adb's output. */
@@ -54,4 +59,19 @@ export function androidInstallApk(deviceId: string, path: string): Promise<strin
 /** Installs scrcpy with winget (Windows). */
 export function installScrcpy(): Promise<void> {
   return invoke<void>("install_scrcpy");
+}
+
+/** PNG bytes of the device screen. Rust also keeps the latest one for `screenshotCopy` and `screenshotSave`. */
+export function androidScreenshot(deviceId: string): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>("android_screenshot", { deviceId });
+}
+
+/** Puts the latest screenshot on the OS clipboard. */
+export function screenshotCopy(): Promise<void> {
+  return invoke<void>("screenshot_copy");
+}
+
+/** Save dialog for the latest screenshot. Resolves the saved path, or `null` when cancelled. */
+export function screenshotSave(suggestedName: string): Promise<string | null> {
+  return invoke<string | null>("screenshot_save", { suggestedName });
 }

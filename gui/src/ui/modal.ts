@@ -6,14 +6,31 @@
 import { focusKeyboardCapture } from "../keyboard/focusCapture";
 import { notifyOverlayClosed, openOverlay } from "./overlay";
 
-export function openModal(title: string, buildBody: (body: HTMLElement) => void): () => void {
+export interface ModalOptions {
+  /** Extra class on the `.modal` element. */
+  className?: string;
+  /** Runs once when the modal closes, before focus returns to the terminal. */
+  onClose?: () => void;
+}
+
+let modalCount = 0;
+
+export function openModal(
+  title: string,
+  buildBody: (body: HTMLElement) => void,
+  options: ModalOptions = {},
+): () => void {
   const backdrop = document.createElement("div");
   backdrop.className = "modal-backdrop";
 
   const modal = document.createElement("div");
-  modal.className = "modal";
+  modal.className = options.className ? `modal ${options.className}` : "modal";
   const heading = document.createElement("h2");
+  heading.id = `modal-title-${++modalCount}`;
   heading.textContent = title;
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", heading.id);
   modal.appendChild(heading);
 
   const body = document.createElement("div");
@@ -35,7 +52,13 @@ export function openModal(title: string, buildBody: (body: HTMLElement) => void)
 
   document.body.appendChild(backdrop);
 
+  let closed = false;
   function dispose(): void {
+    // Esc, the backdrop and a button can all call this; `onClose` runs once.
+    if (!closed) {
+      closed = true;
+      options.onClose?.();
+    }
     document.removeEventListener("keydown", onKeydown, true);
     backdrop.remove();
     notifyOverlayClosed(dispose);

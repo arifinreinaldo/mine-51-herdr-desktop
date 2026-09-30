@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -9,8 +10,17 @@ export default defineConfig(() => ({
   //
   // 1. Prevent Vite from obscuring Rust errors.
   clearScreen: false,
-  // 2. Tauri expects a fixed port, fail if that port is not available.
+  // 4. Two pages: the app, and the mirror tools window (docs/mirror-toolbar-spec.md).
+  build: {
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL("./index.html", import.meta.url)),
+        mirrorTools: fileURLToPath(new URL("./mirror-tools.html", import.meta.url)),
+      },
+    },
+  },
   server: {
+    // 2. Tauri expects a fixed port, fail if that port is not available.
     port: 1420,
     strictPort: true,
     host: host || false,

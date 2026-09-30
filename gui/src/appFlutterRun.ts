@@ -24,6 +24,7 @@ import {
 import { isValidDeviceId, isValidFlavor, mergeDevices, onPlay, onStop, reconcile, statusFor, type RunMap } from "./flutter/runState";
 import { keyboardCaptureReturnTarget } from "./keyboard/focusCapture";
 import { openFlavorPicker } from "./ui/flavorPicker";
+import { openScreenshotModal } from "./ui/screenshotModal";
 import { openMenu, type MenuItemSpec } from "./ui/menu";
 import { closeActiveOverlay } from "./ui/overlay";
 import { createRunToolbar } from "./ui/runToolbar";
@@ -67,6 +68,7 @@ const toolbar = createRunToolbar(runToolbarEl, {
   onDeviceClick: (anchor) => openDeviceMenu(anchor),
   onFlavorClick: () => openFlavorMenu(),
   onMirror: () => void mirror(),
+  onScreenshot: () => screenshot(),
   onPlay: () => void play(),
   onReload: () => void sendRunKey("r"),
   onRestart: () => void sendRunKey("R"),
@@ -115,6 +117,8 @@ function render(): void {
       mirrorBusy: false,
       mirrorDisabled: true,
       mirrorTitle: "",
+      screenshotDisabled: true,
+      screenshotTitle: "",
     });
     return;
   }
@@ -175,6 +179,8 @@ function render(): void {
     mirrorBusy,
     mirrorDisabled: mirrorBusy || device?.state !== "device",
     mirrorTitle: mirrorBusy ? "Starting scrcpy…" : `Mirror ${device?.name ?? "the device"} with scrcpy`,
+    screenshotDisabled: device?.state !== "device",
+    screenshotTitle: `Screenshot ${device?.name ?? "the device"}`,
   });
 }
 
@@ -441,12 +447,12 @@ async function mirror(): Promise<void> {
   render();
   try {
     try {
-      await androidMirror(device.id);
+      await androidMirror(device.id, device.name);
     } catch (err) {
       if (errorCode(err) !== "scrcpy_not_found") throw err;
       showInfoNotice("scrcpy not found. Installing it with winget…");
       await installScrcpy();
-      await androidMirror(device.id);
+      await androidMirror(device.id, device.name);
     }
   } catch (err) {
     showErrorNotice(errorMessage(err));
@@ -454,6 +460,18 @@ async function mirror(): Promise<void> {
     mirrorBusy = false;
     render();
   }
+}
+
+/** Opens the screenshot modal, which captures the selected device at once. */
+function screenshot(): void {
+  const device = selectedDevice();
+  if (!device || device.state !== "device") return;
+  // Settings are editable on disk; the backend checks this id again.
+  if (!isValidDeviceId(device.id)) {
+    showErrorNotice(`Unsafe device id: ${device.id}`);
+    return;
+  }
+  openScreenshotModal({ deviceName: device.name, deviceId: device.id });
 }
 
 /** Installs dropped APKs on the selected device, one after the other. */

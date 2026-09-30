@@ -1399,6 +1399,260 @@ body.has-workspace-colors #tab-strip {
   margin-top: 10px;
 }
 
+/* Screenshot modal (docs/screenshot-design.md). */
+.modal--shot {
+  width: auto;
+  max-width: 92vw;
+  max-height: none;
+  overflow: visible;
+}
+
+.shot-body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.shot-frame {
+  background: var(--terminal-background);
+  border: 1px solid var(--menu-border);
+  border-radius: 4px;
+  padding: 0;
+}
+
+.shot-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 360px;
+  max-height: min(70vh, 640px);
+  animation: shot-fade 120ms ease;
+}
+
+@keyframes shot-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-img {
+    animation: none;
+  }
+}
+
+.shot-placeholder {
+  width: 200px;
+  aspect-ratio: 9 / 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  color: var(--descriptionForeground);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
+.shot-placeholder--error .codicon {
+  color: var(--herdr-danger);
+  font-size: 20px;
+}
+
+.shot-error-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.shot-hint {
+  margin-top: 8px;
+  max-width: 360px;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+}
+
+.shot-actions {
+  width: 148px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shot-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shot-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.shot-btn:focus-visible {
+  outline: 1px solid var(--focusBorder);
+}
+
+.shot-btn[hidden] {
+  display: none;
+}
+
+.shot-btn--close {
+  margin-top: auto;
+}
+
+.shot-done {
+  color: var(--herdr-status-done);
+}
+
+.shot-meta {
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+.shot-failure {
+  font-size: var(--fs-xs);
+  color: var(--herdr-danger);
+  overflow-wrap: anywhere;
+}
+
+.shot-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Screenshot panel in the mirror tools window: actions under the preview
+   (docs/screenshot-design.md §6 fallback; docs/mirror-toolbar-spec.md §6.8). */
+.shot-body--stacked {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shot-body--stacked .shot-actions {
+  width: auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.shot-body--stacked .shot-meta,
+.shot-body--stacked .shot-failure {
+  grid-column: 1 / -1;
+  order: 1;
+}
+
+.shot-body--stacked .shot-btn--close {
+  margin-top: 0;
+}
+
+.shot-body--stacked .shot-img {
+  max-width: 296px;
+  max-height: min(640px, calc(100vh - 170px));
+}
+
+.shot-body--stacked .shot-placeholder {
+  width: auto;
+  height: min(444px, calc(100vh - 170px));
+}
+
+.shot-body--stacked .shot-hint {
+  max-width: 296px;
+}
+
+/* Mirror tools window (docs/mirror-toolbar-spec.md §6.8). */
+body.mirror-tools {
+  display: block;
+  background: var(--menu-background);
+  color: var(--menu-foreground);
+  overflow: hidden;
+}
+
+.mt-root {
+  display: flex;
+  height: 100vh;
+  border: 1px solid var(--menu-border);
+}
+
+.mt-root--left {
+  flex-direction: row-reverse;
+}
+
+.mt-strip {
+  width: 52px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.mt-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.mt-btn .codicon {
+  font-size: 20px;
+}
+
+.mt-btn:hover,
+.mt-btn[aria-pressed="true"] {
+  background: var(--list-hoverBackground);
+}
+
+.mt-btn:focus-visible {
+  outline: 1px solid var(--focusBorder);
+}
+
+.mt-note {
+  font-size: 11px;
+  text-align: center;
+  color: var(--descriptionForeground);
+  padding: 0 4px;
+}
+
+.mt-note[hidden] {
+  display: none;
+}
+
+.mt-panel {
+  width: 320px;
+  padding: 12px;
+  border-left: 1px solid var(--menu-border);
+}
+
+.mt-root--left .mt-panel {
+  border-left: none;
+  border-right: 1px solid var(--menu-border);
+}
+
+.mt-panel[hidden] {
+  display: none;
+}
+
 /* Licenses modal (spec D2): the fetched third-party notices file. */
 .licenses-modal-notices {
   margin-top: 10px;

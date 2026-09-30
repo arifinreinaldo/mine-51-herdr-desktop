@@ -11,6 +11,9 @@ pub mod flutter;
 pub mod folder_picker;
 pub mod memory;
 pub mod mirror;
+pub mod mirror_tools;
+#[cfg(windows)]
+pub mod mirror_tools_win32;
 pub mod notify;
 pub mod settings;
 pub mod socket;
@@ -67,6 +70,8 @@ pub fn run(start: Instant) {
             None,
         ))
         .manage(app_state)
+        .manage(android::ScreenshotSlot::default())
+        .manage(mirror_tools::MirrorToolsState::default())
         .invoke_handler(tauri::generate_handler![
             commands::send_input,
             commands::resize,
@@ -99,6 +104,10 @@ pub fn run(start: Instant) {
             android::android_mirror,
             android::android_install_apk,
             android::install_scrcpy,
+            android::android_screenshot,
+            android::screenshot_copy,
+            android::screenshot_save,
+            mirror_tools::mirror_tools_resize,
             folder_picker::pick_workspace_folder,
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,
@@ -145,10 +154,19 @@ pub fn run(start: Instant) {
     // first, so the flushing appender's guard is dropped explicitly there
     // instead of relying on an implicit end-of-function drop.
     let mut log_guard = Some(log_guard);
-    app.run(move |_app_handle, event| {
-        if let tauri::RunEvent::Exit = event {
+    app.run(move |app_handle, event| match event {
+        // Closing `main` ends the app. With a mirror tools window open, Tauri
+        // would keep the process alive with only that window. scrcpy is
+        // detached and keeps running.
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } if label == "main" => app_handle.exit(0),
+        tauri::RunEvent::Exit => {
             log_guard.take();
         }
+        _ => {}
     });
 }
 

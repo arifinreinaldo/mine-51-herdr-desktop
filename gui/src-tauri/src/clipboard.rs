@@ -111,6 +111,20 @@ pub fn write_clipboard_bytes(bytes: &[u8]) -> bool {
     clipboard.set_text(text).is_ok()
 }
 
+/// Writes an RGBA8 image to the OS clipboard (the Android screenshot Copy
+/// button). Unlike the text writers this returns the error text: the caller
+/// shows it to the user.
+pub fn write_clipboard_image_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Result<(), String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard
+        .set_image(arboard::ImageData {
+            width: width as usize,
+            height: height as usize,
+            bytes: rgba.into(),
+        })
+        .map_err(|e| e.to_string())
+}
+
 /// Reads plain text from the OS clipboard (terminal-parity spec P0 #4
 /// "Paste"): replaces `navigator.clipboard.readText()` on the frontend, so
 /// paste no longer depends on the webview's own clipboard-read permission

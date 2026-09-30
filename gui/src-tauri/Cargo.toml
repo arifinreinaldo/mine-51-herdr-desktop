@@ -73,6 +73,9 @@ tauri-plugin-single-instance = "2"
 # it would still only ever be called from Rust here too. `arboard` is the
 # plain crate for exactly that: no plugin, no capability surface.
 arboard = "3"
+# PNG decode for the screenshot Copy button (RGBA for arboard). Already in
+# the tree through arboard's `image`, so this adds no second copy.
+png = "0.17"
 # WebView2 memory target (Phase 1.6 §6.1): dropped to LOW while the window
 # is minimized/hidden, back to NORMAL on restore. Windows only -- `wry`
 # already depends on this exact version, so this adds no second copy.
@@ -81,8 +84,16 @@ webview2-com = "0.38"
 # `Interface::cast` (COM interface upcasting to `ICoreWebView2_19`) and
 # `windows::core::Result`, spec §7: "Use windows/windows-sys only if they
 # are already in the tree" -- `windows` 0.61 is already resolved (via
-# `webview2-com`/`wry`), so this adds no second copy either.
-windows = { version = "0.61", features = [] }
+# `webview2-com`/`wry`), so this adds no second copy either. The Win32_*
+# features are for `mirror_tools_win32.rs` (find, track and place the mirror
+# tools window); they only switch on modules of the same crate version.
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_HiDpi",
+] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs", "test-util"] }
