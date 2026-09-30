@@ -20,6 +20,7 @@ import {
   winMinimizeEl,
 } from "./appDom";
 import { wireEvents } from "./appEvents";
+import { wireFlutterRun } from "./appFlutterRun";
 import { wireFocusReporting } from "./appFocusReporting";
 import { wireDragDropFiles } from "./dragDropFiles";
 import { applyCurrentTheme, currentThemeDef, rendererThemeFrom } from "./appLookups";
@@ -122,6 +123,7 @@ async function main(): Promise<void> {
   wireAgeRefresh();
   wireTitlebarControls(winMinimizeEl, winMaximizeEl, winCloseEl);
   wireMenuBarNow();
+  await wireFlutterRun();
   wirePerfHudToggle();
   installKeyboardRouting(keyboardCapture, { onShortcut, onTerminalKey, onPasteOverride, onTerminalTextCommit });
   wireFocusReporting();

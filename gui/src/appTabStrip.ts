@@ -1,4 +1,5 @@
 import { requestCloseTab } from "./tabClose";
+import { requestClosePane } from "./paneClose";
 // Tab strip rendering, drag/move, and the overflow chevron's "All Tabs"
 // modal (finding #16 extraction from `main.ts`).
 
@@ -12,8 +13,7 @@ import type { RawSnapshot, RawTab } from "./appTypes";
 import { formatAge, oldestAgeMs } from "./notifications/statusAge";
 import { isRenderGuarded } from "./ui/renderGuard";
 import { renderTabStrip, TAB_RENDER_GUARD_REGION, type TabRow } from "./ui/tabs";
-import { openModal } from "./ui/modal";
-import { createStatusDot } from "./ui/statusDot";
+import { openMenu, type MenuItemSpec } from "./ui/menu";
 import { waitForTabFocusedPane } from "./workspace/tabFocusWait";
 import { optimisticTabOrderAfterMove } from "./workspace/tabMove";
 
@@ -129,10 +129,11 @@ export function renderTabsNow(): void {
       if (!requireConnected()) return;
       void (async () => {
         const paneId = await focusedPaneIdForTabAction(tabId);
-        if (paneId) void api("pane.close", { pane_id: paneId });
+        if (paneId) requestClosePane(paneId);
       })();
     },
   });
+  updateTabOverflow();
 }
 
 /** The overflow chevron's "every tab, with its status dot" modal (spec §6
@@ -140,28 +141,59 @@ export function renderTabsNow(): void {
  * but with no status dot) and once as `TabCallbacks.onShowAllTabs` (which
  * had the status dot, but `renderTabStrip` never actually called it). One
  * function, used from the one real call site below. */
-function openAllTabsModal(tabs: readonly RawTab[]): void {
-  openModal("All Tabs", (body) => {
-    for (const tab of tabs) {
-      const row = document.createElement("div");
-      row.className = "modal-shortcut-row";
-      row.appendChild(createStatusDot(tab.agent_status));
-      row.append(tab.label);
-      row.addEventListener("click", () => {
-        if (!requireConnected()) return;
-        void api("tab.focus", { tab_id: tab.tab_id });
-      });
-      body.appendChild(row);
-    }
+/** Right-hand text for a dropdown row: the state in words (blocked adds its
+ * age), else the pane count when the tab is split. */
+function tabStateHint(tab: RawTab): string | undefined {
+  if (tab.agent_status === "blocked") {
+    const age = blockedAgeLabelFor(tab.tab_id);
+    return age ? `needs input · ${age}` : "needs input";
+  }
+  if (tab.agent_status === "working" || tab.agent_status === "done") return tab.agent_status;
+  const panes = appState.snapshot?.panes.filter((p) => p.tab_id === tab.tab_id).length ?? 1;
+  return panes > 1 ? `${panes} panes` : undefined;
+}
+
+function createTab(): void {
+  if (!requireConnected()) return;
+  void api("tab.create", { workspace_id: appState.snapshot?.focused_workspace_id ?? undefined, focus: true });
+}
+
+function openAllTabsMenu(tabs: readonly RawTab[]): void {
+  const rect = tabOverflowEl.getBoundingClientRect();
+  const items: MenuItemSpec[] = tabs.map((tab) => ({
+    id: tab.tab_id,
+    label: tab.label,
+    // Idle/unknown tabs carry no news, so they get no dot (an empty slot keeps labels aligned).
+    status: tab.agent_status === "idle" || tab.agent_status === "unknown" ? null : tab.agent_status,
+    shortcut: tabStateHint(tab),
+    checked: tab.focused,
+    onSelect: () => {
+      if (!requireConnected()) return;
+      void api("tab.focus", { tab_id: tab.tab_id });
+    },
+  }));
+  items.push({ id: "new-tab", label: "New tab", icon: "add", shortcut: "Ctrl+Shift+T", separatorBefore: true, onSelect: createTab });
+  // Right-aligned under the chevron; `.tab-overflow-menu` sets the width.
+  const left = Math.max(8, rect.right - 300);
+  openMenu(overlayRoot, { left, top: rect.bottom }, items, {
+    returnFocusTo: tabOverflowEl,
+    heading: `Tabs · ${tabs.length}`,
   });
+  overlayRoot.lastElementChild?.classList.add("tab-overflow-menu");
+}
+
+/** The "All tabs" chevron shows only while the strip actually scrolls; the
+ * strip is content-sized otherwise, so "+" sits right after the last tab. */
+function updateTabOverflow(): void {
+  tabOverflowEl.hidden = tabListEl.scrollWidth <= tabListEl.clientWidth + 1;
 }
 
 export function wireTabStripControls(): void {
-  tabPlusEl.addEventListener("click", () => {
-    if (!requireConnected()) return;
-    void api("tab.create", { workspace_id: appState.snapshot?.focused_workspace_id ?? undefined, focus: true });
-  });
-  tabOverflowEl.addEventListener("click", () => openAllTabsModal(focusedWorkspaceTabs()));
+  tabPlusEl.addEventListener("click", createTab);
+  tabOverflowEl.addEventListener("click", () => openAllTabsMenu(focusedWorkspaceTabs()));
+  // Window resize and tab add/remove both change the list's own box while it
+  // is content-sized; renderTabsNow also re-checks for the fixed-size case.
+  new ResizeObserver(updateTabOverflow).observe(tabListEl);
   // Finding #11 "Tab overflow: wheel scrolls strip horizontally" (spec
   // §6): a plain vertical wheel gesture over the horizontally-overflowing
   // strip otherwise does nothing (there is nothing above/below it to

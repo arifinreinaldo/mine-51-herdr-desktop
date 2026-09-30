@@ -9,7 +9,7 @@ import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
 import { openConfirmPopover, type ConfirmPopoverAgentList } from "./confirmPopover";
 import type { MenuItemSpec } from "./menu";
 import { openMenu } from "./menu";
-import { createStatusDot } from "./statusDot";
+import { createStatusDotOrSlot } from "./statusDot";
 import { startInlineRename } from "./tabs";
 
 /** Finding #5/#14: the render-guard region a workspace inline rename
@@ -160,7 +160,7 @@ function renderRow(
   if (workspace.agent_status === "blocked") row.classList.add("is-blocked");
   row.setAttribute("aria-selected", String(workspace.focused));
 
-  row.appendChild(createStatusDot(workspace.agent_status));
+  row.appendChild(createStatusDotOrSlot(workspace.agent_status));
 
   const nameRow = document.createElement("div");
   nameRow.className = "ws-name-row";

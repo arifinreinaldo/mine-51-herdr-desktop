@@ -5,14 +5,11 @@
 // truth for both the menu labels and the key-capture layer).
 
 import { keyboardCaptureReturnTarget } from "../keyboard/focusCapture";
-import { SHORTCUTS } from "../shortcuts";
+import { shortcutDisplay } from "../shortcuts";
 import type { ThemeDefinition } from "../themes/index";
 import { closeActiveOverlay, isOverlayOpen } from "./overlay";
 import { openMenu, type MenuItemSpec } from "./menu";
-
-function shortcutDisplay(id: string): string | undefined {
-  return SHORTCUTS.find((s) => s.id === id)?.display;
-}
+import { closeItems, paneLayoutItems } from "./paneActionItems";
 
 export interface AgentSortState {
   mode: "priority" | "server_order";
@@ -137,28 +134,8 @@ function tabMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
 
 function paneMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
   return [
-    {
-      id: "pane.splitRight",
-      label: "Split Right",
-      icon: "split-horizontal",
-      shortcut: shortcutDisplay("pane.splitRight"),
-      onSelect: ctx.onSplitRight,
-    },
-    {
-      id: "pane.splitDown",
-      label: "Split Down",
-      icon: "split-vertical",
-      shortcut: shortcutDisplay("pane.splitDown"),
-      onSelect: ctx.onSplitDown,
-    },
-    {
-      id: "pane.close",
-      label: "Close Pane",
-      shortcut: shortcutDisplay("pane.close"),
-      separatorBefore: true,
-      onSelect: ctx.onClosePane,
-    },
-    { id: "pane.toggleZoom", label: "Toggle Zoom", shortcut: shortcutDisplay("pane.toggleZoom"), onSelect: ctx.onToggleZoom },
+    ...paneLayoutItems(ctx),
+    ...closeItems({ onClosePane: ctx.onClosePane }),
     {
       id: "pane.clear",
       label: "Clear",

@@ -479,23 +479,39 @@ pub fn pane_mouse_hit(
     resolve_pane_mouse_hit(&mirror.panes, col, row)
 }
 
-/// The focused pane's outer rect, only while the tab is split: the
-/// frontend anchors its "close pane" button to it. `None` on a single-pane
-/// tab, where closing the pane would close the tab (and maybe the workspace).
-fn resolve_split_focused_pane_rect(panes: &[PaneSurfacePane]) -> Option<PaneMouseRect> {
-    if panes.len() < 2 {
-        return None;
-    }
-    panes
-        .iter()
-        .find(|pane| pane.focused)
-        .map(|pane| pane.rect.into())
+/// One pane's geometry for the frontend's pane chrome (focus ring, dim
+/// layer, header strip). All rects are in cells.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PaneLayoutEntry {
+    pub pane_id: String,
+    pub rect: PaneMouseRect,
+    pub inner_rect: PaneMouseRect,
+    pub scrollbar_rect: Option<PaneMouseRect>,
+    pub focused: bool,
 }
 
+fn resolve_pane_layout(panes: &[PaneSurfacePane]) -> Vec<PaneLayoutEntry> {
+    panes
+        .iter()
+        .map(|pane| PaneLayoutEntry {
+            pane_id: pane.pane_id.clone(),
+            rect: pane.rect.into(),
+            inner_rect: pane.inner_rect.into(),
+            scrollbar_rect: pane.scrollbar_rect.map(Into::into),
+            focused: pane.focused,
+        })
+        .collect()
+}
+
+/// Every pane of the current surface, in mirror order. Empty when there is
+/// no surface or while a popup is present (the chrome must not draw over it).
 #[tauri::command]
-pub fn split_focused_pane_rect(state: tauri::State<'_, AppState>) -> Option<PaneMouseRect> {
+pub fn pane_layout(state: tauri::State<'_, AppState>) -> Vec<PaneLayoutEntry> {
     let mirror = lock_or_recover(&state.inner.mirror);
-    resolve_split_focused_pane_rect(&mirror.panes)
+    if mirror.has_popup() {
+        return Vec::new();
+    }
+    resolve_pane_layout(&mirror.panes)
 }
 
 /// A pane's current scroll metrics by pane id, for keyboard-driven
@@ -764,15 +780,59 @@ mod pane_mouse_hit_tests {
     }
 
     #[test]
-    fn split_focused_pane_rect_only_on_a_split_tab() {
-        let single = vec![pane("p1", rect(0, 0, 10, 5), false, true, None)];
-        assert!(resolve_split_focused_pane_rect(&single).is_none());
-        let split = vec![
-            pane("p1", rect(0, 0, 10, 5), false, false, None),
-            pane("p2", rect(10, 0, 8, 5), false, true, None),
-        ];
-        let r = resolve_split_focused_pane_rect(&split).expect("focused pane");
-        assert_eq!((r.x, r.y, r.width, r.height), (10, 0, 8, 5));
+    fn pane_layout_lists_every_pane_with_focus() {
+        let mut second = pane("p2", rect(11, 0, 8, 5), false, true, None);
+        second.rect = rect(10, 0, 10, 6);
+        second.scrollbar_rect = Some(rect(19, 1, 1, 4));
+        let panes = vec![pane("p1", rect(1, 1, 8, 4), false, false, None), second];
+        let layout = resolve_pane_layout(&panes);
+        assert_eq!(layout.len(), 2);
+        assert_eq!(layout[0].pane_id, "p1");
+        assert!(!layout[0].focused);
+        assert_eq!(
+            layout[0].rect,
+            PaneMouseRect {
+                x: 1,
+                y: 1,
+                width: 8,
+                height: 4
+            }
+        );
+        assert_eq!(layout[0].scrollbar_rect, None);
+        assert_eq!(layout[1].pane_id, "p2");
+        assert!(layout[1].focused);
+        assert_eq!(
+            layout[1].rect,
+            PaneMouseRect {
+                x: 10,
+                y: 0,
+                width: 10,
+                height: 6
+            }
+        );
+        assert_eq!(
+            layout[1].inner_rect,
+            PaneMouseRect {
+                x: 11,
+                y: 0,
+                width: 8,
+                height: 5
+            }
+        );
+        assert_eq!(
+            layout[1].scrollbar_rect,
+            Some(PaneMouseRect {
+                x: 19,
+                y: 1,
+                width: 1,
+                height: 4
+            })
+        );
+    }
+
+    #[test]
+    fn pane_layout_is_empty_without_panes() {
+        assert!(resolve_pane_layout(&[]).is_empty());
     }
 
     #[test]

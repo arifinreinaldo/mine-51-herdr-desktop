@@ -437,3 +437,20 @@ describe("close-workspace confirm agent list (UX pass 1 spec §1)", () => {
     expect(overlayRoot.querySelector(".confirm-popover__agent-list")).toBeNull();
   });
 });
+
+describe("sidebar status dot (S9: no idle dots)", () => {
+  it("an idle workspace row has no .status-dot and one .status-dot-slot", () => {
+    render(makeCallbacks());
+    const row = listEl.querySelector('[data-workspace-id="w1"]')!;
+    expect(row.querySelector(".status-dot")).toBeNull();
+    expect(row.querySelectorAll(".status-dot-slot")).toHaveLength(1);
+  });
+
+  it("a blocked row shows .status-dot--blocked", () => {
+    const blocked: SidebarWorkspace[] = [{ ...workspaces()[0], agent_status: "blocked" }];
+    renderSidebar(listEl, overlayRoot, blocked, new Map(), {}, DARK_MODERN_COLORS, makeCallbacks());
+    const row = listEl.querySelector('[data-workspace-id="w1"]')!;
+    expect(row.querySelector(".status-dot--blocked")).not.toBeNull();
+    expect(row.querySelector(".status-dot-slot")).toBeNull();
+  });
+});

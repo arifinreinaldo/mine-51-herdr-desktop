@@ -14,6 +14,7 @@ import type { RawSnapshot, UsageEventPayload } from "./appTypes";
 import { handleDoneTransitions, handleSemanticNotification, toDetectionAgents, type RawSemanticNotification } from "./appDoneNotifications";
 import { showCopiedNotice } from "./copyNotice";
 import { flashFocusedTab } from "./notifications/bellFlash";
+import { refreshPaneChrome } from "./paneChrome/paneChrome";
 import { formatTitlebarCenter } from "./ui/titlebar";
 
 export async function wireEvents(): Promise<void> {
@@ -38,6 +39,8 @@ export async function wireEvents(): Promise<void> {
     statusAge.update(toDetectionAgents(), appState.lastSnapshotAt);
     renderSidebarNow();
     renderTabsNow();
+    // Zoom state comes from the snapshot: the Zoomed badge follows it.
+    refreshPaneChrome();
     renderStatusBarNow();
     // UX pass 1 spec §2 refresh (finding #2): keep the open agent
     // popover's rows/ages in sync with each snapshot too, not just the

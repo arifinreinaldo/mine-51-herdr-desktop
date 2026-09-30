@@ -71,6 +71,7 @@ import {
 import { SelectionOverlay } from "./mouse/selectionOverlay";
 import { wordBoundsAtColumn } from "./mouse/wordBounds";
 import { WheelAccumulator } from "./mouse/wheelAccumulator";
+import { requestClosePane } from "./paneClose";
 import { clearPane, pasteIntoPane, toggleRightClickPassthrough, writeToClipboard } from "./paneActions";
 import type { TerminalRenderer } from "./render/renderer";
 import { openPaneContextMenu } from "./ui/paneContextMenu";
@@ -672,7 +673,7 @@ function openContextMenu(hit: PaneMouseHit, event: PointerEvent): void {
       onSplitDown: () => void api("pane.split", { direction: "down", target_pane_id: hit.pane_id, focus: true }),
       onToggleZoom: () => void api("pane.zoom", { pane_id: hit.pane_id }),
       onTogglePassthrough: () => toggleRightClickPassthrough(hit.pane_id, rightClickPassthroughFor(hit.pane_id)),
-      onClosePane: () => void api("pane.close", { pane_id: hit.pane_id }),
+      onClosePane: () => requestClosePane(hit.pane_id),
     },
   );
 }

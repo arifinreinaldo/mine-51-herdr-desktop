@@ -6,6 +6,7 @@ pub mod commands;
 pub mod conn;
 pub mod dispatch;
 pub mod engine;
+pub mod flutter;
 pub mod folder_picker;
 pub mod memory;
 pub mod mirror;
@@ -73,7 +74,7 @@ pub fn run(start: Instant) {
             commands::subscribe_surface,
             commands::pane_at,
             commands::pane_mouse_hit,
-            commands::split_focused_pane_rect,
+            commands::pane_layout,
             commands::pane_scroll_info,
             commands::pane_keyboard_info,
             commands::write_clipboard_text,
@@ -89,6 +90,11 @@ pub fn run(start: Instant) {
             window_chrome::reconnect,
             settings::settings_get,
             settings::settings_set,
+            flutter::flutter_project,
+            flutter::android_devices,
+            flutter::flutter_devices,
+            flutter::flutter_flavors,
+            flutter::flutter_run_alive,
             folder_picker::pick_workspace_folder,
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,

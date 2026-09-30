@@ -3,12 +3,13 @@
 
 import { focusKeyboardCapture, keyboardCaptureReturnTarget } from "../keyboard/focusCapture";
 import type { SeenDoneTabsTracker } from "../notifications/seenDoneTabs";
-import { DIRECT_FOCUS_SLOT_COUNT } from "../shortcuts";
+import { DIRECT_FOCUS_SLOT_COUNT, shortcutDisplay } from "../shortcuts";
 import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
 import { dragDropInsertIndex } from "../workspace/tabMove";
 import { openMenu } from "./menu";
+import { closeItems, paneLayoutItems } from "./paneActionItems";
 import { beginRenderGuard } from "./renderGuard";
-import { createStatusDot } from "./statusDot";
+import { createStatusDotOrSlot } from "./statusDot";
 
 /** Keyboard shortcuts feature, item 6: `"<label> (Alt+N)"` for a tab at
  * `index` (0-based, tab strip order) among `total` tabs -- N for index <
@@ -160,42 +161,22 @@ function openTabContextMenu(
 ): void {
   const rootRect = overlayRoot.getBoundingClientRect();
   openMenu(overlayRoot, { left: x - rootRect.left, top: y - rootRect.top }, [
+    ...paneLayoutItems({
+      onSplitRight: () => callbacks.onSplitRight(tab.tab_id),
+      onSplitDown: () => callbacks.onSplitDown(tab.tab_id),
+      onToggleZoom: () => callbacks.onToggleZoom(tab.tab_id),
+    }),
     {
-      id: "split-right",
-      label: "Split Right",
-      icon: "split-horizontal",
-      shortcut: "Alt+Shift+=",
-      onSelect: () => callbacks.onSplitRight(tab.tab_id),
-    },
-    {
-      id: "split-down",
-      label: "Split Down",
-      icon: "split-vertical",
-      shortcut: "Alt+Shift+-",
-      onSelect: () => callbacks.onSplitDown(tab.tab_id),
-    },
-    {
-      id: "rename",
-      label: "Rename…",
-      shortcut: "F2",
+      id: "tab.rename",
+      label: "Rename Tab…",
+      shortcut: shortcutDisplay("tab.rename"),
       separatorBefore: true,
       onSelect: () => startTabInlineRename(labelEl, tab, callbacks),
     },
-    {
-      id: "toggle-zoom",
-      label: "Toggle Zoom",
-      shortcut: "Alt+Shift+Z",
-      onSelect: () => callbacks.onToggleZoom(tab.tab_id),
-    },
-    ...((tab.paneCount ?? 1) > 1
-      ? [{
-          id: "close-pane",
-          label: "Close Pane",
-          shortcut: "Alt+Shift+W",
-          separatorBefore: true,
-          onSelect: () => callbacks.onClosePane(tab.tab_id),
-        }]
-      : []),
+    ...closeItems({
+      onClosePane: (tab.paneCount ?? 1) > 1 ? () => callbacks.onClosePane(tab.tab_id) : undefined,
+      onCloseTab: () => callbacks.onCloseTab(tab.tab_id),
+    }),
   ], { returnFocusTo: keyboardCaptureReturnTarget() });
 }
 
@@ -240,7 +221,7 @@ export function renderTabStrip(
     slot.className = "tab-slot";
     const dotStatus: AgentStatus =
       tab.agent_status === "done" && seenDoneTracker.isSeen(tab.tab_id) ? "idle" : tab.agent_status;
-    slot.appendChild(createStatusDot(dotStatus));
+    slot.appendChild(createStatusDotOrSlot(dotStatus));
     const closeIcon = document.createElement("i");
     closeIcon.className = "codicon codicon-close tab-close-icon";
     slot.appendChild(closeIcon);

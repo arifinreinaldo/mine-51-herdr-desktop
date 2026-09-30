@@ -1,4 +1,5 @@
 import { requestCloseTab } from "./tabClose";
+import { requestClosePane } from "./paneClose";
 // The menu bar's declarative action table (`MenuBarContext`), the
 // keyboard-shortcut dispatch table that mirrors it, and the handful of
 // chrome actions (F2 rename, the perf HUD toggle) that don't cleanly
@@ -127,7 +128,7 @@ export const menuBarContext: MenuBarContext = {
   },
   onClosePane: () => {
     const paneId = focusedPaneId();
-    if (paneId) void api("pane.close", { pane_id: paneId });
+    if (paneId) requestClosePane(paneId);
   },
   onToggleZoom: () => {
     const paneId = focusedPaneId();
@@ -315,6 +316,9 @@ export function refreshMenuBarContext(): void {
   menuBarContext.latestReleaseNotesAvailable = Boolean(appState.snapshot?.latest_release_notes_available);
   menuBarContext.releaseNotesPresent = Boolean(appState.snapshot?.release_notes);
   herdrMenuDotEl.hidden = !(menuBarContext.updateAvailable || Boolean(appState.snapshot?.integration_updates_available));
+  const dotLabel = menuBarContext.updateAvailable ? "herdr update available" : "Integration updates available";
+  herdrMenuDotEl.title = dotLabel;
+  herdrMenuDotEl.setAttribute("aria-label", dotLabel);
 }
 
 /** Alt+1..8 / Ctrl+Shift+1..8 (fixed position) and Alt+9 / Ctrl+Shift+9

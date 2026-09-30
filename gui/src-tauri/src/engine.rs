@@ -122,7 +122,7 @@ fn is_semverish(s: &str) -> bool {
             .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-fn apply_no_window(cmd: &mut AsyncCommand) {
+pub(crate) fn apply_no_window(cmd: &mut AsyncCommand) {
     // `tokio::process::Command::creation_flags` is a native inherent method
     // on Windows (it forwards to `std::process::Command`'s own), so no
     // `CommandExt` import is needed here.

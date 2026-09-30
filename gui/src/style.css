@@ -12,6 +12,7 @@
   --sidebar-width: 260px;
   --ui-font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --terminal-font-size: 14px;
+  --fs-xs: 12px;
 }
 
 * {
@@ -62,8 +63,13 @@ button {
   opacity: 1;
 }
 
-:focus {
+:focus:not(:focus-visible) {
   outline: none;
+}
+
+:focus-visible {
+  outline: 1px solid var(--focusBorder);
+  outline-offset: -1px;
 }
 
 /* Spec §9.2: ":focus-visible gives a 1px focusBorder ring on tabs, sidebar
@@ -75,7 +81,9 @@ button {
 .status-item:focus-visible,
 .sidebar-footer:focus-visible,
 .icon-btn:focus-visible,
-.win-btn:focus-visible {
+.win-btn:focus-visible,
+.tab-plus:focus-visible,
+.tab-overflow:focus-visible {
   outline: 1px solid var(--focusBorder);
   outline-offset: -1px;
 }
@@ -137,13 +145,103 @@ button {
 
 #titlebar-center {
   flex: 1;
-  text-align: center;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
   color: var(--descriptionForeground);
   font-size: 12px;
+  -webkit-app-region: drag;
+}
+
+#titlebar-title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  -webkit-app-region: drag;
+}
+
+/* Flutter run toolbar (flutter-run-spec �4). */
+#run-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+
+#run-toolbar[hidden],
+#run-toolbar [hidden] {
+  display: none;
+}
+
+.run-device {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.run-device:hover {
+  background: var(--list-hoverBackground);
+}
+
+.run-device__name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run-btn {
+  width: 24px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+}
+
+.run-btn:hover:not(:disabled) {
+  background: var(--list-hoverBackground);
+}
+
+.run-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.run-btn--play .codicon {
+  color: var(--herdr-status-done);
+}
+
+.run-btn--running:disabled {
+  opacity: 1;
+}
+
+.run-btn--running .codicon {
+  font-size: 12px;
+  color: var(--herdr-status-done);
+}
+
+.run-btn--stop .codicon {
+  color: var(--herdr-danger);
+}
+
+.menu-item.is-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 899px) {
+  .run-device__name {
+    display: none;
+  }
 }
 
 #window-controls {
@@ -224,7 +322,7 @@ button {
   display: flex;
   align-items: center;
   padding: 0 8px 0 4px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--sideBarSectionHeader-foreground);
@@ -277,7 +375,8 @@ button {
   background: var(--herdr-status-blocked);
 }
 
-.ws .status-dot {
+.ws .status-dot,
+.ws .status-dot-slot {
   grid-row: 1;
   align-self: center;
   justify-self: center;
@@ -386,7 +485,7 @@ button {
 
 .sidebar-footer__hint {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -418,7 +517,9 @@ body.has-workspace-colors #tab-strip {
   display: flex;
   overflow-x: auto;
   scrollbar-width: none;
-  flex: 1;
+  /* Content-sized so "+" follows the last tab; shrinks (and scrolls) once the
+     tabs no longer fit, which pins "+" and the chevron to the right edge. */
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -449,7 +550,8 @@ body.has-workspace-colors #tab-strip {
   background: var(--tab-hoverBackground);
 }
 
-.tab:hover .tab-slot .status-dot {
+.tab:hover .tab-slot .status-dot,
+.tab:hover .tab-slot .status-dot-slot {
   display: none;
 }
 
@@ -480,7 +582,8 @@ body.has-workspace-colors #tab-strip {
   display: block;
 }
 
-.tab.active .tab-slot .status-dot {
+.tab.active .tab-slot .status-dot,
+.tab.active .tab-slot .status-dot-slot {
   display: none;
 }
 
@@ -521,12 +624,57 @@ body.has-workspace-colors #tab-strip {
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--icon-foreground);
+  cursor: pointer;
 }
 
 .tab-plus:hover,
 .tab-overflow:hover {
   background: var(--tab-hoverBackground);
+}
+
+.tab-overflow[hidden] {
+  display: none;
+}
+
+/* "All tabs" dropdown: one row per tab, status dot + truncated label. */
+.menu-heading {
+  padding: 6px 10px 4px;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--descriptionForeground);
+}
+
+.menu-item__no-dot {
+  width: 8px;
+  flex-shrink: 0;
+}
+
+.tab-overflow-menu .menu-item:has(.menu-checkmark) .menu-item__label {
+  font-weight: 600;
+}
+
+.menu.tab-overflow-menu {
+  width: 300px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.tab-overflow-menu .menu-item {
+  height: 28px;
+  gap: 8px;
+}
+
+.tab-overflow-menu .menu-item__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tab-rename-input {
@@ -687,7 +835,7 @@ body.has-workspace-colors #tab-strip {
   border: 1px solid var(--editorHoverWidget-border);
   border-radius: 4px;
   padding: 6px 8px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
   color: var(--foreground);
   pointer-events: none;
@@ -773,6 +921,14 @@ body.has-workspace-colors #tab-strip {
   border-radius: 50%;
   flex-shrink: 0;
   display: inline-block;
+}
+
+/* Idle/unknown show no dot: an empty slot of the same size (no news). */
+.status-dot-slot {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 /* UX pass 1 spec §2 "Agent state in words, not colour alone": every status
@@ -1058,13 +1214,15 @@ body.has-workspace-colors #tab-strip {
 .agent-popover {
   width: 340px;
   padding: 6px 0;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
 }
 
 .agent-popover__header {
   display: flex;
   align-items: center;
   padding: 2px 12px 6px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--descriptionForeground);
 }
@@ -1094,7 +1252,7 @@ body.has-workspace-colors #tab-strip {
 /* UX pass 1 spec §3 "Blocked and done first": one small header per group. */
 .agent-popover__group-header {
   padding: 4px 12px 2px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;
@@ -1103,11 +1261,44 @@ body.has-workspace-colors #tab-strip {
 
 .agent-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
   column-gap: 8px;
-  row-gap: 1px;
+  align-items: center;
   padding: 4px 12px;
   cursor: pointer;
+}
+
+.agent-row__main {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-row__ws {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  padding: 0 6px;
+  border-radius: 3px;
+  border-left: 3px solid var(--ws-chip, var(--descriptionForeground));
+  background: var(--list-hoverBackground);
+}
+
+.agent-popover__idle-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+  cursor: pointer;
+}
+
+.agent-popover__idle-summary:hover {
+  background: var(--list-hoverBackground);
 }
 
 .agent-row:hover,
@@ -1116,25 +1307,8 @@ body.has-workspace-colors #tab-strip {
   color: var(--list-activeSelectionForeground);
 }
 
-.agent-row .agent-row__chip {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
-  margin-right: 6px;
-  display: inline-block;
-}
-
-.agent-row .agent-row__title {
-  grid-column: 2;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--descriptionForeground);
-}
-
 .agent-row .agent-row__meta {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--descriptionForeground);
 }
 
@@ -1147,8 +1321,9 @@ body.has-workspace-colors #tab-strip {
 
 .agent-row.is-highlight .agent-row__done-label {
   color: var(--herdr-status-done);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 /* Finding #14: a transient highlight when an agent-count click in the
@@ -1160,7 +1335,7 @@ body.has-workspace-colors #tab-strip {
 
 .agent-popover__footer {
   padding: 4px 14px 2px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--descriptionForeground);
 }
 
@@ -1220,7 +1395,7 @@ body.has-workspace-colors #tab-strip {
   border: 1px solid var(--menu-border);
   border-radius: 4px;
   font-family: monospace;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   /* The notices are already hard-wrapped at about 80 columns; a second soft
      wrap at the modal edge split every line in two. Scroll sideways instead. */
   white-space: pre;
@@ -1246,7 +1421,7 @@ body.has-workspace-colors #tab-strip {
 }
 
 .shortcuts-modal-group {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--descriptionForeground);
@@ -1337,7 +1512,7 @@ body.has-workspace-colors #tab-strip {
 
 .status-agent-counts__as-of {
   padding: 0 8px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--descriptionForeground);
 }
 
@@ -1353,29 +1528,6 @@ body.has-workspace-colors #tab-strip {
 
 #overlay-root > * {
   pointer-events: auto;
-}
-
-/* Agent rows: line 1 truncates; the highlight card's right column holds
-   "DONE · just now" (row 1) and "Enter ↵ jump" (row 2). */
-.agent-row > span:nth-child(2) {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.agent-row.is-highlight .agent-row__done-label {
-  grid-column: 3;
-  grid-row: 1;
-  white-space: nowrap;
-  text-align: right;
-}
-
-.agent-row.is-highlight .agent-row__meta {
-  grid-column: 3;
-  grid-row: 2;
-  white-space: nowrap;
-  text-align: right;
 }
 
 .btn--primary {
@@ -1502,7 +1654,7 @@ body.has-workspace-colors #tab-strip {
   border: 1px solid var(--menu-border);
   border-radius: 4px;
   font-family: monospace;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   white-space: pre-wrap;
 }
 
@@ -1516,7 +1668,7 @@ body.has-workspace-colors #tab-strip {
 }
 
 .wizard-tag {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   padding: 1px 6px;
   border-radius: 3px;
   border: 1px solid var(--menu-border);
@@ -1583,7 +1735,7 @@ body.has-workspace-colors #tab-strip {
 
 .wizard-provider-card__meta {
   color: var(--descriptionForeground);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   margin: 2px 0;
 }
 
@@ -1618,28 +1770,89 @@ body.has-workspace-colors #tab-strip {
   margin-bottom: 6px;
 }
 
-/* Close Pane button on the focused pane of a split tab (`paneCloseButton.ts`). */
-.pane-close-button {
+/* Pane chrome (`paneChrome/paneChrome.ts`): focus ring, dim layer, header strip. */
+.pane-chrome {
   position: absolute;
-  z-index: 2;
-  width: 20px;
-  height: 20px;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.pane-ring {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--focusBorder);
+  border-radius: 2px;
+}
+.pane-dim {
+  position: absolute;
+  background: var(--terminal-background);
+  opacity: 0.15;
+}
+.pane-header {
+  position: absolute;
   display: flex;
   align-items: center;
-  justify-content: center;
+  pointer-events: none;
+  font: 600 var(--fs-xs) var(--ui-font);
+}
+.pane-header__title {
+  position: absolute;
+  background: var(--terminal-background);
+  color: var(--descriptionForeground);
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.pane-header.is-focused .pane-header__title {
+  color: var(--foreground);
+}
+.pane-header__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+  background: var(--terminal-background);
+  pointer-events: auto;
+  visibility: hidden;
+}
+.pane-header.is-focused .pane-header__actions,
+.pane-header.is-hovered .pane-header__actions {
+  visibility: visible;
+}
+.pane-header__btn {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
   padding: 0;
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: var(--tab-inactiveForeground, #9d9d9d);
+  color: var(--icon-foreground);
   cursor: pointer;
 }
-.pane-close-button:hover {
-  background: var(--toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
-  color: var(--tab-activeForeground, #fff);
+.pane-header__btn .codicon {
+  font-size: 14px;
 }
-.pane-close-button[hidden] {
-  display: none;
+.pane-header__btn:hover {
+  background: var(--list-hoverBackground);
+}
+.pane-header__btn--close:hover {
+  background: var(--herdr-danger);
+  color: #ffffff;
+}
+.pane-header__zoomed {
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--focusBorder);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font: 600 var(--fs-xs) var(--ui-font);
+  cursor: pointer;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1648,7 +1861,7 @@ body.has-workspace-colors #tab-strip {
 
 .find-bar {
   position: absolute;
-  top: 8px;
+  top: calc(8px + var(--pane-chrome-top, 0px));
   right: 8px;
   z-index: 3;
   display: flex;
@@ -1687,7 +1900,7 @@ body.has-workspace-colors #tab-strip {
 
 .copy-mode-badge {
   position: absolute;
-  top: 8px;
+  top: calc(8px + var(--pane-chrome-top, 0px));
   right: 8px;
   z-index: 3;
   padding: 2px 8px;
@@ -1719,4 +1932,30 @@ body.has-workspace-colors #tab-strip {
 .tab-bell-flash {
   background: var(--herdr-status-blocked, #e2c08d) !important;
   transition: background 200ms ease-out;
+}
+
+/* Flavor picker list. */
+.flavor-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.flavor-row {
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.flavor-row.is-selected,
+.flavor-row:hover {
+  background: var(--menu-selectionBackground, var(--tab-hoverBackground));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

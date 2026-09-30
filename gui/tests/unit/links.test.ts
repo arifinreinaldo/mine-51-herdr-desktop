@@ -6,7 +6,7 @@
 // `hoverCallAllowed` predicate below.
 
 import { describe, expect, it } from "vitest";
-import { hoverCallAllowed } from "../../src/links";
+import { hoverCallAllowed, isUnsupportedMethod } from "../../src/links";
 
 describe("hoverCallAllowed", () => {
   it("always allows the first call (lastCallAt is null)", () => {
@@ -24,5 +24,16 @@ describe("hoverCallAllowed", () => {
   it("respects a custom interval", () => {
     expect(hoverCallAllowed(1000, 1010, 50)).toBe(false);
     expect(hoverCallAllowed(1000, 1050, 50)).toBe(true);
+  });
+});
+
+describe("isUnsupportedMethod", () => {
+  it("matches the server's unsupported_method error", () => {
+    const err = { message: 'unsupported_method: method "pane.link.resolve" is not available on this machine' };
+    expect(isUnsupportedMethod(err)).toBe(true);
+  });
+  it("does not match other errors", () => {
+    expect(isUnsupportedMethod({ message: "pane_not_found: gone" })).toBe(false);
+    expect(isUnsupportedMethod("boom")).toBe(false);
   });
 });

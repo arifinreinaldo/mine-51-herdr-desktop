@@ -29,6 +29,8 @@ export interface RawTab {
   label: string;
   focused: boolean;
   agent_status: AgentStatus;
+  /** `ClientShellTab.zoomed`; optional because an older server may omit it. */
+  zoomed?: boolean;
 }
 
 export interface RawPane {

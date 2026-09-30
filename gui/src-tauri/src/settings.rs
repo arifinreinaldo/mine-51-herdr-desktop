@@ -55,6 +55,13 @@ pub struct Settings {
     /// this field existed) loading fine, defaulting to `false`.
     #[serde(default)]
     pub agent_list_pinned: bool,
+    /// Flutter run spec: `{project dir -> device id}`. The id is typed into
+    /// a shell on Play, so the frontend re-checks it there.
+    #[serde(default)]
+    pub flutter_devices: HashMap<String, String>,
+    /// `{project dir -> flavor}`, the last pick. Typed into a shell on Play.
+    #[serde(default)]
+    pub flutter_flavors: HashMap<String, String>,
 }
 
 fn default_theme() -> String {
@@ -86,6 +93,8 @@ impl Default for Settings {
             desktop_notifications: true,
             first_run_complete: false,
             agent_list_pinned: false,
+            flutter_devices: HashMap::new(),
+            flutter_flavors: HashMap::new(),
         }
     }
 }

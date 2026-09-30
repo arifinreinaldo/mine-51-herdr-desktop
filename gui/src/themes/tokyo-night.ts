@@ -10,7 +10,7 @@ const PALETTE: CompactPalette = {
   side: "#16161e",
   border: "#101014",
   fg: "#a9b1d6",
-  desc: "#565f89",
+  desc: "#8087a7",
   accent: "#7aa2f7",
   accentFg: "#16161e",
   sel: "#283457",

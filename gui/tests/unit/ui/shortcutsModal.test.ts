@@ -24,7 +24,7 @@ describe("openKeyboardShortcutsModal", () => {
     const rows = document.querySelectorAll(".modal-shortcut-row");
     expect(rows).toHaveLength(cheatSheetEntries().length);
     const headings = Array.from(document.querySelectorAll(".shortcuts-modal-group")).map((h) => h.textContent);
-    expect(headings).toEqual(["Workspace", "Tab", "Pane", "Agents", "View", "herdr"]);
+    expect(headings).toEqual(["Workspace", "Tab", "Pane", "Agents", "View", "Cowbell"]);
   });
 
   it("the Alt+1..9 / Ctrl+Shift+1..9 ranges each show as a single row, not nine", () => {

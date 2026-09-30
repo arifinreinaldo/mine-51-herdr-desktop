@@ -3,6 +3,7 @@
 // data (labels, shortcuts, actions) is built by the caller.
 
 import { closeActiveOverlay, notifyOverlayClosed, openOverlay } from "./overlay";
+import { createStatusDot, type AgentStatus } from "./statusDot";
 
 export interface MenuItemSpec {
   id: string;
@@ -17,6 +18,8 @@ export interface MenuItemSpec {
   disabled?: boolean;
   /** A badge dot (spec §1 "herdr menu": the update-available dot). */
   dot?: boolean;
+  /** An agent status dot shown left of the label (the tab overflow list). */
+  status?: AgentStatus | null;
   separatorBefore?: boolean;
   submenu?: readonly MenuItemSpec[];
   /** A submenu rendered as a swatch grid instead of a normal item list
@@ -60,7 +63,12 @@ function buildItemEl(
     el.appendChild(check);
   }
 
+  // `null` keeps the dot's width empty so labels stay aligned.
+  if (item.status) el.appendChild(createStatusDot(item.status));
+  else if (item.status === null) el.appendChild(document.createElement("span")).className = "menu-item__no-dot";
+
   const label = document.createElement("span");
+  label.className = "menu-item__label";
   label.textContent = item.label;
   el.appendChild(label);
 
@@ -89,6 +97,8 @@ function buildItemEl(
 }
 
 interface RenderMenuOptions {
+  /** A non-interactive heading row above the items. */
+  heading?: string;
   onClose?: () => void;
   returnFocusTo?: HTMLElement;
   /** Internal: submenus render inside the same overlay chain but don't
@@ -260,8 +270,16 @@ export function openMenu(
     openSubKind = "swatch";
   }
 
+  if (options.heading) {
+    const heading = document.createElement("div");
+    heading.className = "menu-heading";
+    heading.textContent = options.heading;
+    menuEl.appendChild(heading);
+  }
+
   for (const item of items) {
-    if (item.separatorBefore) {
+    // No separator above the first item: a leading rule would hang off the menu edge.
+    if (item.separatorBefore && itemEls.length > 0) {
       const hr = document.createElement("hr");
       hr.className = "menu-separator";
       menuEl.appendChild(hr);

@@ -26,7 +26,7 @@ function renderList(listEl: HTMLElement, query: string): void {
   for (const [menu, entries] of groups) {
     const heading = document.createElement("h3");
     heading.className = "shortcuts-modal-group";
-    heading.textContent = menu;
+    heading.textContent = menu === "herdr" ? "Cowbell" : menu;
     listEl.appendChild(heading);
     for (const entry of entries) {
       const row = document.createElement("div");

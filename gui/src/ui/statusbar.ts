@@ -14,7 +14,7 @@ import {
   type UsageState,
 } from "../usage";
 import { notifyOverlayClosed, openOverlay } from "./overlay";
-import { createStatusDot, statusWord, type AgentStatus } from "./statusDot";
+import { createStatusDot, createStatusDotOrSlot, statusWord, type AgentStatus } from "./statusDot";
 
 export type { AgentStatus };
 
@@ -383,26 +383,28 @@ function buildAgentRowEl(row: AgentPopoverRow, ageLabel: string, callbacks: Agen
   el.className = "agent-row";
   el.tabIndex = 0;
   el.dataset.paneId = row.pane_id;
+  el.dataset.status = row.agent_status;
+  el.title = `${formatAgentRowLine2(row.agentName, row.agent_status, ageLabel, row.title)} · ${row.workspace_label} · ${row.tab_label}`;
 
-  el.appendChild(createStatusDot(row.agent_status));
+  el.appendChild(createStatusDotOrSlot(row.agent_status));
 
-  const line1 = document.createElement("span");
-  if (row.colorHex) {
-    const chip = document.createElement("span");
-    chip.className = "agent-row__chip";
-    chip.style.background = row.colorHex;
-    line1.appendChild(chip);
+  const main = document.createElement("span");
+  main.className = "agent-row__main";
+  main.textContent = row.title ?? row.agentName;
+  el.appendChild(main);
+
+  const ws = document.createElement("span");
+  ws.className = "agent-row__ws";
+  if (row.colorHex) ws.style.setProperty("--ws-chip", row.colorHex);
+  ws.textContent = row.workspace_label;
+  el.appendChild(ws);
+
+  if (ageLabel) {
+    const meta = document.createElement("span");
+    meta.className = "agent-row__meta";
+    meta.textContent = ageLabel;
+    el.appendChild(meta);
   }
-  const strong = document.createElement("b");
-  strong.textContent = `${row.workspace_label} · ${row.tab_label}`;
-  line1.appendChild(strong);
-  el.appendChild(line1);
-  el.appendChild(document.createElement("span"));
-
-  const line2 = document.createElement("span");
-  line2.className = "agent-row__title";
-  line2.textContent = formatAgentRowLine2(row.agentName, row.agent_status, ageLabel, row.title);
-  el.appendChild(line2);
 
   el.addEventListener("click", () => callbacks.onFocusRow(row));
   el.addEventListener("keydown", (event) => {
@@ -462,6 +464,9 @@ export interface OpenAgentPopoverOptions {
    * (spec §3). Defaults to "always unknown" so callers that don't care
    * about ages (most tests) don't need to supply one. */
   ageMsFor?: (paneId: string) => number | undefined;
+  /** Opening element (the status bar's agent counts): the popover sits above
+   * its left edge. Without it the popover keeps a fixed bottom-left place. */
+  anchor?: HTMLElement;
 }
 
 /** Finding #2 "refresh": keyed by the popover's own root element, so
@@ -488,8 +493,15 @@ export function openAgentPopover(
 ): () => void {
   const popover = document.createElement("div");
   popover.className = "popover-layer agent-popover";
-  popover.style.left = "6px";
-  popover.style.bottom = "30px";
+  if (options.anchor) {
+    const anchorRect = options.anchor.getBoundingClientRect();
+    const rootRect = overlayRoot.getBoundingClientRect();
+    popover.style.left = `${anchorRect.left - rootRect.left}px`;
+    popover.style.bottom = `${rootRect.bottom - anchorRect.top + 4}px`;
+  } else {
+    popover.style.left = "6px";
+    popover.style.bottom = "30px";
+  }
 
   // UX pass 1 spec §3: pin state is only ever set by the initial `open`
   // call and by a full close+reopen (the caller's own `onTogglePin`
@@ -503,12 +515,16 @@ export function openAgentPopover(
   // render) always sees the *current* rows, not the ones open the popover
   // built.
   let rowEls: HTMLElement[] = [];
+  // Outside `renderContent`, so a refresh keeps the Idle group as the user left it.
+  let idleExpanded = false;
+  let lastRender: [readonly AgentPopoverRow[], OpenAgentPopoverOptions, AgentPopoverCallbacks] | null = null;
 
   function renderContent(
     currentRows: readonly AgentPopoverRow[],
     currentOptions: OpenAgentPopoverOptions,
     currentCallbacks: AgentPopoverCallbacks,
   ): void {
+    lastRender = [currentRows, currentOptions, currentCallbacks];
     const ageMsFor = currentOptions.ageMsFor ?? (() => undefined);
     popover.textContent = "";
     const nextRowEls: HTMLElement[] = [];
@@ -537,16 +553,13 @@ export function openAgentPopover(
     for (const card of currentOptions.highlightCards) {
       const row = currentOptions.highlightRowFor(card.transition.pane_id);
       if (!row) continue;
-      const el = buildAgentRowEl(row, formatAge(ageMsFor(row.pane_id)), currentCallbacks);
+      // Empty age: the "DONE · just now" label below takes the meta slot.
+      const el = buildAgentRowEl(row, "", currentCallbacks);
       el.classList.add("is-highlight");
       const doneLabel = document.createElement("span");
       doneLabel.className = "agent-row__done-label";
       doneLabel.textContent = "DONE · just now";
       el.appendChild(doneLabel);
-      const jumpHint = document.createElement("span");
-      jumpHint.className = "agent-row__meta";
-      jumpHint.textContent = "Enter ↵ jump";
-      el.appendChild(jumpHint);
       // Finding #11 "hover pauses the 8s auto-hide": only highlight cards
       // are subject to it (`HighlightCardStack.prune`'s `pausedPaneIds` is
       // keyed by the *transition*'s pane id), so only they report hover.
@@ -564,10 +577,37 @@ export function openAgentPopover(
     for (const [label, key] of AGENT_GROUP_SECTIONS) {
       const groupRows = grouped[key];
       if (groupRows.length === 0) continue;
-      const groupHeader = document.createElement("div");
-      groupHeader.className = "agent-popover__group-header";
-      groupHeader.textContent = `${label} (${groupRows.length})`;
-      popover.appendChild(groupHeader);
+      if (key === "idle") {
+        // Idle (and unknown) agents are no news: one summary row, rows on demand.
+        const summary = document.createElement("div");
+        summary.className = "agent-popover__idle-summary";
+        summary.setAttribute("role", "button");
+        summary.tabIndex = 0;
+        summary.setAttribute("aria-expanded", String(idleExpanded));
+        const chevron = document.createElement("i");
+        chevron.className = `codicon codicon-chevron-${idleExpanded ? "down" : "right"}`;
+        summary.append(chevron, `${groupRows.length} idle`);
+        const toggle = () => {
+          idleExpanded = !idleExpanded;
+          if (lastRender) renderContent(...lastRender);
+          popover.querySelector<HTMLElement>(".agent-popover__idle-summary")?.focus();
+        };
+        summary.addEventListener("click", toggle);
+        summary.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            toggle();
+          }
+        });
+        popover.appendChild(summary);
+        nextRowEls.push(summary);
+        if (!idleExpanded) continue;
+      } else {
+        const groupHeader = document.createElement("div");
+        groupHeader.className = "agent-popover__group-header";
+        groupHeader.textContent = `${label} (${groupRows.length})`;
+        popover.appendChild(groupHeader);
+      }
       for (const row of groupRows) {
         const el = buildAgentRowEl(row, formatAge(ageMsFor(row.pane_id)), currentCallbacks);
         popover.appendChild(el);

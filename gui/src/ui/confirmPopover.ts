@@ -170,6 +170,10 @@ export function openConfirmPopover(
   openOverlay(dispose);
 
   root.appendChild(popover);
+  // Keep the popover on screen: a pane near the right edge would push it out.
+  if (popover.offsetLeft + popover.offsetWidth > root.clientWidth - 8) {
+    popover.style.left = `${Math.max(8, root.clientWidth - popover.offsetWidth - 8)}px`;
+  }
   // Finding (UX pass 1 §1 "[P0]"): Cancel gets focus by default, never the
   // destructive button -- a bare Enter on open therefore cancels. This
   // must run *after* `openOverlay` above, for the same reason.

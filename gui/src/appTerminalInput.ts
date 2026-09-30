@@ -8,7 +8,7 @@
 
 import { Channel } from "@tauri-apps/api/core";
 import { invokeSafe } from "./appApi";
-import { refreshPaneCloseButton } from "./paneCloseButton";
+import { refreshPaneChrome } from "./paneChrome/paneChrome";
 import { clearSelectionOnInput } from "./appTerminalMouse";
 import { keyboardCapture, terminalWrapEl } from "./appDom";
 import { targetPaneId } from "./appLookups";
@@ -34,7 +34,7 @@ export function sendPaste(text: string): void {
   void invokeSafe("send_input", { paneId, events: [{ Paste: text }] });
 }
 
-function keyEvent(code: unknown, modifiers: number): unknown {
+export function keyEvent(code: unknown, modifiers: number): unknown {
   return {
     Key: {
       code,
@@ -101,7 +101,7 @@ function scheduleResize(): void {
   appState.resizeDebounceTimer = window.setTimeout(() => {
     appState.resizeDebounceTimer = undefined;
     appState.renderer?.measureAndResize();
-    refreshPaneCloseButton();
+    refreshPaneChrome();
     positionKeyboardCaptureAtCursor(); // P1 #16 "IME": cell size may have changed.
     // 150ms of quiet before sending the size: every width change makes the
     // shell reflow and redraw its input line (PSReadLine mangles it when
@@ -153,7 +153,7 @@ export async function subscribeSurface(): Promise<void> {
     appState.renderer?.recordDecodeMs(performance.now() - decodeStart);
     appState.renderer?.recordRustUs(frame.rustUs);
     appState.renderer?.setGrid(appState.grid, dirtyRows);
-    refreshPaneCloseButton();
+    refreshPaneChrome();
     positionKeyboardCaptureAtCursor(); // P1 #16 "IME"
   };
   await invokeSafe("subscribe_surface", { channel });

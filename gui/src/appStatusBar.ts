@@ -70,6 +70,7 @@ function agentPopoverRenderOptions(): OpenAgentPopoverOptions {
     highlightRowFor: (paneId) => agentPopoverRows().find((r) => r.pane_id === paneId),
     pinned: appState.settings.agentListPinned,
     ageMsFor: (paneId) => statusAge.ageMs(paneId, Date.now()),
+    anchor: statusAgentCountsEl,
   };
 }
 
@@ -152,10 +153,16 @@ export function refreshAgentPopoverIfOpen(): void {
 function scrollAgentPopoverToStatusGroup(status: keyof AgentCounts): void {
   const popover = overlayRoot.querySelector<HTMLElement>(".agent-popover");
   if (!popover) return;
-  const dotClass = `status-dot--${status}`;
-  const row = Array.from(popover.querySelectorAll<HTMLElement>(".agent-row")).find((el) =>
-    el.querySelector(`.${dotClass}`),
-  );
+  if (status === "idle") {
+    // Idle rows sit behind the summary row: open it first.
+    const summary = popover.querySelector<HTMLElement>(".agent-popover__idle-summary");
+    if (summary?.getAttribute("aria-expanded") === "false") summary.click();
+  }
+  const selector =
+    status === "idle"
+      ? '.agent-row[data-status="idle"], .agent-row[data-status="unknown"]'
+      : `.agent-row[data-status="${status}"]`;
+  const row = popover.querySelector<HTMLElement>(selector);
   if (!row) return;
   row.scrollIntoView({ block: "nearest" });
   row.classList.add("is-scroll-highlight");

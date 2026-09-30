@@ -355,6 +355,11 @@ export const SHORTCUTS: readonly ShortcutAction[] = [
   ...digitRangeShortcuts("workspace.focusByIndex", "Workspace", "Focus Workspace", "ctrlShift"),
 ];
 
+/** The display string of a shortcut (for menu hints and tooltips), by id. */
+export function shortcutDisplay(id: string): string | undefined {
+  return SHORTCUTS.find((s) => s.id === id)?.display;
+}
+
 export interface KeyboardEventLike {
   ctrlKey: boolean;
   shiftKey: boolean;

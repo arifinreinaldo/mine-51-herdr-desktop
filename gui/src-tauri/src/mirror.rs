@@ -192,6 +192,12 @@ impl SurfaceMirror {
         Ok(Delta::Full)
     }
 
+    /// True while the current surface carries a popup; the pane chrome must
+    /// not draw over it.
+    pub fn has_popup(&self) -> bool {
+        self.had_popup
+    }
+
     /// Applies an incremental patch, or rejects it per spec §1's nine
     /// conditions. A rejection must leave `self` completely unchanged
     /// (`src/client/shell/surface_patch.rs:33-169`).

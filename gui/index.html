@@ -15,11 +15,14 @@
         <span class="menu-title" data-menu="agents" tabindex="0">Agents</span>
         <span class="menu-title" data-menu="view" tabindex="0">View</span>
         <span class="menu-title" data-menu="herdr" tabindex="0"
-          >herdr<b class="menu-dot" id="herdr-menu-dot" hidden></b
+          >Cowbell<b class="menu-dot" id="herdr-menu-dot" role="img" hidden></b
         ></span>
         <span class="menu-title" data-menu="help" tabindex="0">Help</span>
       </nav>
-      <div id="titlebar-center" data-tauri-drag-region></div>
+      <div id="titlebar-center" data-tauri-drag-region>
+        <span id="titlebar-title" data-tauri-drag-region></span>
+        <div id="run-toolbar" hidden></div>
+      </div>
       <div id="window-controls">
         <button id="win-minimize" class="win-btn" aria-label="Minimize" tabindex="-1">
           <i class="codicon codicon-chrome-minimize"></i>
@@ -43,6 +46,7 @@
             id="sidebar-new-workspace-btn"
             class="icon-btn"
             title="New Workspace… (Ctrl+Shift+N)"
+            aria-label="New Workspace"
           >
             <i class="codicon codicon-new-folder"></i>
           </button>
@@ -59,12 +63,25 @@
       <section id="editor">
         <div id="tab-strip">
           <div id="tab-list" role="tablist"></div>
-          <div id="tab-plus" class="tab-plus" title="New Tab (Ctrl+Shift+T)" tabindex="0">
+          <button
+            type="button"
+            id="tab-plus"
+            class="tab-plus"
+            title="New Tab (Ctrl+Shift+T)"
+            aria-label="New Tab"
+          >
             <i class="codicon codicon-add"></i>
-          </div>
-          <div id="tab-overflow" class="tab-overflow" title="All tabs" tabindex="0">
+          </button>
+          <button
+            type="button"
+            id="tab-overflow"
+            class="tab-overflow"
+            title="All tabs"
+            aria-label="All Tabs"
+            aria-haspopup="menu"
+          >
             <i class="codicon codicon-chevron-down"></i>
-          </div>
+          </button>
         </div>
         <div id="terminal-wrap">
           <div id="banner" class="connection-banner" hidden></div>

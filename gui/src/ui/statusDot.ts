@@ -22,6 +22,15 @@ export function statusWord(status: AgentStatus): string {
   return STATUS_WORDS[status];
 }
 
+/** A status dot, or an empty slot of the same size for idle/unknown (no news). */
+export function createStatusDotOrSlot(status: AgentStatus): HTMLElement {
+  if (status !== "idle" && status !== "unknown") return createStatusDot(status);
+  const slot = document.createElement("span");
+  slot.className = "status-dot-slot";
+  slot.setAttribute("aria-hidden", "true");
+  return slot;
+}
+
 /** Builds one status dot `<span>`, styled by `status-dot--<status>` (shape
  * + colour, in `style.css`) and accessible via `role="img"` +
  * `aria-label="<status word>"`. */

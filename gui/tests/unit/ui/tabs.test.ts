@@ -177,10 +177,20 @@ describe("tab overflow: active tab scroll-into-view (finding #11)", () => {
 describe("status dots in the tab strip (UX pass 1 spec §2)", () => {
   it("every tab's dot gets role=img and an aria-label matching its status", () => {
     const callbacks = makeCallbacks();
-    guardedRender(callbacks); // tabs(): both idle
+    guardedRender(callbacks, [
+      { tab_id: "t1", label: "one", focused: true, agent_status: "working" },
+      { tab_id: "t2", label: "two", focused: false, agent_status: "idle" },
+    ]);
     const dot = listEl.querySelector('[data-tab-id="t1"] .status-dot')!;
     expect(dot.getAttribute("role")).toBe("img");
-    expect(dot.getAttribute("aria-label")).toBe("idle");
+    expect(dot.getAttribute("aria-label")).toBe("working");
+  });
+
+  it("an idle tab has a .status-dot-slot and no .status-dot", () => {
+    guardedRender(makeCallbacks()); // tabs(): both idle
+    const tab = listEl.querySelector('[data-tab-id="t2"]')!;
+    expect(tab.querySelector(".status-dot")).toBeNull();
+    expect(tab.querySelectorAll(".status-dot-slot")).toHaveLength(1);
   });
 });
 
@@ -249,6 +259,22 @@ describe("tab context menu Close Pane", () => {
     openMenuFor([{ ...tabs()[0], paneCount: 1 }], makeCallbacks());
     expect(overlayRoot.textContent).toContain("Split Right");
     expect(overlayRoot.textContent).not.toContain("Close Pane");
+  });
+
+  it("always offers Close Tab, and calls onCloseTab", () => {
+    const callbacks = makeCallbacks();
+    openMenuFor([{ ...tabs()[0], paneCount: 1 }], callbacks);
+    const item = Array.from(overlayRoot.querySelectorAll<HTMLElement>("*")).find(
+      (el) => el.children.length === 0 && el.textContent === "Close Tab",
+    );
+    expect(item).toBeDefined();
+    item!.click();
+    expect(callbacks.onCloseTab).toHaveBeenCalledWith("t1");
+  });
+
+  it("labels the rename item 'Rename Tab…'", () => {
+    openMenuFor([{ ...tabs()[0], paneCount: 1 }], makeCallbacks());
+    expect(overlayRoot.textContent).toContain("Rename Tab…");
   });
 
   it("shows on a split tab and closes a pane of that tab", () => {

@@ -11,8 +11,8 @@ export const sidebarNewWorkspaceBtn = document.getElementById("sidebar-new-works
 export const sidebarFooterEl = document.getElementById("sidebar-footer") as HTMLDivElement;
 export const sidebarResizeHandleEl = document.getElementById("sidebar-resize-handle") as HTMLDivElement;
 export const tabListEl = document.getElementById("tab-list") as HTMLDivElement;
-export const tabPlusEl = document.getElementById("tab-plus") as HTMLDivElement;
-export const tabOverflowEl = document.getElementById("tab-overflow") as HTMLDivElement;
+export const tabPlusEl = document.getElementById("tab-plus") as HTMLButtonElement;
+export const tabOverflowEl = document.getElementById("tab-overflow") as HTMLButtonElement;
 export const canvas = document.getElementById("terminal") as HTMLCanvasElement;
 export const terminalWrapEl = document.getElementById("terminal-wrap") as HTMLDivElement;
 export const keyboardCapture = document.getElementById("keyboard-capture") as HTMLTextAreaElement;
@@ -22,7 +22,10 @@ export const copyNoticeEl = document.getElementById("copy-notice") as HTMLDivEle
 export const statusAgentCountsEl = document.getElementById("status-agent-counts") as HTMLDivElement;
 export const statusConnectionEl = document.getElementById("status-connection") as HTMLDivElement;
 export const statusUsageEl = document.getElementById("status-usage") as HTMLDivElement;
-export const titlebarCenterEl = document.getElementById("titlebar-center") as HTMLDivElement;
+// The title text only: `#titlebar-center` also holds `#run-toolbar`, so
+// setting its textContent would wipe the toolbar.
+export const titlebarCenterEl = document.getElementById("titlebar-title") as HTMLSpanElement;
+export const runToolbarEl = document.getElementById("run-toolbar") as HTMLDivElement;
 export const herdrMenuDotEl = document.getElementById("herdr-menu-dot") as HTMLElement;
 export const winMinimizeEl = document.getElementById("win-minimize") as HTMLButtonElement;
 export const winMaximizeEl = document.getElementById("win-maximize") as HTMLButtonElement;

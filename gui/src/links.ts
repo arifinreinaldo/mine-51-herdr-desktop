@@ -6,7 +6,8 @@
 // the same params against `pane.link.resolve`, returning `{regions}` --
 // spec fact "Link handling".
 
-import { api, invokeSafe } from "./appApi";
+import { invoke } from "@tauri-apps/api/core";
+import { api, errorMessage, invokeSafe, showErrorNotice } from "./appApi";
 
 export interface PaneLinkParams {
   pane_id: string;
@@ -35,8 +36,27 @@ export async function activateLink(params: PaneLinkParams): Promise<void> {
 /** Ctrl+hover: resolves the link region(s) at/around the hovered cell, for
  * drawing the underline and switching the cursor to a pointer. */
 export async function resolveLinkRegions(params: PaneLinkParams): Promise<PaneLinkRegion[]> {
-  const result = await api<{ regions?: PaneLinkRegion[] }>("pane.link.resolve", { ...params });
-  return result?.regions ?? [];
+  if (hoverUnsupported) return [];
+  try {
+    const result = await invoke<{ regions?: PaneLinkRegion[] }>("api", {
+      method: "pane.link.resolve",
+      params: { ...params },
+    });
+    return result?.regions ?? [];
+  } catch (err: unknown) {
+    // An older herdr server has no `pane.link.resolve`. Hover fires on every
+    // Ctrl+mouse move, so a notice per call floods the screen: stop asking
+    // for this session and stay silent. Any other error still shows.
+    if (isUnsupportedMethod(err)) hoverUnsupported = true;
+    else showErrorNotice(errorMessage(err));
+    return [];
+  }
+}
+
+let hoverUnsupported = false;
+
+export function isUnsupportedMethod(err: unknown): boolean {
+  return errorMessage(err).startsWith("unsupported_method");
 }
 
 /** Throttles Ctrl+hover to one `pane.link.resolve` call per `intervalMs`

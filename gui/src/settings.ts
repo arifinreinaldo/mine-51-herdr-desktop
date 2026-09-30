@@ -20,6 +20,10 @@ export interface Settings {
   /** UX pass 1 spec §3 "Pinnable agent list": persists across restarts --
    * "the list reopens pinned at startup." */
   agentListPinned: boolean;
+  /** Flutter run spec: `{project dir -> device id}`. */
+  flutterDevices: Record<string, string>;
+  /** `{project dir -> flavor}`, the last pick. */
+  flutterFlavors: Record<string, string>;
 }
 
 export interface SettingsGetResponse {
@@ -38,6 +42,8 @@ export const DEFAULT_SETTINGS: Settings = {
   desktopNotifications: true,
   firstRunComplete: false,
   agentListPinned: false,
+  flutterDevices: {},
+  flutterFlavors: {},
 };
 
 export async function loadSettings(): Promise<SettingsGetResponse> {

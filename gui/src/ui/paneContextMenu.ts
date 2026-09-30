@@ -9,6 +9,7 @@
 
 import { keyboardCaptureReturnTarget } from "../keyboard/focusCapture";
 import { openMenu, type MenuItemSpec, type MenuPosition } from "./menu";
+import { closeItems, paneLayoutItems } from "./paneActionItems";
 
 export interface PaneContextMenuCallbacks {
   hasSelection: boolean;
@@ -33,9 +34,7 @@ function items(ctx: PaneContextMenuCallbacks): MenuItemSpec[] {
     { id: "paste", label: "Paste", icon: "clippy", onSelect: ctx.onPaste },
     { id: "selectAll", label: "Select All", onSelect: ctx.onSelectAll },
     { id: "clear", label: "Clear", separatorBefore: true, onSelect: ctx.onClear },
-    { id: "splitRight", label: "Split Right", icon: "split-horizontal", separatorBefore: true, onSelect: ctx.onSplitRight },
-    { id: "splitDown", label: "Split Down", icon: "split-vertical", onSelect: ctx.onSplitDown },
-    { id: "toggleZoom", label: "Toggle Zoom", onSelect: ctx.onToggleZoom },
+    ...paneLayoutItems(ctx),
     {
       id: "togglePassthrough",
       label: "Send Right-Clicks to Pane",
@@ -43,7 +42,7 @@ function items(ctx: PaneContextMenuCallbacks): MenuItemSpec[] {
       separatorBefore: true,
       onSelect: ctx.onTogglePassthrough,
     },
-    { id: "closePane", label: "Close Pane", danger: true, separatorBefore: true, onSelect: ctx.onClosePane },
+    ...closeItems({ onClosePane: ctx.onClosePane }),
   );
   return list;
 }

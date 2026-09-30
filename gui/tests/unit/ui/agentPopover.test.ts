@@ -497,3 +497,109 @@ describe("openAgentPopover: reopens after being superseded, while pinned (findin
     overlayRoot.remove();
   });
 });
+
+describe("openAgentPopover: one-line rows and collapsed Idle (S5)", () => {
+  const opts = { sortMode: "priority" as const, highlightCards: [], highlightRowFor: () => undefined };
+  const cbs = () => ({ onFocusRow: vi.fn(), onToggleSort: vi.fn() });
+
+  it("shows idle agents as one 'N idle' summary row, hidden until clicked", () => {
+    setup();
+    openAgentPopover(
+      overlayRoot,
+      [
+        row({ pane_id: "w1", agent_status: "working" }),
+        row({ pane_id: "i1", agent_status: "idle" }),
+        row({ pane_id: "u1", agent_status: "unknown" }),
+      ],
+      opts,
+      cbs(),
+    );
+    const summary = overlayRoot.querySelector<HTMLElement>(".agent-popover__idle-summary")!;
+    expect(summary.textContent).toBe("2 idle");
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    expect(overlayRoot.querySelectorAll('.agent-row[data-status="idle"], .agent-row[data-status="unknown"]')).toHaveLength(0);
+    expect(overlayRoot.querySelectorAll(".agent-popover__group-header")).toHaveLength(1);
+    summary.click();
+    const after = overlayRoot.querySelector<HTMLElement>(".agent-popover__idle-summary")!;
+    expect(after.getAttribute("aria-expanded")).toBe("true");
+    expect(overlayRoot.querySelectorAll('.agent-row[data-status="idle"], .agent-row[data-status="unknown"]')).toHaveLength(2);
+    overlayRoot.remove();
+  });
+
+  it("keeps the Idle expansion across refreshOpenAgentPopover", () => {
+    setup();
+    const rows = [row({ pane_id: "i1", agent_status: "idle" })];
+    openAgentPopover(overlayRoot, rows, opts, cbs());
+    overlayRoot.querySelector<HTMLElement>(".agent-popover__idle-summary")!.click();
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(refreshOpenAgentPopover(overlayRoot, rows, opts, cbs())).toBe(true);
+    expect(overlayRoot.querySelector(".agent-popover__idle-summary")!.getAttribute("aria-expanded")).toBe("true");
+    expect(overlayRoot.querySelectorAll('.agent-row[data-status="idle"]')).toHaveLength(1);
+    overlayRoot.remove();
+  });
+
+  it("renders no summary without idle agents", () => {
+    setup();
+    openAgentPopover(overlayRoot, [row({ agent_status: "working" })], opts, cbs());
+    expect(overlayRoot.querySelector(".agent-popover__idle-summary")).toBeNull();
+    overlayRoot.remove();
+  });
+
+  it("an idle row has no .status-dot and a working row has one", () => {
+    setup();
+    openAgentPopover(
+      overlayRoot,
+      [row({ pane_id: "w1", agent_status: "working" }), row({ pane_id: "i1", agent_status: "idle" })],
+      opts,
+      cbs(),
+    );
+    overlayRoot.querySelector<HTMLElement>(".agent-popover__idle-summary")!.click();
+    expect(overlayRoot.querySelector('.agent-row[data-status="working"] .status-dot')).not.toBeNull();
+    const idleRow = overlayRoot.querySelector('.agent-row[data-status="idle"]')!;
+    expect(idleRow.querySelector(".status-dot")).toBeNull();
+    expect(idleRow.querySelector(".status-dot-slot")).not.toBeNull();
+    overlayRoot.remove();
+  });
+
+  it(".agent-row__main shows the title, or the agent name without a title", () => {
+    setup();
+    openAgentPopover(
+      overlayRoot,
+      [
+        row({ pane_id: "a", agent_status: "working", title: "Review plan" }),
+        row({ pane_id: "b", agent_status: "working", title: null }),
+      ],
+      opts,
+      cbs(),
+    );
+    const mains = Array.from(overlayRoot.querySelectorAll(".agent-row__main")).map((e) => e.textContent);
+    expect(mains).toEqual(["Review plan", "claude"]);
+    overlayRoot.remove();
+  });
+
+  it(".agent-row__ws shows the workspace label and each row has data-status", () => {
+    setup();
+    openAgentPopover(overlayRoot, [row({ workspace_label: "herdr", agent_status: "blocked" })], opts, cbs());
+    const el = overlayRoot.querySelector<HTMLElement>(".agent-row")!;
+    expect(el.dataset.status).toBe("blocked");
+    expect(el.querySelector(".agent-row__ws")!.textContent).toBe("herdr");
+    expect(el.title).toBe("claude · blocked · herdr · tab");
+    overlayRoot.remove();
+  });
+
+  it("with an anchor, style.left is the anchor's left minus the root's left", () => {
+    setup();
+    const anchor = document.createElement("div");
+    document.body.appendChild(anchor);
+    const rect = (left: number, top: number, bottom: number) =>
+      ({ left, top, bottom, right: left + 10, width: 10, height: bottom - top, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+    anchor.getBoundingClientRect = () => rect(120, 500, 520);
+    overlayRoot.getBoundingClientRect = () => rect(20, 0, 600);
+    openAgentPopover(overlayRoot, [row()], { ...opts, anchor }, cbs());
+    const popover = overlayRoot.querySelector<HTMLElement>(".agent-popover")!;
+    expect(popover.style.left).toBe("100px");
+    expect(popover.style.bottom).toBe("104px");
+    anchor.remove();
+    overlayRoot.remove();
+  });
+});
