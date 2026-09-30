@@ -15,12 +15,21 @@ export function errorMessage(err: unknown): string {
   return String(err);
 }
 
-export function showErrorNotice(message: string): void {
+function showNotice(message: string, className: string): void {
   const notice = document.createElement("div");
-  notice.className = "error-notice";
+  notice.className = className;
   notice.textContent = message;
   errorNoticesEl.appendChild(notice);
   window.setTimeout(() => notice.remove(), ERROR_NOTICE_DURATION_MS);
+}
+
+export function showErrorNotice(message: string): void {
+  showNotice(message, "error-notice");
+}
+
+/** Same stack and timing as the error notices, neutral colours. */
+export function showInfoNotice(message: string): void {
+  showNotice(message, "error-notice info-notice");
 }
 
 export function invokeSafe<T>(cmd: string, args?: Record<string, unknown>): Promise<T | undefined> {

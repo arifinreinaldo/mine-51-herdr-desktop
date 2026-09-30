@@ -40,3 +40,18 @@ export function flutterFlavors(dir: string): Promise<string[]> {
 export function flutterRunAlive(deviceId: string): Promise<boolean> {
   return invoke<boolean>("flutter_run_alive", { deviceId });
 }
+
+/** Starts a scrcpy window for the device. Rejects `scrcpy_not_found` when scrcpy is missing. */
+export function androidMirror(deviceId: string): Promise<void> {
+  return invoke<void>("android_mirror", { deviceId });
+}
+
+/** `adb install -r` of an absolute `.apk` path. Resolves adb's output. */
+export function androidInstallApk(deviceId: string, path: string): Promise<string> {
+  return invoke<string>("android_install_apk", { deviceId, path });
+}
+
+/** Installs scrcpy with winget (Windows). */
+export function installScrcpy(): Promise<void> {
+  return invoke<void>("install_scrcpy");
+}

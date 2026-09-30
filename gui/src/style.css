@@ -1463,6 +1463,12 @@ body.has-workspace-colors #tab-strip {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
+.info-notice {
+  background: var(--statusBar-background);
+  color: var(--statusBar-foreground);
+  border-color: var(--herdr-border);
+}
+
 /* "Copied" toast (mouse-selection auto-copy and OSC 52 passthrough), a
    transient, non-modal notice near the status bar (spec: ~1.5s, never
    blocking input) -- shown via `.is-visible`, not `[hidden]` removal, so

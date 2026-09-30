@@ -1,6 +1,7 @@
 //! herdr GUI Tauri backend (spec §4). See each module's doc comment for what
 //! is stubbed vs. implemented for real.
 
+pub mod android;
 pub mod clipboard;
 pub mod commands;
 pub mod conn;
@@ -95,6 +96,9 @@ pub fn run(start: Instant) {
             flutter::flutter_devices,
             flutter::flutter_flavors,
             flutter::flutter_run_alive,
+            android::android_mirror,
+            android::android_install_apk,
+            android::install_scrcpy,
             folder_picker::pick_workspace_folder,
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,

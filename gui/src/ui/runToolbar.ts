@@ -19,11 +19,16 @@ export interface RunToolbarView {
   flavor: string | null;
   /** The 300ms double-click guard on Hot Reload / Hot Restart / Stop. */
   actionsDisabled: boolean;
+  /** scrcpy is starting, or being installed. */
+  mirrorBusy: boolean;
+  mirrorDisabled: boolean;
+  mirrorTitle: string;
 }
 
 export interface RunToolbarHandlers {
   onDeviceClick: (anchor: HTMLElement) => void;
   onFlavorClick: () => void;
+  onMirror: () => void;
   onPlay: () => void;
   onReload: () => void;
   onRestart: () => void;
@@ -69,12 +74,14 @@ export function createRunToolbar(root: HTMLElement, handlers: RunToolbarHandlers
   flavorBtn.append(flavorIcon, flavorName);
   flavorBtn.addEventListener("click", () => handlers.onFlavorClick());
 
+  const mirror = makeButton("run-btn--mirror", "screen-full", "Mirror the device screen", handlers.onMirror);
+  const mirrorIcon = mirror.querySelector("i") as HTMLElement;
   const play = makeButton("run-btn--play", "play", "Run on the selected device", handlers.onPlay);
   const playIcon = play.querySelector("i") as HTMLElement;
   const reload = makeButton("run-btn--reload", "flame", "Hot Reload", handlers.onReload);
   const restart = makeButton("run-btn--restart", "debug-restart", "Hot Restart", handlers.onRestart);
   const stop = makeButton("run-btn--stop", "debug-stop", "Stop", handlers.onStop);
-  root.append(deviceBtn, flavorBtn, play, reload, restart, stop);
+  root.append(deviceBtn, flavorBtn, mirror, play, reload, restart, stop);
 
   return {
     render(view) {
@@ -94,6 +101,11 @@ export function createRunToolbar(root: HTMLElement, handlers: RunToolbarHandlers
         : running
           ? "codicon codicon-circle-large-filled"
           : "codicon codicon-play";
+      mirrorIcon.className = view.mirrorBusy
+        ? "codicon codicon-loading codicon-modifier-spin"
+        : "codicon codicon-screen-full";
+      mirror.disabled = view.mirrorDisabled;
+      mirror.title = view.mirrorTitle;
       play.classList.toggle("run-btn--running", running && !view.starting);
       play.disabled = view.playDisabled;
       play.title = view.playTitle;

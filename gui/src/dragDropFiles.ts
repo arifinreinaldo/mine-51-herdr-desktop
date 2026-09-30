@@ -2,7 +2,8 @@
 // Tauri's `onDragDropEvent` over the terminal pastes the dropped paths into
 // the pane under the pointer, each quoted for PowerShell (`'…'`, with inner
 // `'` doubled) and separated by spaces. Uses `Paste`, not typed keys, so the
-// server adds bracketed paste like every other paste path.
+// server adds bracketed paste like every other paste path. `.apk` files are
+// not pasted: they go to `onApks`, which installs them on the device.
 
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, invokeSafe } from "./appApi";
@@ -26,7 +27,19 @@ export function pathsToPasteText(paths: readonly string[]): string {
   return paths.map(quotePathForPowerShell).join(" ");
 }
 
-async function onDrop(paths: string[], position: { x: number; y: number }): Promise<void> {
+/** Splits a drop into APKs (installed on the device) and other files (pasted). */
+export function splitApks(paths: readonly string[]): { apks: string[]; others: string[] } {
+  const apks = paths.filter((p) => /\.apk$/i.test(p));
+  return { apks, others: paths.filter((p) => !apks.includes(p)) };
+}
+
+async function onDrop(
+  dropped: string[],
+  position: { x: number; y: number },
+  onApks: (paths: string[]) => void,
+): Promise<void> {
+  const { apks, others: paths } = splitApks(dropped);
+  if (apks.length > 0) onApks(apks);
   const renderer = appState.renderer;
   if (!renderer || paths.length === 0) return;
   const dpr = window.devicePixelRatio || 1;
@@ -42,8 +55,8 @@ async function onDrop(paths: string[], position: { x: number; y: number }): Prom
   void invokeSafe("send_input", { paneId: hit.pane_id, events: [{ Paste: pathsToPasteText(paths) }] });
 }
 
-export function wireDragDropFiles(): void {
+export function wireDragDropFiles(onApks: (paths: string[]) => void): void {
   void getCurrentWebview().onDragDropEvent((event) => {
-    if (event.payload.type === "drop") void onDrop(event.payload.paths, event.payload.position);
+    if (event.payload.type === "drop") void onDrop(event.payload.paths, event.payload.position, onApks);
   });
 }

@@ -4,13 +4,16 @@
 // endpoint API. The pure logic lives in `flutter/runState.ts`.
 
 import { listen } from "@tauri-apps/api/event";
-import { api, errorMessage, invokeSafe, showErrorNotice } from "./appApi";
+import { api, errorMessage, invokeSafe, showErrorNotice, showInfoNotice } from "./appApi";
 import { keyEvent } from "./appTerminalInput";
 import { overlayRoot, runToolbarEl } from "./appDom";
 import { appState, persistSettings } from "./appState";
 import type { RawSnapshot } from "./appTypes";
 import {
   androidDevices,
+  androidInstallApk,
+  androidMirror,
+  installScrcpy,
   flutterDevices,
   flutterFlavors,
   flutterProject,
@@ -54,6 +57,8 @@ let adbLoading = false;
 let flutterLoading = false;
 
 let playing = false;
+/** scrcpy is starting, or winget is installing it. */
+let mirrorBusy = false;
 let actionsGuarded = false;
 let menuDispose: (() => void) | null = null;
 let menuAnchor: HTMLElement | null = null;
@@ -61,6 +66,7 @@ let menuAnchor: HTMLElement | null = null;
 const toolbar = createRunToolbar(runToolbarEl, {
   onDeviceClick: (anchor) => openDeviceMenu(anchor),
   onFlavorClick: () => openFlavorMenu(),
+  onMirror: () => void mirror(),
   onPlay: () => void play(),
   onReload: () => void sendRunKey("r"),
   onRestart: () => void sendRunKey("R"),
@@ -106,6 +112,9 @@ function render(): void {
       playTitle: "",
       flavor: null,
       actionsDisabled: true,
+      mirrorBusy: false,
+      mirrorDisabled: true,
+      mirrorTitle: "",
     });
     return;
   }
@@ -163,6 +172,9 @@ function render(): void {
     playTitle,
     flavor: selectedFlavor(),
     actionsDisabled: actionsGuarded,
+    mirrorBusy,
+    mirrorDisabled: mirrorBusy || device?.state !== "device",
+    mirrorTitle: mirrorBusy ? "Starting scrcpy…" : `Mirror ${device?.name ?? "the device"} with scrcpy`,
   });
 }
 
@@ -412,6 +424,58 @@ async function play(): Promise<void> {
   } finally {
     playing = false;
     render();
+  }
+}
+
+/** Opens a scrcpy window for the selected device. A missing scrcpy is
+ * installed with winget once, then the mirror starts again. */
+async function mirror(): Promise<void> {
+  const device = selectedDevice();
+  if (mirrorBusy || !device || device.state !== "device") return;
+  // Settings are editable on disk; the backend checks this id again.
+  if (!isValidDeviceId(device.id)) {
+    showErrorNotice(`Unsafe device id: ${device.id}`);
+    return;
+  }
+  mirrorBusy = true;
+  render();
+  try {
+    try {
+      await androidMirror(device.id);
+    } catch (err) {
+      if (errorCode(err) !== "scrcpy_not_found") throw err;
+      showInfoNotice("scrcpy not found. Installing it with winget…");
+      await installScrcpy();
+      await androidMirror(device.id);
+    }
+  } catch (err) {
+    showErrorNotice(errorMessage(err));
+  } finally {
+    mirrorBusy = false;
+    render();
+  }
+}
+
+/** Installs dropped APKs on the selected device, one after the other. */
+export async function installApks(paths: string[]): Promise<void> {
+  const device = selectedDevice();
+  if (!device || device.state !== "device") {
+    showErrorNotice("No ready device. Connect one in a Flutter workspace");
+    return;
+  }
+  if (!isValidDeviceId(device.id)) {
+    showErrorNotice(`Unsafe device id: ${device.id}`);
+    return;
+  }
+  for (const path of paths) {
+    const name = path.split(/[\\/]/).pop() ?? path;
+    showInfoNotice(`Installing ${name} on ${device.name}…`);
+    try {
+      await androidInstallApk(device.id, path);
+      showInfoNotice(`Installed ${name}`);
+    } catch (err) {
+      showErrorNotice(`${name}: ${errorMessage(err)}`);
+    }
   }
 }
 

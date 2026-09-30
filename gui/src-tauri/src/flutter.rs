@@ -42,7 +42,7 @@ pub struct AndroidDevice {
     pub emulator: bool,
 }
 
-fn api_error(code: &str, message: impl Into<String>) -> ApiError {
+pub(crate) fn api_error(code: &str, message: impl Into<String>) -> ApiError {
     ApiError {
         code: code.to_string(),
         message: message.into(),
@@ -81,7 +81,7 @@ async fn kill_process_tree(pid: Option<u32>) {
 /// Runs `cmd` with no stdin and piped output, under `timeout`. A timeout
 /// drops the child, which kills it (`kill_on_drop`). A non-zero exit gives
 /// `failed_code` with stderr cut to `STDERR_MAX_CHARS`.
-async fn run_capture(
+pub(crate) async fn run_capture(
     mut cmd: AsyncCommand,
     timeout: Duration,
     timeout_code: &str,
@@ -118,7 +118,7 @@ async fn run_capture(
 // §3.1 adb resolution
 // ---------------------------------------------------------------------
 
-fn tool_file_name(tool: &str) -> String {
+pub(crate) fn tool_file_name(tool: &str) -> String {
     if !cfg!(windows) {
         return tool.to_string();
     }
@@ -133,7 +133,7 @@ fn tool_file_name(tool: &str) -> String {
 
 /// The per-OS default SDK folder (`%LOCALAPPDATA%\Android\Sdk`,
 /// `~/Library/Android/sdk`, `~/Android/Sdk`), from the process env.
-fn default_sdk_dir() -> Option<PathBuf> {
+pub(crate) fn default_sdk_dir() -> Option<PathBuf> {
     if cfg!(windows) {
         std::env::var_os("LOCALAPPDATA").map(|base| PathBuf::from(base).join("Android").join("Sdk"))
     } else if cfg!(target_os = "macos") {
