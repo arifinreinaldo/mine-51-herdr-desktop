@@ -30,6 +30,7 @@ export async function wireEvents(): Promise<void> {
     // snapshot, whether or not it is the one confirming a pending
     // `tab.move`, ends the optimistic reorder window.
     appState.optimisticTabOrder = null;
+    appState.optimisticWorkspaceOrder = null;
     if (previousBootId !== undefined && previousBootId !== appState.snapshot.boot_id) {
       doneDetector.resetBaseline();
       statusAge.reset();

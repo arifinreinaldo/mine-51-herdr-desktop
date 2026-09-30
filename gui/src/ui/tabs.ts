@@ -5,7 +5,7 @@ import { focusKeyboardCapture, keyboardCaptureReturnTarget } from "../keyboard/f
 import type { SeenDoneTabsTracker } from "../notifications/seenDoneTabs";
 import { DIRECT_FOCUS_SLOT_COUNT, shortcutDisplay } from "../shortcuts";
 import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
-import { dragDropInsertIndex } from "../workspace/tabMove";
+import { caretSlotFromPos, dragDropInsertIndex } from "../workspace/tabMove";
 import { openMenu } from "./menu";
 import { closeItems, paneLayoutItems } from "./paneActionItems";
 import { beginRenderGuard } from "./renderGuard";
@@ -183,7 +183,14 @@ function openTabContextMenu(
 interface DragState {
   sourceIndex: number;
   caretEl: HTMLElement;
+  startX: number;
+  /** The pointer has moved past `TAB_DRAG_START_PX`: the press is now a drag. */
+  active: boolean;
+  /** The caret slot the pointer is over (0..=tab count). */
+  slot: number;
 }
+
+const TAB_DRAG_START_PX = 4;
 
 export function renderTabStrip(
   listEl: HTMLElement,
@@ -195,6 +202,8 @@ export function renderTabStrip(
   listEl.textContent = "";
   let drag: DragState | null = null;
   let releaseDragGuard: (() => void) | null = null;
+  /** The click that follows a drag's pointer release must not focus the tab. */
+  let suppressClick = false;
 
   tabs.forEach((tab, index) => {
     const tabEl = document.createElement("div");
@@ -202,7 +211,15 @@ export function renderTabStrip(
     tabEl.dataset.tabId = tab.tab_id;
     tabEl.setAttribute("role", "tab");
     tabEl.tabIndex = tab.focused ? 0 : -1;
-    tabEl.draggable = true;
+    tabEl.addEventListener(
+      "click",
+      (event) => {
+        if (!suppressClick) return;
+        event.stopImmediatePropagation();
+        event.preventDefault();
+      },
+      true,
+    );
     tabEl.title = tabShortcutTooltip(tab.label, index, tabs.length);
     if (tab.focused) tabEl.classList.add("active");
     if (tab.agent_status === "blocked" && !tab.focused) tabEl.classList.add("is-blocked");
@@ -270,46 +287,64 @@ export function renderTabStrip(
       }
     });
 
-    tabEl.addEventListener("dragstart", (event) => {
-      drag = { sourceIndex: index, caretEl: document.createElement("div") };
+    // Pointer events, not HTML5 drag and drop: Tauri's file-drop handler
+    // (`dragDropFiles.ts`) turns HTML5 drag events off on Windows, so a
+    // `dragstart` tab drag never completes there. Pointer capture keeps the
+    // events coming while the cursor is anywhere in the window, so slot 0
+    // (the first position) is reachable by moving past the left edge.
+    tabEl.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || drag) return;
+      if ((event.target as HTMLElement).closest(".tab-close-icon, .tab-rename-input")) return;
+      drag = {
+        sourceIndex: index,
+        caretEl: document.createElement("div"),
+        startX: event.clientX,
+        active: false,
+        slot: index,
+      };
       drag.caretEl.className = "tab-drop-caret";
-      tabEl.classList.add("is-dragging");
-      event.dataTransfer?.setData("text/plain", tab.tab_id);
-      event.dataTransfer!.effectAllowed = "move";
-      // Finding #5: a snapshot mid-drag must not call `renderTabStrip`
-      // again -- that would create a brand new `drag` closure (`null`),
-      // breaking this drag's own `dragover`/`drop` handling.
-      releaseDragGuard = beginRenderGuard(TAB_RENDER_GUARD_REGION);
+      tabEl.setPointerCapture?.(event.pointerId);
     });
-    tabEl.addEventListener("dragend", () => {
-      tabEl.classList.remove("is-dragging");
-      drag?.caretEl.remove();
+    tabEl.addEventListener("pointermove", (event) => {
+      if (!drag || drag.sourceIndex !== index) return;
+      if (!drag.active) {
+        if (Math.abs(event.clientX - drag.startX) < TAB_DRAG_START_PX) return;
+        drag.active = true;
+        tabEl.classList.add("is-dragging");
+        // Finding #5: a snapshot mid-drag must not call `renderTabStrip`
+        // again -- that would create a brand new `drag` closure (`null`),
+        // breaking this drag's own `pointermove`/`pointerup` handling.
+        releaseDragGuard = beginRenderGuard(TAB_RENDER_GUARD_REGION);
+      }
+      const tabEls = Array.from(listEl.querySelectorAll<HTMLElement>(".tab"));
+      const midpoints = tabEls.map((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.left + rect.width / 2;
+      });
+      drag.slot = caretSlotFromPos(event.clientX, midpoints);
+      listEl.insertBefore(drag.caretEl, tabEls[drag.slot] ?? null);
+    });
+    const endDrag = (commit: boolean) => {
+      const ended = drag;
+      if (!ended || ended.sourceIndex !== index) return;
       drag = null;
+      ended.caretEl.remove();
+      tabEl.classList.remove("is-dragging");
+      if (ended.active) {
+        suppressClick = true;
+        window.setTimeout(() => {
+          suppressClick = false;
+        }, 0);
+        // Dropping in place (before itself, or right after itself) moves nothing.
+        if (commit && ended.slot !== ended.sourceIndex && ended.slot !== ended.sourceIndex + 1) {
+          callbacks.onMoveTab(tab.tab_id, dragDropInsertIndex(ended.slot));
+        }
+      }
       releaseDragGuard?.();
       releaseDragGuard = null;
-    });
-    tabEl.addEventListener("dragover", (event) => {
-      if (!drag) return;
-      event.preventDefault();
-      const rect = tabEl.getBoundingClientRect();
-      const before = event.clientX - rect.left < rect.width / 2;
-      const caretSlot = before ? index : index + 1;
-      drag.caretEl.dataset.caretSlot = String(caretSlot);
-      if (before) {
-        listEl.insertBefore(drag.caretEl, tabEl);
-      } else {
-        listEl.insertBefore(drag.caretEl, tabEl.nextSibling);
-      }
-    });
-    tabEl.addEventListener("drop", (event) => {
-      event.preventDefault();
-      if (!drag) return;
-      const caretSlot = Number(drag.caretEl.dataset.caretSlot ?? "0");
-      const sourceTabId = tabs[drag.sourceIndex].tab_id;
-      drag.caretEl.remove();
-      drag = null;
-      callbacks.onMoveTab(sourceTabId, dragDropInsertIndex(caretSlot));
-    });
+    };
+    tabEl.addEventListener("pointerup", () => endDrag(true));
+    tabEl.addEventListener("pointercancel", () => endDrag(false));
 
     listEl.appendChild(tabEl);
   });

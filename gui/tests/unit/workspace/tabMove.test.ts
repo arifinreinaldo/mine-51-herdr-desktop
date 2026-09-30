@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   canMoveLeft,
   canMoveRight,
+  caretSlotFromPos,
   dragDropInsertIndex,
   moveLeftInsertIndex,
   moveRightInsertIndex,
   optimisticTabOrderAfterMove,
+  reorderByIds,
 } from "../../../src/workspace/tabMove";
 
 describe("moveLeftInsertIndex / moveRightInsertIndex", () => {
@@ -82,5 +84,50 @@ describe("optimisticTabOrderAfterMove", () => {
     const result = optimisticTabOrderAfterMove(tabs, "Z", 1);
     expect(result).toEqual(tabs);
     expect(result).not.toBe(tabs);
+  });
+});
+
+describe("caretSlotFromPos", () => {
+  const mids = [50, 150, 250];
+
+  it("is 0, the first position, left of every midpoint (even off the strip)", () => {
+    expect(caretSlotFromPos(49, mids)).toBe(0);
+    expect(caretSlotFromPos(-500, mids)).toBe(0);
+  });
+
+  it("counts the midpoints the pointer has passed", () => {
+    expect(caretSlotFromPos(51, mids)).toBe(1);
+    expect(caretSlotFromPos(200, mids)).toBe(2);
+  });
+
+  it("is the tab count right of every midpoint", () => {
+    expect(caretSlotFromPos(251, mids)).toBe(3);
+    expect(caretSlotFromPos(9999, mids)).toBe(3);
+  });
+
+  it("is 0 with no tabs", () => {
+    expect(caretSlotFromPos(10, [])).toBe(0);
+  });
+});
+
+describe("reorderByIds", () => {
+  const items = [{ id: "A" }, { id: "B" }, { id: "C" }];
+  const idOf = (i: { id: string }) => i.id;
+
+  it("follows the given id order", () => {
+    expect(reorderByIds(items, ["C", "A", "B"], idOf).map(idOf)).toEqual(["C", "A", "B"]);
+  });
+
+  it("puts an item the ids do not mention last, in its own order", () => {
+    expect(reorderByIds(items, ["B"], idOf).map(idOf)).toEqual(["B", "A", "C"]);
+  });
+
+  it("skips an id that has no item", () => {
+    expect(reorderByIds(items, ["Z", "B", "A", "C"], idOf).map(idOf)).toEqual(["B", "A", "C"]);
+  });
+
+  it("does not change the input", () => {
+    reorderByIds(items, ["C", "B", "A"], idOf);
+    expect(items.map(idOf)).toEqual(["A", "B", "C"]);
   });
 });

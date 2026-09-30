@@ -20,6 +20,7 @@ import {
 } from "./ui/sidebar";
 import { assignWorkspaceColors } from "./workspace/colors";
 import { prunePersistedFolders } from "./workspace/dedupe";
+import { optimisticTabOrderAfterMove, reorderByIds } from "./workspace/tabMove";
 
 import { renderTabsNow } from "./appTabStrip";
 
@@ -119,7 +120,10 @@ export function renderSidebarNow(): void {
   if (!snapshot) return;
   updateWorkspaceColorAssignment();
   const attentionByWorkspace = computeWorkspaceAttention();
-  const workspaces: SidebarWorkspace[] = snapshot.workspaces.map((w) => ({
+  const ordered = appState.optimisticWorkspaceOrder
+    ? reorderByIds(snapshot.workspaces, appState.optimisticWorkspaceOrder, (w) => w.workspace_id)
+    : snapshot.workspaces;
+  const workspaces: SidebarWorkspace[] = ordered.map((w) => ({
     workspace_id: w.workspace_id,
     label: w.label,
     focused: w.focused,
@@ -149,6 +153,23 @@ export function renderSidebarNow(): void {
       onRenameWorkspace: (id, label) => {
         if (!requireConnected()) return;
         void api("workspace.rename", { workspace_id: id, label });
+      },
+      onMoveWorkspace: (id, insertIndex) => {
+        if (!requireConnected()) return;
+        // Optimistic reorder, like `tab.move`: show the new order now, snap
+        // back if the call fails (`api` has already shown the notice).
+        appState.optimisticWorkspaceOrder = optimisticTabOrderAfterMove(
+          workspaces.map((w) => w.workspace_id),
+          id,
+          insertIndex,
+        );
+        renderSidebarNow();
+        void api("workspace.move", { workspace_id: id, insert_index: insertIndex }).then((result) => {
+          if (result === undefined) {
+            appState.optimisticWorkspaceOrder = null;
+            renderSidebarNow();
+          }
+        });
       },
       onChangeColor: (id, index) => {
         appState.settings.workspaceColors = { ...appState.settings.workspaceColors, [id]: index };

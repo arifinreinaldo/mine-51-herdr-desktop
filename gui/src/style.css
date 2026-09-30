@@ -1287,6 +1287,20 @@ body.has-workspace-colors #tab-strip {
   background: var(--list-hoverBackground);
 }
 
+/* Sidebar drag to reorder workspaces (`ui/sidebarDrag.ts`). */
+.ws.is-dragging {
+  opacity: 0.5;
+}
+
+.ws-drop-caret {
+  height: 2px;
+  margin: -1px 0;
+  background: var(--tab-dragAndDropBorder);
+  flex-shrink: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
 .agent-popover__idle-summary {
   display: flex;
   align-items: center;

@@ -33,6 +33,7 @@ function makeCallbacks(overrides: Partial<SidebarCallbacks> = {}): SidebarCallba
     onCloseWorkspace: vi.fn().mockResolvedValue({ groupCloseRequired: false }),
     onRenameWorkspace: vi.fn(),
     onChangeColor: vi.fn(),
+    onMoveWorkspace: vi.fn(),
     ...overrides,
   };
 }
@@ -57,6 +58,9 @@ afterEach(() => {
   document
     .querySelectorAll<HTMLElement>(".tab-rename-input")
     .forEach((input) => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
+  document
+    .querySelectorAll<HTMLElement>(".ws.is-dragging")
+    .forEach((row) => row.dispatchEvent(new MouseEvent("pointercancel", { bubbles: true })));
   listEl.remove();
   overlayRoot.remove();
 });
@@ -452,5 +456,111 @@ describe("sidebar status dot (S9: no idle dots)", () => {
     const row = listEl.querySelector('[data-workspace-id="w1"]')!;
     expect(row.querySelector(".status-dot--blocked")).not.toBeNull();
     expect(row.querySelector(".status-dot-slot")).toBeNull();
+  });
+});
+
+/** Three 40px rows at y = 0, 40, 80 (midpoints 20, 60, 100). */
+function renderThree(callbacks: SidebarCallbacks): void {
+  const rows: SidebarWorkspace[] = ["w1", "w2", "w3"].map((id, i) => ({
+    workspace_id: id,
+    label: `ws ${i + 1}`,
+    focused: i === 0,
+    agent_status: "idle",
+    branch: null,
+    git_ahead_behind: null,
+    worktree_key: null,
+  }));
+  renderSidebar(listEl, overlayRoot, rows, new Map(), {}, DARK_MODERN_COLORS, callbacks);
+  listEl.querySelectorAll<HTMLElement>(".ws").forEach((el, i) => {
+    el.getBoundingClientRect = () => ({ top: i * 40, height: 40 }) as DOMRect;
+  });
+}
+
+function pointer(el: HTMLElement, type: string, clientY: number): void {
+  el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientY, button: 0 }));
+}
+
+describe("sidebar drag to reorder workspaces", () => {
+  it("dragging the last row above the first row drops it at the first position", () => {
+    const callbacks = makeCallbacks();
+    renderThree(callbacks);
+    const w3 = listEl.querySelector<HTMLElement>('[data-workspace-id="w3"]')!;
+    pointer(w3, "pointerdown", 100);
+    pointer(w3, "pointermove", 50);
+    pointer(w3, "pointermove", -30); // above the list, over nothing
+    expect(listEl.querySelector(".ws-drop-caret")).not.toBeNull();
+    expect(listEl.firstElementChild?.classList.contains("ws-drop-caret")).toBe(true);
+    pointer(w3, "pointerup", -30);
+    expect(callbacks.onMoveWorkspace).toHaveBeenCalledWith("w3", 0);
+    expect(listEl.querySelector(".ws-drop-caret")).toBeNull();
+    expect(isRenderGuarded(SIDEBAR_RENDER_GUARD_REGION)).toBe(false);
+  });
+
+  it("dragging the first row below the last row drops it at the end", () => {
+    const callbacks = makeCallbacks();
+    renderThree(callbacks);
+    const w1 = listEl.querySelector<HTMLElement>('[data-workspace-id="w1"]')!;
+    pointer(w1, "pointerdown", 20);
+    pointer(w1, "pointermove", 400);
+    pointer(w1, "pointerup", 400);
+    expect(callbacks.onMoveWorkspace).toHaveBeenCalledWith("w1", 3);
+  });
+
+  it("dropping a row back where it was moves nothing", () => {
+    const callbacks = makeCallbacks();
+    renderThree(callbacks);
+    const w2 = listEl.querySelector<HTMLElement>('[data-workspace-id="w2"]')!;
+    pointer(w2, "pointerdown", 60);
+    pointer(w2, "pointermove", 70);
+    pointer(w2, "pointerup", 70);
+    expect(callbacks.onMoveWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("a plain click does not start a drag and still focuses the workspace", () => {
+    const callbacks = makeCallbacks();
+    renderThree(callbacks);
+    const w2 = listEl.querySelector<HTMLElement>('[data-workspace-id="w2"]')!;
+    pointer(w2, "pointerdown", 60);
+    pointer(w2, "pointermove", 61); // under the 4px threshold
+    pointer(w2, "pointerup", 61);
+    expect(isRenderGuarded(SIDEBAR_RENDER_GUARD_REGION)).toBe(false);
+    w2.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(callbacks.onFocusWorkspace).toHaveBeenCalledWith("w2");
+    expect(callbacks.onMoveWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("the click that follows a drag does not focus the workspace", () => {
+    const callbacks = makeCallbacks();
+    renderThree(callbacks);
+    const w3 = listEl.querySelector<HTMLElement>('[data-workspace-id="w3"]')!;
+    pointer(w3, "pointerdown", 100);
+    pointer(w3, "pointermove", 10);
+    pointer(w3, "pointerup", 10);
+    w3.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(callbacks.onFocusWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("a press on the close button never starts a drag", () => {
+    const callbacks = makeCallbacks();
+    renderThree(callbacks);
+    const w2 = listEl.querySelector<HTMLElement>('[data-workspace-id="w2"]')!;
+    const closeBtn = w2.querySelector<HTMLElement>(".ws-close")!;
+    pointer(closeBtn, "pointerdown", 60);
+    pointer(w2, "pointermove", 10);
+    pointer(w2, "pointerup", 10);
+    expect(callbacks.onMoveWorkspace).not.toHaveBeenCalled();
+    expect(isRenderGuarded(SIDEBAR_RENDER_GUARD_REGION)).toBe(false);
+  });
+
+  it("a cancelled drag (pointercancel) moves nothing and releases the guard", () => {
+    const callbacks = makeCallbacks();
+    renderThree(callbacks);
+    const w3 = listEl.querySelector<HTMLElement>('[data-workspace-id="w3"]')!;
+    pointer(w3, "pointerdown", 100);
+    pointer(w3, "pointermove", 10);
+    expect(isRenderGuarded(SIDEBAR_RENDER_GUARD_REGION)).toBe(true);
+    pointer(w3, "pointercancel", 10);
+    expect(callbacks.onMoveWorkspace).not.toHaveBeenCalled();
+    expect(isRenderGuarded(SIDEBAR_RENDER_GUARD_REGION)).toBe(false);
   });
 });

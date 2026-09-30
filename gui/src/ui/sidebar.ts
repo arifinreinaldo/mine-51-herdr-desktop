@@ -9,6 +9,7 @@ import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
 import { openConfirmPopover, type ConfirmPopoverAgentList } from "./confirmPopover";
 import type { MenuItemSpec } from "./menu";
 import { openMenu } from "./menu";
+import { createSidebarDrag } from "./sidebarDrag";
 import { createStatusDotOrSlot } from "./statusDot";
 import { startInlineRename } from "./tabs";
 
@@ -98,6 +99,10 @@ export interface SidebarCallbacks {
    * rename UI, not a `window.prompt`, lives in this module now). */
   onRenameWorkspace(workspaceId: string, label: string): void;
   onChangeColor(workspaceId: string, index: number): void;
+  /** A mouse drag dropped the row at caret slot `insertIndex` (0..=count,
+   * "insert before the row now at that index"; the same meaning as
+   * `workspace.move`'s `insert_index`). */
+  onMoveWorkspace(workspaceId: string, insertIndex: number): void;
 }
 
 function agentLinesFor(
@@ -388,10 +393,12 @@ export function renderSidebar(
   callbacks: SidebarCallbacks,
 ): void {
   listEl.textContent = "";
+  const attachDrag = createSidebarDrag(listEl, SIDEBAR_RENDER_GUARD_REGION, callbacks.onMoveWorkspace);
   workspaces.forEach((workspace, index) => {
     const lines = agentLinesFor(workspace.workspace_id, agentLines);
     const row = renderRow(workspace, workspaces, overlayRoot, colorAssignment[workspace.workspace_id], theme, callbacks, lines);
     row.title = sidebarRowTooltip(workspace.label, index, workspaces.length, workspace.branch);
+    attachDrag(row, index, workspace.workspace_id);
     listEl.appendChild(row);
   });
 }

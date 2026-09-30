@@ -26,6 +26,9 @@ export const appState = {
    * snapshot arrives -- "the next snapshot is authoritative" (spec §6) --
    * or the `tab.move` call itself fails. */
   optimisticTabOrder: null as string[] | null,
+  /** Same idea for the sidebar: the workspace-id order shown right after a
+   * drag, until the next snapshot or a failed `workspace.move` clears it. */
+  optimisticWorkspaceOrder: null as string[] | null,
   settings: { ...DEFAULT_SETTINGS } as Settings,
   themeRegistry: new ThemeRegistry(),
   sidebarWidth: DEFAULT_SETTINGS.sidebarWidth,

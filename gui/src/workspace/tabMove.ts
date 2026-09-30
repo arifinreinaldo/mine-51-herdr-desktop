@@ -53,3 +53,34 @@ export function optimisticTabOrderAfterMove(
   withoutSource.splice(clamped, 0, tabId);
   return withoutSource;
 }
+
+/**
+ * Caret slot (0..=len) for a pointer at `pos`: the number of item midpoints
+ * before it. Axis-neutral: pass X and the items' horizontal midpoints (tab
+ * strip) or Y and the vertical ones (sidebar). A pointer before every
+ * midpoint gives slot 0, the first position, wherever it is on screen;
+ * past all of them gives `len`.
+ */
+export function caretSlotFromPos(pos: number, midpoints: readonly number[]): number {
+  let slot = 0;
+  for (const mid of midpoints) if (pos > mid) slot++;
+  return slot;
+}
+
+/** `items` reordered to follow `ids`. An item whose id `ids` does not
+ * mention (a new one that appeared meanwhile) goes last, in its own order;
+ * an id with no item is skipped. Used for the workspace list's optimistic
+ * drag reorder; `optimisticTabOrderAfterMove` works out `ids`. */
+export function reorderByIds<T>(items: readonly T[], ids: readonly string[], getId: (item: T) => string): T[] {
+  const byId = new Map(items.map((item) => [getId(item), item]));
+  const ordered: T[] = [];
+  for (const id of ids) {
+    const item = byId.get(id);
+    if (item !== undefined) {
+      ordered.push(item);
+      byId.delete(id);
+    }
+  }
+  for (const item of items) if (byId.has(getId(item))) ordered.push(item);
+  return ordered;
+}

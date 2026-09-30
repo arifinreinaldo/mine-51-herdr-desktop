@@ -70,7 +70,7 @@ afterEach(() => {
     .forEach((input) => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })));
   document
     .querySelectorAll<HTMLElement>(".tab.is-dragging")
-    .forEach((tabEl) => tabEl.dispatchEvent(new Event("dragend", { bubbles: true })));
+    .forEach((tabEl) => tabEl.dispatchEvent(new MouseEvent("pointercancel", { bubbles: true })));
   listEl.remove();
   overlayRoot.remove();
 });
@@ -134,22 +134,106 @@ describe("tab strip render guard (finding #5)", () => {
     guardedRender(callbacks);
     const tabEl = listEl.querySelector<HTMLElement>('[data-tab-id="t1"]')!;
 
-    const dragStart = new Event("dragstart", { bubbles: true, cancelable: true }) as DragEvent;
-    Object.defineProperty(dragStart, "dataTransfer", {
-      value: { setData: vi.fn(), effectAllowed: "" },
-    });
-    tabEl.dispatchEvent(dragStart);
+    pointer(tabEl, "pointerdown", 50);
+    pointer(tabEl, "pointermove", 80);
     expect(isRenderGuarded(TAB_RENDER_GUARD_REGION)).toBe(true);
 
     // A "snapshot arrived mid-drag" re-render attempt must be skipped --
     // otherwise the dragging tab loses its `.is-dragging` class (proof the
     // whole strip, including this element, would have been torn down and
-    // rebuilt fresh, discarding the drag closure the pre-fix code relied
-    // on `dragover`/`drop` seeing).
+    // rebuilt fresh, discarding the drag closure).
     guardedRender(callbacks);
     expect(listEl.querySelector('[data-tab-id="t1"]')?.classList.contains("is-dragging")).toBe(true);
 
-    tabEl.dispatchEvent(new Event("dragend", { bubbles: true }));
+    pointer(tabEl, "pointercancel", 80);
+    expect(isRenderGuarded(TAB_RENDER_GUARD_REGION)).toBe(false);
+  });
+});
+
+function pointer(el: HTMLElement, type: string, clientX: number): void {
+  el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX, button: 0 }));
+}
+
+/** Three 100px tabs laid out at x = 0, 100, 200 (midpoints 50, 150, 250). */
+function threeTabs(callbacks: TabCallbacks): void {
+  const rows: TabRow[] = [
+    { tab_id: "t1", label: "one", focused: true, agent_status: "idle" },
+    { tab_id: "t2", label: "two", focused: false, agent_status: "idle" },
+    { tab_id: "t3", label: "three", focused: false, agent_status: "idle" },
+  ];
+  renderTabStrip(listEl, overlayRoot, rows, seenTracker, callbacks);
+  listEl.querySelectorAll<HTMLElement>(".tab").forEach((el, i) => {
+    el.getBoundingClientRect = () => ({ left: i * 100, width: 100 }) as DOMRect;
+  });
+}
+
+describe("tab drag with the pointer", () => {
+  it("dragging the last tab past the left edge drops it at the first position", () => {
+    const callbacks = makeCallbacks();
+    threeTabs(callbacks);
+    const t3 = listEl.querySelector<HTMLElement>('[data-tab-id="t3"]')!;
+    pointer(t3, "pointerdown", 250);
+    pointer(t3, "pointermove", 120);
+    pointer(t3, "pointermove", -40); // left of the strip, over nothing
+    expect(listEl.querySelector(".tab-drop-caret")).not.toBeNull();
+    pointer(t3, "pointerup", -40);
+    expect(callbacks.onMoveTab).toHaveBeenCalledWith("t3", 0);
+    expect(listEl.querySelector(".tab-drop-caret")).toBeNull();
+    expect(isRenderGuarded(TAB_RENDER_GUARD_REGION)).toBe(false);
+  });
+
+  it("dragging the first tab past the right edge drops it at the end", () => {
+    const callbacks = makeCallbacks();
+    threeTabs(callbacks);
+    const t1 = listEl.querySelector<HTMLElement>('[data-tab-id="t1"]')!;
+    pointer(t1, "pointerdown", 50);
+    pointer(t1, "pointermove", 400);
+    pointer(t1, "pointerup", 400);
+    expect(callbacks.onMoveTab).toHaveBeenCalledWith("t1", 3);
+  });
+
+  it("dropping a tab back where it was moves nothing", () => {
+    const callbacks = makeCallbacks();
+    threeTabs(callbacks);
+    const t2 = listEl.querySelector<HTMLElement>('[data-tab-id="t2"]')!;
+    pointer(t2, "pointerdown", 150);
+    pointer(t2, "pointermove", 170);
+    pointer(t2, "pointerup", 170);
+    expect(callbacks.onMoveTab).not.toHaveBeenCalled();
+  });
+
+  it("a plain click does not start a drag and still focuses the tab", () => {
+    const callbacks = makeCallbacks();
+    threeTabs(callbacks);
+    const t2 = listEl.querySelector<HTMLElement>('[data-tab-id="t2"]')!;
+    pointer(t2, "pointerdown", 150);
+    pointer(t2, "pointermove", 151); // under the 4px threshold
+    pointer(t2, "pointerup", 151);
+    expect(isRenderGuarded(TAB_RENDER_GUARD_REGION)).toBe(false);
+    t2.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(callbacks.onFocusTab).toHaveBeenCalledWith("t2");
+    expect(callbacks.onMoveTab).not.toHaveBeenCalled();
+  });
+
+  it("the click that follows a drag does not focus the tab", () => {
+    const callbacks = makeCallbacks();
+    threeTabs(callbacks);
+    const t3 = listEl.querySelector<HTMLElement>('[data-tab-id="t3"]')!;
+    pointer(t3, "pointerdown", 250);
+    pointer(t3, "pointermove", 20);
+    pointer(t3, "pointerup", 20);
+    t3.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(callbacks.onFocusTab).not.toHaveBeenCalled();
+  });
+
+  it("a cancelled drag (pointercancel) moves nothing and releases the guard", () => {
+    const callbacks = makeCallbacks();
+    threeTabs(callbacks);
+    const t3 = listEl.querySelector<HTMLElement>('[data-tab-id="t3"]')!;
+    pointer(t3, "pointerdown", 250);
+    pointer(t3, "pointermove", 20);
+    pointer(t3, "pointercancel", 20);
+    expect(callbacks.onMoveTab).not.toHaveBeenCalled();
     expect(isRenderGuarded(TAB_RENDER_GUARD_REGION)).toBe(false);
   });
 });
