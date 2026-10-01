@@ -25,7 +25,7 @@ Cowbell is "a desktop for herdr". It is a fast GUI over herdr, the agent-aware t
 - herdr is a separate install. Cowbell runs herdr's official installer from herdr.dev on request.
 
 ## Capabilities and Constraints
-- Capabilities in the code today: split panes, tabs and workspaces with colours; agent status; Claude usage bar; Flutter run toolbar (device picker, flavor, run, hot reload, hot restart); Android mirror through scrcpy and APK install by drop; git panel MVP.
+- Capabilities in the code today: split panes, tabs and workspaces with colours; agent status; Claude usage bar; Flutter run toolbar (device picker, flavor, run, hot reload, hot restart); Android mirror through scrcpy with a docked tools window, APK install by drop, and device screenshot with copy and save; drag to reorder tabs and workspaces. Planned, not built: a git panel (`docs/git-mvp-spec.md`).
 - Claude usage comes from the statusLine tap file, chosen over Anthropic OAuth for terms-of-service reasons (`docs/phase1-spec.md`). The data folders `%APPDATA%\herdr-gui` and `%LOCALAPPDATA%\herdr-gui\logs` keep their old names on purpose: the user's statusLine points at them (`docs/cowbell-rebrand-spec.md`).
 - scrcpy and adb are user-installed tools. Cowbell does not bundle them.
 - Licence: FSL-1.1-ALv2. herdr is © Herdr, Inc. and contributors, Apache-2.0. Cowbell is not affiliated with or endorsed by herdr or Herdr, Inc.
