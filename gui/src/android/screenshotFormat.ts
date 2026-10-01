@@ -1,4 +1,4 @@
-// Pure helpers for the screenshot modal (`ui/screenshotModal.ts`).
+// Pure helpers for the screenshot panel (`ui/screenshotPanel.ts`).
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 

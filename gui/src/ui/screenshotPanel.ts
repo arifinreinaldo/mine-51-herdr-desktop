@@ -2,8 +2,7 @@
 // screen at once, shows it, and offers Copy, Save as… and Close. DOM only;
 // the device text (adb errors) goes in through `textContent`. Rust keeps the
 // latest PNG, so Copy and Save never send the bytes back. Mounted by the
-// modal (`screenshotModal.ts`) and by the mirror tools window
-// (`mirrorTools.ts`); it must not import `./modal`.
+// mirror tools window (`mirrorTools.ts`).
 
 import { isBlackFrame, screenshotFileName } from "../android/screenshotFormat";
 import { errorMessage } from "../appApi";
