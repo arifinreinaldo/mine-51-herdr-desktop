@@ -15,6 +15,9 @@ pub mod mirror_tools;
 #[cfg(windows)]
 pub mod mirror_tools_win32;
 pub mod notify;
+pub mod record;
+#[cfg(windows)]
+pub mod record_win32;
 pub mod settings;
 pub mod socket;
 pub mod statusline;
@@ -72,6 +75,7 @@ pub fn run(start: Instant) {
         .manage(app_state)
         .manage(android::ScreenshotSlot::default())
         .manage(mirror_tools::MirrorToolsState::default())
+        .manage(record::RecordingState::default())
         .invoke_handler(tauri::generate_handler![
             commands::send_input,
             commands::resize,
@@ -108,6 +112,9 @@ pub fn run(start: Instant) {
             android::screenshot_copy,
             android::screenshot_save,
             mirror_tools::mirror_tools_resize,
+            record::mirror_record_start,
+            record::mirror_record_stop,
+            record::reveal_in_folder,
             folder_picker::pick_workspace_folder,
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,
@@ -162,7 +169,15 @@ pub fn run(start: Instant) {
             label,
             event: tauri::WindowEvent::Destroyed,
             ..
-        } if label == "main" => app_handle.exit(0),
+        } if label == "main" => record::exit_after_finalize(app_handle),
+        // The last window closed (`code: None`) while a recorder runs: hold
+        // the exit until the recorders have written their index.
+        tauri::RunEvent::ExitRequested {
+            code: None, api, ..
+        } if record::active_count(app_handle) > 0 => {
+            api.prevent_exit();
+            record::exit_after_finalize(app_handle);
+        }
         tauri::RunEvent::Exit => {
             log_guard.take();
         }

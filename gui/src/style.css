@@ -1543,7 +1543,17 @@ body.has-workspace-colors #tab-strip {
    (docs/screenshot-design.md §6 fallback; docs/mirror-toolbar-spec.md §6.8). */
 .shot-body--stacked {
   flex-direction: column;
+  align-items: stretch;
   gap: 8px;
+}
+
+/* The frame is the same width as the button row, so their edges line up;
+   the phone image sits centred on it like a matte. It clips the image to
+   the frame's rounded corners. */
+.shot-body--stacked .shot-frame {
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .shot-body--stacked .shot-actions {
@@ -1553,28 +1563,64 @@ body.has-workspace-colors #tab-strip {
   gap: 8px;
 }
 
-.shot-body--stacked .shot-meta,
+/* The details describe the image, so they sit directly under it; a failure
+   line follows the buttons it belongs to. */
+.shot-body--stacked .shot-meta {
+  grid-column: 1 / -1;
+  order: -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 8px;
+}
+
 .shot-body--stacked .shot-failure {
   grid-column: 1 / -1;
   order: 1;
 }
 
-.shot-body--stacked .shot-btn--close {
-  margin-top: 0;
+.shot-body--stacked .shot-btn {
+  justify-content: center;
 }
 
+/* Esc also closes, so Close is the quiet one of the three. */
+.shot-body--stacked .shot-btn--close {
+  margin-top: 0;
+  border-color: transparent;
+}
+
+/* 112px = the panel's fixed chrome: window border 2, panel padding 24, frame
+   border 2, two 8px gaps, the button row 22, and two meta lines 32, plus slack. */
 .shot-body--stacked .shot-img {
   max-width: 296px;
-  max-height: min(640px, calc(100vh - 170px));
+  max-height: min(640px, calc(100vh - 112px));
 }
 
 .shot-body--stacked .shot-placeholder {
   width: auto;
-  height: min(444px, calc(100vh - 170px));
+  height: min(444px, calc(100vh - 112px));
 }
 
 .shot-body--stacked .shot-hint {
   max-width: 296px;
+}
+
+/* Record result panel: "Show in folder" needs about 118px, and three columns
+   in 296px give 93px each. Two buttons share row 1; the quiet Close spans
+   row 2. */
+.shot-body--stacked .rec-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.rec-actions .shot-btn--close {
+  grid-column: 1 / -1;
+}
+
+.rec-status {
+  gap: 8px;
+}
+
+.rec-status .codicon {
+  font-size: 28px;
 }
 
 /* Mirror tools window (docs/mirror-toolbar-spec.md §6.8). */
@@ -1595,19 +1641,22 @@ body.mirror-tools {
   flex-direction: row-reverse;
 }
 
+/* The strip is a shade apart from the panel, which replaces the old
+   full-height divider rule. */
 .mt-strip {
   width: 52px;
   flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 8px 0;
+  background: var(--sideBar-background);
 }
 
 .mt-btn {
-  width: 36px;
-  height: 36px;
+  width: 28px;
+  height: 28px;
   border-radius: 4px;
   display: grid;
   place-items: center;
@@ -1615,12 +1664,77 @@ body.mirror-tools {
 }
 
 .mt-btn .codicon {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 .mt-btn:hover,
 .mt-btn[aria-pressed="true"] {
   background: var(--list-hoverBackground);
+}
+
+/* Pressed is more than hover: an accent edge, like the activity bar. */
+.mt-btn[aria-pressed="true"] {
+  box-shadow: inset 2px 0 0 var(--focusBorder);
+}
+
+.mt-btn--record .codicon {
+  color: var(--herdr-danger);
+}
+
+/* A slow pulse while recording. The pressed background and accent edge still
+   mark the state when the motion is off. */
+.mt-btn--recording .codicon {
+  animation: mt-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes mt-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mt-btn--recording .codicon {
+    animation: none;
+  }
+}
+
+.mt-btn[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* The 3, 2, 1 countdown in the Record button: each digit ticks in. */
+.mt-count {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--herdr-danger);
+  animation: mt-count-tick 0.9s ease-out;
+}
+
+@keyframes mt-count-tick {
+  from {
+    transform: scale(1.5);
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mt-count {
+    animation: none;
+  }
+}
+
+.mt-timer {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--menu-foreground);
+  margin-top: -4px;
+}
+
+.mt-timer[hidden] {
+  display: none;
 }
 
 .mt-btn:focus-visible {
@@ -1641,12 +1755,9 @@ body.mirror-tools {
 .mt-panel {
   width: 320px;
   padding: 12px;
-  border-left: 1px solid var(--menu-border);
-}
-
-.mt-root--left .mt-panel {
-  border-left: none;
-  border-right: 1px solid var(--menu-border);
+  /* Only if an inline failure line pushes the panel past the window height. */
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .mt-panel[hidden] {

@@ -75,3 +75,47 @@ export function screenshotCopy(): Promise<void> {
 export function screenshotSave(suggestedName: string): Promise<string | null> {
   return invoke<string | null>("screenshot_save", { suggestedName });
 }
+
+export type StopCause = "user" | "mirror_closed" | "tools_closed" | "app_exit" | "device_lost" | "start_timeout";
+
+export interface RecordResult {
+  path: string;
+  fileName: string;
+  bytes: number;
+  seconds: number;
+  finalized: boolean;
+  audio: boolean;
+  cause: StopCause;
+  message: string | null;
+}
+
+/** The recorder ended by itself and left no file. Same shape as an `ApiError`. */
+export interface RecordFailed {
+  code: string;
+  message: string;
+}
+
+export interface RecordStarted {
+  path: string;
+  fileName: string;
+}
+
+/** Mirror tools window only. Resolves when the file has its header (the recording is real). Rejects `{ code, message }`. */
+export function mirrorRecordStart(deviceId: string): Promise<RecordStarted> {
+  return invoke<RecordStarted>("mirror_record_start", { deviceId });
+}
+
+/** Stops the recording and resolves the finished file. Rejects `not_recording` when it already ended. */
+export function mirrorRecordStop(deviceId: string): Promise<RecordResult> {
+  return invoke<RecordResult>("mirror_record_stop", { deviceId });
+}
+
+/** Shows a Cowbell recording in Explorer. Rejects `bad_path` for any other file. */
+export function revealInFolder(path: string): Promise<void> {
+  return invoke<void>("reveal_in_folder", { path });
+}
+
+/** Plain invoke: `invokeSafe` writes to `#error-notices`, which the tools page does not have. */
+export function writeClipboardText(text: string): Promise<boolean> {
+  return invoke<boolean>("write_clipboard_text", { text });
+}

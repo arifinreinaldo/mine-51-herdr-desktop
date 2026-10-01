@@ -921,9 +921,13 @@ pub async fn migrate_old_autostart_entry(app: tauri::AppHandle) {
 /// the same args/env, picking up the now-updated `PATH`). The herdr
 /// **server** is a separate, detached process (spec §3.3) and keeps
 /// running throughout.
+///
+/// Refuses while a screen recording runs: the restart ends the process
+/// without finalizing the file (`record::restart_guard`).
 #[tauri::command]
-pub fn restart_gui(app: tauri::AppHandle) {
-    app.restart();
+pub fn restart_gui(app: tauri::AppHandle) -> Result<(), ApiError> {
+    crate::record::restart_guard(crate::record::active_count(&app))?;
+    app.restart()
 }
 
 #[cfg(test)]

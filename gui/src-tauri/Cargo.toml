@@ -93,6 +93,11 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_UI_HiDpi",
+    "Win32_System_Console",           # record_win32.rs: signal the recorder with Ctrl+Break
+    "Win32_System_SystemInformation", # GetLocalTime for the recording file name
+    "Win32_System_JobObjects",        # kill-on-close job for the recorder
+    "Win32_System_Threading",         # OpenProcess; the job limit struct needs it
+    "Win32_Security",                 # CreateJobObjectW's SECURITY_ATTRIBUTES parameter
 ] }
 
 [dev-dependencies]

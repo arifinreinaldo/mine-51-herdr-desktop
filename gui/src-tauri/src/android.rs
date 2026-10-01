@@ -29,7 +29,7 @@ const SCREENSHOT_MAX_BYTES: usize = 32 * 1024 * 1024;
 const STDERR_MAX_CHARS: usize = 2000;
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
 
-fn local_app_data() -> Option<PathBuf> {
+pub(crate) fn local_app_data() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
 }
 
@@ -52,7 +52,7 @@ pub fn resolve_scrcpy(path_var: Option<&OsStr>, local: Option<&Path>) -> Option<
     find_tool("scrcpy", path_var, links)
 }
 
-fn resolve_adb_from_env() -> Option<PathBuf> {
+pub(crate) fn resolve_adb_from_env() -> Option<PathBuf> {
     let android_home = std::env::var_os("ANDROID_HOME").map(PathBuf::from);
     let android_sdk_root = std::env::var_os("ANDROID_SDK_ROOT").map(PathBuf::from);
     resolve_adb(
@@ -73,7 +73,7 @@ pub fn is_apk_path(path: &Path) -> bool {
             .is_some_and(|e| e.eq_ignore_ascii_case("apk"))
 }
 
-fn check_device_id(id: &str) -> Result<(), ApiError> {
+pub(crate) fn check_device_id(id: &str) -> Result<(), ApiError> {
     if is_valid_device_id(id) {
         Ok(())
     } else {

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "mirror-tools",
-  "description": "Mirror tools windows (docs/mirror-toolbar-spec.md): core:event:allow-listen for the `mirror-tools-side` event only. All other calls are the app's own commands, which need no ACL entry.",
+  "description": "Mirror tools windows (docs/mirror-toolbar-spec.md): core:event:allow-listen for the `mirror-tools-side`, `mirror-record-ended` and `mirror-record-failed` events. All other calls are the app's own commands, which need no ACL entry.",
   "windows": ["mirror-tools-*"],
   "permissions": ["core:event:allow-listen"]
 }

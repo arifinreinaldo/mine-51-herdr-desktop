@@ -13,6 +13,8 @@ use crate::commands::ApiError;
 use crate::flutter::api_error;
 #[cfg(windows)]
 use crate::mirror_tools_win32;
+#[cfg(windows)]
+use crate::record::StopCause;
 
 pub const TRACK_INTERVAL: Duration = Duration::from_millis(100);
 pub const FIND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -128,6 +130,22 @@ pub fn tools_size(expanded: bool, scale: f64, work_area: Rect) -> Size {
     Size {
         width: (w * scale).round() as i32,
         height,
+    }
+}
+
+/// The expanded window is never taller than the scrcpy window it docks
+/// beside, so the two bottoms line up. `frame` is scrcpy's outer rect. The
+/// floor is one strip's height, so a very short scrcpy window still leaves
+/// room for the panel's controls. The strip keeps its size.
+pub fn fit_height_to(size: Size, frame: Rect, expanded: bool, scale: f64) -> Size {
+    if !expanded {
+        return size;
+    }
+    let floor = (STRIP_HEIGHT * scale).round() as i32;
+    let cap = (frame.bottom - frame.top).max(floor);
+    Size {
+        height: size.height.min(cap),
+        ..size
     }
 }
 
@@ -288,7 +306,12 @@ fn apply(
     let Some(snap) = mirror_tools_win32::snapshot(entry.scrcpy_hwnd) else {
         return Tick::Stop;
     };
-    let size = tools_size(entry.expanded, snap.scale, snap.work_area);
+    let size = fit_height_to(
+        tools_size(entry.expanded, snap.scale, snap.work_area),
+        snap.frame,
+        entry.expanded,
+        snap.scale,
+    );
     let gap = (DOCK_GAP * snap.scale).round() as i32;
     let dock = dock_position(snap.frame, size, snap.work_area, gap);
     let visible = tools_visible(
@@ -393,6 +416,8 @@ pub async fn run(
             None
         }
     };
+    // Why the tracker stopped, for the recorder that may be running.
+    let mut cause = StopCause::MirrorClosed;
     if let Some(tools_hwnd) = tools_hwnd {
         // Once, while the window is still hidden (see the function's note).
         mirror_tools_win32::make_tool_window(tools_hwnd);
@@ -404,6 +429,7 @@ pub async fn run(
             }
             // The user closed the tools window.
             if app.get_webview_window(&label).is_none() {
+                cause = StopCause::ToolsClosed;
                 break;
             }
             if let Tick::Stop = apply(&app, &label, tools_hwnd, &mut last) {
@@ -414,6 +440,11 @@ pub async fn run(
     if let Some(w) = app.get_webview_window(&label) {
         let _ = w.destroy();
     }
+    // After the window is gone, so a finalize of up to 5 s never leaves a
+    // frozen strip on screen; the recorder does not need the window. Before
+    // `release`, so a mirror re-opened during the stop does not get
+    // `already_recording`.
+    crate::record::stop_for_device(&app, &device_id, cause).await;
     state.release(&label);
 }
 
@@ -456,7 +487,12 @@ pub async fn mirror_tools_resize(
 
         let snap = mirror_tools_win32::snapshot(entry.scrcpy_hwnd)
             .ok_or_else(|| api_error("mirror_closed", "The mirror window is closed"))?;
-        let size = tools_size(expanded, snap.scale, snap.work_area);
+        let size = fit_height_to(
+            tools_size(expanded, snap.scale, snap.work_area),
+            snap.frame,
+            expanded,
+            snap.scale,
+        );
         let gap = (DOCK_GAP * snap.scale).round() as i32;
         let dock = dock_position(snap.frame, size, snap.work_area, gap);
         // No room: leave `expanded` as it is.
@@ -675,6 +711,36 @@ mod tests {
     fn expanded_height_is_capped_by_the_work_area() {
         let short = rect(0, 0, 1920, 700);
         assert_eq!(tools_size(true, 1.0, short).height, 700);
+    }
+
+    #[test]
+    fn expanded_height_follows_a_shorter_scrcpy_window() {
+        let size = tools_size(true, 1.0, WORK);
+        let frame = rect(100, 50, 500, 650); // 600 tall
+        assert_eq!(fit_height_to(size, frame, true, 1.0).height, 600);
+        assert_eq!(fit_height_to(size, frame, true, 1.0).width, size.width);
+    }
+
+    #[test]
+    fn expanded_height_is_kept_when_scrcpy_is_taller() {
+        let size = tools_size(true, 1.0, WORK);
+        let frame = rect(100, 0, 500, 1000);
+        assert_eq!(fit_height_to(size, frame, true, 1.0), size);
+    }
+
+    #[test]
+    fn expanded_height_never_drops_below_one_strip() {
+        let size = tools_size(true, 1.0, WORK);
+        let tiny = rect(100, 0, 500, 60);
+        assert_eq!(fit_height_to(size, tiny, true, 1.0).height, 132);
+        assert_eq!(fit_height_to(size, tiny, true, 2.0).height, 264);
+    }
+
+    #[test]
+    fn the_strip_is_not_resized_to_scrcpy() {
+        let strip = tools_size(false, 1.0, WORK);
+        let frame = rect(100, 0, 500, 60);
+        assert_eq!(fit_height_to(strip, frame, false, 1.0), strip);
     }
 
     #[test]
