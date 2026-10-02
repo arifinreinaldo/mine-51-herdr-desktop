@@ -41,6 +41,7 @@
 // item's own wording ("Both auto-copy the same way as a drag selection"),
 // without also supporting a subsequent word-wise drag-extend.
 
+import { invoke } from "@tauri-apps/api/core";
 import { api, invokeSafe } from "./appApi";
 import { canvas, overlayRoot, terminalWrapEl } from "./appDom";
 import { appState } from "./appState";
@@ -69,6 +70,7 @@ import {
   type ScrollMetricsLike,
 } from "./mouse/scrollbar";
 import { SelectionOverlay } from "./mouse/selectionOverlay";
+import { probeCell, scrollMakesDrag, selectionPointFor, viewportChanged, viewportFor } from "./mouse/selectionFollow";
 import { wordBoundsAtColumn } from "./mouse/wordBounds";
 import { WheelAccumulator } from "./mouse/wheelAccumulator";
 import { requestClosePane } from "./paneClose";
@@ -112,6 +114,10 @@ interface SelectGesture {
   cursor: AbsolutePoint;
   contentRevision: number;
   dragged: boolean;
+  /** `offset_from_bottom` at mouse-down: a different value later means the user scrolled. */
+  startOffset: number;
+  /** The pointer's last screen cell. The follow-up (`followScroll`) re-derives the cursor from it when the pane scrolls under a still pointer. */
+  lastCell: { col: number; row: number };
 }
 
 interface ScrollbarGesture {
@@ -143,6 +149,10 @@ interface LastSelection {
   anchor: AbsolutePoint;
   cursor: AbsolutePoint;
   contentRevision: number;
+  /** The viewport the highlight was last painted for; `followScroll` repaints when the pane scrolls. */
+  innerRect: CellRect;
+  viewportTop: number;
+  viewportRows: number;
 }
 let lastSelection: LastSelection | null = null;
 
@@ -378,7 +388,10 @@ async function onPointerDown(event: PointerEvent): Promise<void> {
     cursor: anchor,
     contentRevision: hit.content_revision,
     dragged: false,
+    startOffset: hit.scroll?.offset_from_bottom ?? 0,
+    lastCell: { col: cell.col, row: cell.row },
   };
+  ensureFollowTimer();
 }
 
 function onPointerMove(event: PointerEvent): void {
@@ -414,8 +427,8 @@ function processMove(event: PointerEvent, active: NonNullable<Gesture>): void {
     return;
   }
 
-  const local = clampToPaneLocal(cell.col, cell.row, active.innerRect);
-  const cursor: AbsolutePoint = { row: absoluteRowForViewportRow(local.row, active.viewportTop), col: local.col };
+  active.lastCell = { col: cell.col, row: cell.row };
+  const cursor = selectionPointFor(active.lastCell, active.innerRect, active.viewportTop);
   active.cursor = cursor;
   if (cursor.row !== active.anchor.row || cursor.col !== active.anchor.col) active.dragged = true;
   renderSelectionRange(active.anchor, active.cursor, active.viewportTop, active.viewportRows, active.innerRect, renderer);
@@ -442,23 +455,28 @@ function onPointerUp(event: PointerEvent): void {
 
   if (active.mode === "scrollbar") return;
 
-  if (active.dragged) {
-    void finishSelection({
-      paneId: active.paneId,
-      anchor: active.anchor,
-      cursor: active.cursor,
-      contentRevision: active.contentRevision,
-      viewportTop: active.viewportTop,
-      viewportRows: active.viewportRows,
-      innerRect: active.innerRect,
-      live: true,
-    });
-  } else {
-    // A plain click with no drag: no selection was made, so nothing is
-    // retained and the highlight `onPointerDown` already cleared stays
-    // cleared.
-    overlay?.clear();
-  }
+  void (async () => {
+    // One last look at the pane's scroll position, so a wheel tick just
+    // before the release is part of the selection.
+    await followGesture(active, () => true);
+    if (active.dragged) {
+      await finishSelection({
+        paneId: active.paneId,
+        anchor: active.anchor,
+        cursor: active.cursor,
+        contentRevision: active.contentRevision,
+        viewportTop: active.viewportTop,
+        viewportRows: active.viewportRows,
+        innerRect: active.innerRect,
+        live: true,
+      });
+    } else {
+      // A plain click with no drag: no selection was made, so nothing is
+      // retained and the highlight `onPointerDown` already cleared stays
+      // cleared.
+      overlay?.clear();
+    }
+  })();
 }
 
 function onPointerCancel(): void {
@@ -468,6 +486,104 @@ function onPointerCancel(): void {
   // without copying -- a cancelled gesture was never a deliberate release.
   gesture = null;
   overlay?.clear();
+}
+
+// ---------------------------------------------------------------------------
+// The selection follows the pane's scroll
+// ---------------------------------------------------------------------------
+//
+// A selection is kept as absolute scrollback rows, but the pointer's row and
+// the highlight are viewport-relative. The wheel scrolls the pane without any
+// pointer event, so a gesture that froze the viewport's top row at mouse-down
+// kept mapping the pointer to the old rows and kept painting the highlight at
+// the old screen position (the selection "moved" and never reached the rows
+// scrolled into view). While a drag or a retained selection exists, a short
+// timer reads the pane's current scroll metrics (`pane_mouse_hit` is an
+// in-process lookup of the latest surface, no server round trip) and, when the
+// top row changed, re-derives the drag's cursor and repaints the highlight.
+
+const FOLLOW_MS = 60;
+/** A finished selection can stay highlighted for hours: check it every Nth tick only. */
+const RETAINED_EVERY_TICKS = 3;
+/** Retained-selection checks that may miss its pane in a row before the timer stops. */
+const RETAINED_MAX_MISSES = 3;
+let followTimer: number | undefined;
+let following = false;
+let retainedTick = 0;
+let retainedMisses = 0;
+
+function ensureFollowTimer(): void {
+  retainedMisses = 0;
+  if (followTimer === undefined) followTimer = window.setInterval(() => void followScroll(), FOLLOW_MS);
+}
+
+async function paneHitAt(cell: { col: number; row: number }): Promise<PaneMouseHit | null> {
+  // `invoke` directly: this runs every tick, and `invokeSafe` would show an
+  // error notice for each failed one.
+  return invoke<PaneMouseHit | null>("pane_mouse_hit", { col: cell.col, row: cell.row }).catch(() => null);
+}
+
+/** Re-reads the scroll position for a select gesture and, when the viewport moved, re-derives
+ * its cursor from the pointer's last cell and repaints. `alive` says the gesture still counts
+ * (false once a newer one replaced it). */
+async function followGesture(g: Gesture, alive: () => boolean): Promise<void> {
+  if (!g || g.mode !== "select") return;
+  const hit = await paneHitAt(probeCell(g.lastCell, g.innerRect));
+  if (!alive() || !hit || hit.pane_id !== g.paneId) return;
+  // The hit knows the pane's current geometry (a split or resize may have changed it).
+  g.innerRect = hit.inner_rect;
+  const next = viewportFor(hit.scroll, g.innerRect.height);
+  if (!viewportChanged({ top: g.viewportTop, rows: g.viewportRows }, next)) return;
+  g.viewportTop = next.top;
+  g.viewportRows = next.rows;
+  g.cursor = selectionPointFor(g.lastCell, g.innerRect, next.top);
+  // Only a user scroll makes a press a selection. Output growing at the live
+  // bottom also moves the viewport's top; it must not turn a click into one.
+  if (scrollMakesDrag(g.startOffset, hit.scroll, g.cursor, g.anchor)) g.dragged = true;
+  const renderer = appState.renderer;
+  if (renderer && g.dragged) renderSelectionRange(g.anchor, g.cursor, g.viewportTop, g.viewportRows, g.innerRect, renderer);
+}
+
+/** The same for a finished selection: its absolute rows stay put, so only the highlight moves. */
+async function followRetained(sel: LastSelection): Promise<void> {
+  const hit = await paneHitAt({ col: sel.innerRect.x, row: sel.innerRect.y });
+  if (lastSelection !== sel) return;
+  if (!hit || hit.pane_id !== sel.paneId) {
+    // The pane closed or moved. Stop polling for it (the highlight stays,
+    // as it did before); a new selection starts the timer again.
+    retainedMisses += 1;
+    if (retainedMisses >= RETAINED_MAX_MISSES) {
+      window.clearInterval(followTimer);
+      followTimer = undefined;
+    }
+    return;
+  }
+  retainedMisses = 0;
+  sel.innerRect = hit.inner_rect;
+  const next = viewportFor(hit.scroll, sel.innerRect.height);
+  if (!viewportChanged({ top: sel.viewportTop, rows: sel.viewportRows }, next)) return;
+  sel.viewportTop = next.top;
+  sel.viewportRows = next.rows;
+  const renderer = appState.renderer;
+  if (renderer) renderSelectionRange(sel.anchor, sel.cursor, next.top, next.rows, sel.innerRect, renderer);
+}
+
+async function followScroll(): Promise<void> {
+  if (following) return;
+  following = true;
+  try {
+    const g = gesture;
+    if (g && g.mode === "select") await followGesture(g, () => gesture === g);
+    else if (lastSelection) {
+      retainedTick = (retainedTick + 1) % RETAINED_EVERY_TICKS;
+      if (retainedTick === 0) await followRetained(lastSelection);
+    } else {
+      window.clearInterval(followTimer);
+      followTimer = undefined;
+    }
+  } finally {
+    following = false;
+  }
 }
 
 /** Shared by every selection-completing path (a completed drag, double/
@@ -488,7 +604,16 @@ async function finishSelection(opts: {
   live: boolean;
 }): Promise<void> {
   const [start, end] = orderSelectionPoints(opts.anchor, opts.cursor);
-  lastSelection = { paneId: opts.paneId, anchor: start, cursor: end, contentRevision: opts.contentRevision };
+  lastSelection = {
+    paneId: opts.paneId,
+    anchor: start,
+    cursor: end,
+    contentRevision: opts.contentRevision,
+    innerRect: opts.innerRect,
+    viewportTop: opts.viewportTop,
+    viewportRows: opts.viewportRows,
+  };
+  ensureFollowTimer();
   const renderer = appState.renderer;
   if (renderer) renderSelectionRange(start, end, opts.viewportTop, opts.viewportRows, opts.innerRect, renderer);
 
