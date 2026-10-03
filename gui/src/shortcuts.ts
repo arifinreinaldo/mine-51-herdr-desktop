@@ -37,6 +37,9 @@ export interface ShortcutAction {
   /** The right-aligned hint text shown in the menu, e.g. `"Ctrl+Shift+N"`. */
   display: string;
   combo: KeyCombo;
+  /** Extra combos that trigger the same action (macOS: Cmd+Shift+= as well as
+   * Cmd+=, Ctrl+Tab as well as Cmd+Shift+]). `display` names the primary. */
+  altCombos?: readonly KeyCombo[];
   /** F2 only (spec §1/§4): claimed only when `activeElement` is a `.tab`
    * (reached via Tab key or right-click), never when the terminal has
    * keyboard focus. */
@@ -357,15 +360,126 @@ const WINDOWS_SHORTCUTS: readonly ShortcutAction[] = [
   ...digitRangeShortcuts("workspace.focusByIndex", "Workspace", "Focus Workspace", "ctrlShift"),
 ];
 
-/** On a Mac, Option+key types a character, so every Alt combo becomes the
- * same combo on Cmd (a terminal never sees Cmd). Ctrl+Shift+* is unchanged. */
-export function toMacShortcut(action: ShortcutAction): ShortcutAction {
-  if (!action.combo.alt) return action;
-  return {
-    ...action,
-    display: action.display.replace("Alt+", "Cmd+"),
-    combo: { ...action.combo, alt: false, meta: true },
-  };
+// --------------------------------------------------------------------------
+// macOS table. Cmd is the app, Ctrl always reaches the terminal, Option is
+// never claimed (it types characters; Option+arrows move by word in shells).
+// The layout follows iTerm2/Ghostty/Terminal.app habits. Every id here is an
+// action in WINDOWS_SHORTCUTS (or a Mac-only extra below); an action with no
+// entry is unbound on macOS.
+// --------------------------------------------------------------------------
+
+interface MacExtras {
+  shift?: boolean;
+  alt?: boolean;
+}
+
+function cmd(code: string, extras: MacExtras = {}): KeyCombo {
+  return { ctrl: false, shift: !!extras.shift, alt: !!extras.alt, meta: true, code };
+}
+
+const MAC_KEY_LABELS: Readonly<Record<string, string>> = {
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+  Equal: "=",
+  Minus: "-",
+  Comma: ",",
+  Slash: "/",
+  Backquote: "`",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Enter: "Return",
+  PageUp: "PgUp",
+  PageDown: "PgDn",
+};
+
+/** `⌃⌥⇧⌘` glyphs in Apple's order, then the key: `⌘⇧T`, `⌘⌥1`. */
+export function macDisplay(c: KeyCombo): string {
+  const key = MAC_KEY_LABELS[c.code] ?? c.code.replace(/^(Key|Digit)/, "");
+  return `${c.ctrl ? "⌃" : ""}${c.alt ? "⌥" : ""}${c.shift ? "⇧" : ""}${c.meta ? "⌘" : ""}${key}`;
+}
+
+interface MacEntry {
+  combo: KeyCombo;
+  display?: string;
+  altCombos?: readonly KeyCombo[];
+}
+
+const MAC_ENTRIES: Readonly<Record<string, MacEntry>> = {
+  "workspace.new": { combo: cmd("KeyN") },
+  "workspace.next": { combo: cmd("ArrowDown", { shift: true }) },
+  "workspace.previous": { combo: cmd("ArrowUp", { shift: true }) },
+  "tab.new": { combo: cmd("KeyT") },
+  "tab.close": { combo: cmd("KeyW") },
+  "tab.rename": { combo: combo(false, false, false, "Enter") }, // tab focus only, like Finder
+  "tab.next": {
+    combo: cmd("BracketRight", { shift: true }),
+    display: "⇧⌘] / ⌃Tab",
+    altCombos: [combo(true, false, false, "Tab")],
+  },
+  "tab.previous": {
+    combo: cmd("BracketLeft", { shift: true }),
+    display: "⇧⌘[ / ⌃⇧Tab",
+    altCombos: [combo(true, true, false, "Tab")],
+  },
+  "tab.togglePrevious": { combo: combo(true, false, false, "Backquote") }, // Cmd+` is the system's window switcher
+  "pane.splitRight": { combo: cmd("KeyD") },
+  "pane.splitDown": { combo: cmd("KeyD", { shift: true }) },
+  "pane.close": { combo: cmd("KeyW", { shift: true }) },
+  "pane.toggleZoom": { combo: cmd("Enter", { shift: true }) },
+  "pane.copy": { combo: cmd("KeyC") },
+  "pane.paste": { combo: cmd("KeyV") },
+  "pane.find": { combo: cmd("KeyF") },
+  "pane.clear": { combo: cmd("KeyK") },
+  "pane.copyMode": { combo: cmd("KeyC", { shift: true }) },
+  "pane.scrollPageUp": { combo: combo(false, true, false, "PageUp"), display: "⇧Fn↑" },
+  "pane.scrollPageDown": { combo: combo(false, true, false, "PageDown"), display: "⇧Fn↓" },
+  "pane.scrollToTop": { combo: cmd("ArrowUp") },
+  "pane.scrollToBottom": { combo: cmd("ArrowDown") },
+  "agents.jumpToNextNeedingAttention": { combo: cmd("KeyJ") },
+  "agents.showList": { combo: cmd("KeyA", { shift: true }) },
+  "view.toggleSidebar": { combo: cmd("KeyB") },
+  "view.focusSidebar": { combo: cmd("KeyE", { shift: true }) },
+  "view.zoomIn": { combo: cmd("Equal"), altCombos: [cmd("Equal", { shift: true })] }, // Cmd+= and Cmd++
+  "view.zoomOut": { combo: cmd("Minus") },
+  "view.zoomReset": { combo: cmd("Digit0") },
+  "herdr.settings": { combo: cmd("Comma") },
+  "herdr.showShortcuts": { combo: cmd("Slash") }, // Cmd+Shift+/ is the system Help search
+};
+
+/** Mac-only actions with no Windows binding: iTerm2's Cmd+Option+arrows. */
+const MAC_ONLY_SHORTCUTS: readonly ShortcutAction[] = (
+  [
+    ["Left", "ArrowLeft"],
+    ["Right", "ArrowRight"],
+    ["Up", "ArrowUp"],
+    ["Down", "ArrowDown"],
+  ] as const
+).map(([name, code]) => {
+  const c = cmd(code, { alt: true });
+  return { id: `pane.focus${name}`, menu: "Pane", label: `Focus Pane ${name}`, display: macDisplay(c), combo: c };
+});
+
+/** The macOS table, derived from `base` (the Windows table) so ids, menus and
+ * labels stay one source of truth. */
+export function buildMacShortcuts(base: readonly ShortcutAction[]): ShortcutAction[] {
+  const out: ShortcutAction[] = [];
+  for (const action of base) {
+    let entry = MAC_ENTRIES[action.id];
+    if (!entry && action.rangeGroup === "tab.focusByIndex") entry = { combo: cmd(action.combo.code) };
+    if (!entry && action.rangeGroup === "workspace.focusByIndex") {
+      entry = { combo: cmd(action.combo.code, { alt: true }) };
+    }
+    if (!entry) continue; // unbound on macOS
+    out.push({
+      ...action,
+      display: entry.display ?? macDisplay(entry.combo),
+      combo: entry.combo,
+      altCombos: entry.altCombos,
+    });
+  }
+  return [...out, ...MAC_ONLY_SHORTCUTS];
 }
 
 // The webview user agent says "Macintosh"; Node's says "Node.js", so unit tests
@@ -373,7 +487,7 @@ export function toMacShortcut(action: ShortcutAction): ShortcutAction {
 export const IS_MAC = typeof navigator !== "undefined" && /Macintosh/.test(navigator.userAgent);
 
 export const SHORTCUTS: readonly ShortcutAction[] = IS_MAC
-  ? WINDOWS_SHORTCUTS.map(toMacShortcut)
+  ? buildMacShortcuts(WINDOWS_SHORTCUTS)
   : WINDOWS_SHORTCUTS;
 
 /** The display string of a shortcut (for menu hints and tooltips), by id. */
@@ -410,12 +524,13 @@ export function findShortcut(
 ): ShortcutAction | undefined {
   return SHORTCUTS.find(
     (action) =>
-      matchesCombo(action.combo, event) && (!action.requiresTabFocus || hasTabFocus),
+      (matchesCombo(action.combo, event) || action.altCombos?.some((c) => matchesCombo(c, event))) &&
+      (!action.requiresTabFocus || hasTabFocus),
   );
 }
 
 const LETTER_CODE = /^Key[A-Z]$/;
-const ALLOWED_CTRL_ONLY_CODES = new Set(["Tab", "Equal", "Minus", "Digit0", "Comma"]);
+const ALLOWED_CTRL_ONLY_CODES = new Set(["Tab", "Equal", "Minus", "Digit0", "Comma", "Backquote"]);
 /** The keyboard shortcuts feature's two new alt-only classes: `Alt+1..9`
  * (tab/workspace "focus by index") and `Alt+\`` (toggle previous tab).
  * `Ctrl+Shift+1..9`, `Ctrl+Shift+E`, and `Ctrl+Shift+/` need no addition
@@ -432,14 +547,19 @@ const ALLOWED_SHIFT_ONLY_CODES = new Set(["Insert", "PageUp", "PageDown", "Home"
  * self-check test so a future entry can't silently widen what the GUI
  * claims from the terminal. */
 export function isAllowedShortcutClass(action: ShortcutAction): boolean {
-  const { ctrl, shift, alt, code } = action.combo;
-  if (action.combo.meta && !ctrl && !alt) return true; // Cmd+* (macOS; a terminal never sees Cmd)
+  return [action.combo, ...(action.altCombos ?? [])].every((c) => isAllowedCombo(c, action));
+}
+
+function isAllowedCombo(c: KeyCombo, action: ShortcutAction): boolean {
+  const { ctrl, shift, alt, code } = c;
+  if (c.meta && !ctrl) return true; // Cmd+* and Cmd+Option+* (macOS; a terminal never sees Cmd)
+  if (c.meta) return false;
   if (ctrl && shift && !alt) return true; // Ctrl+Shift+* (incl. Ctrl+Shift+Tab, +1..9, +E, +/)
   if (alt && shift && !ctrl) return true; // Alt+Shift+*
   if (ctrl && !shift && !alt && ALLOWED_CTRL_ONLY_CODES.has(code)) return true; // Ctrl+Tab/=/-/0/,
   if (alt && !shift && !ctrl && ALLOWED_ALT_ONLY_CODES.has(code)) return true; // Alt+1..9, Alt+`
   if (shift && !ctrl && !alt && ALLOWED_SHIFT_ONLY_CODES.has(code)) return true; // Shift+Insert/PgUp/PgDn/Home/End
-  if (!ctrl && !shift && !alt && code === "F2" && action.requiresTabFocus) return true; // F2, tab focus only
+  if (!ctrl && !shift && !alt && (code === "F2" || code === "Enter") && action.requiresTabFocus) return true; // F2 (Enter on macOS), tab focus only
   return false;
 }
 

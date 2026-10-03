@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { KeyboardEventLike } from "../../src/input/keymap";
 import {
   altGrTextCommit,
+  macCmdTextKey,
   mapKeyboardEvent,
   MODIFIER_ALT,
   MODIFIER_CONTROL,
@@ -121,5 +122,29 @@ describe("altGrTextCommit", () => {
   it("is null with only Ctrl or only Alt held (not the AltGr combination)", () => {
     expect(altGrTextCommit(key({ key: "@", code: "KeyQ", ctrlKey: true }))).toBeNull();
     expect(altGrTextCommit(key({ key: "@", code: "KeyQ", altKey: true }))).toBeNull();
+  });
+});
+
+describe("macCmdTextKey (macOS line editing)", () => {
+  it("Cmd+Left/Right send Home/End", () => {
+    expect(macCmdTextKey(key({ key: "ArrowLeft", code: "ArrowLeft", metaKey: true }))).toEqual({ code: { kind: "Home" }, modifiers: 0 });
+    expect(macCmdTextKey(key({ key: "ArrowRight", code: "ArrowRight", metaKey: true }))).toEqual({ code: { kind: "End" }, modifiers: 0 });
+  });
+
+  it("Cmd+Backspace sends Ctrl+U", () => {
+    expect(macCmdTextKey(key({ key: "Backspace", code: "Backspace", metaKey: true }))).toEqual({
+      code: { kind: "Char", value: "u" },
+      modifiers: MODIFIER_CONTROL,
+    });
+  });
+
+  it("leaves every other Cmd combo to the native menu", () => {
+    expect(macCmdTextKey(key({ key: "q", code: "KeyQ", metaKey: true }))).toBeNull();
+    expect(macCmdTextKey(key({ key: "h", code: "KeyH", metaKey: true }))).toBeNull();
+    expect(macCmdTextKey(key({ key: "ArrowLeft", code: "ArrowLeft", metaKey: true, shiftKey: true }))).toBeNull();
+  });
+
+  it("ignores presses without Cmd", () => {
+    expect(macCmdTextKey(key({ key: "ArrowLeft", code: "ArrowLeft" }))).toBeNull();
   });
 });

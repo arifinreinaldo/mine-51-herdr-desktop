@@ -7,9 +7,9 @@ import {
   groupCheatSheetEntriesByMenu,
   isAllowedShortcutClass,
   isPlainCtrlLetter,
+  buildMacShortcuts,
   matchesCombo,
   SHORTCUTS,
-  toMacShortcut,
 } from "../../src/shortcuts";
 
 // Keyboard shortcuts feature (Alt+1..9 tab focus, Ctrl+Shift+1..9 workspace
@@ -222,28 +222,80 @@ describe("cheatSheetEntries / filterCheatSheetEntries / groupCheatSheetEntriesBy
   });
 });
 
-describe("macOS shortcut table (Option types characters, so Alt becomes Cmd)", () => {
-  const mac = SHORTCUTS.map(toMacShortcut);
+describe("macOS shortcut table", () => {
+  const mac = buildMacShortcuts(SHORTCUTS);
+  const byId = (id: string) => mac.find((a) => a.id === id)!;
+  const press = (code: string, mods: Partial<Record<"ctrlKey" | "shiftKey" | "altKey" | "metaKey", boolean>> = {}) => ({
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    metaKey: false,
+    code,
+    ...mods,
+  });
+  const allCombos = (a: (typeof mac)[number]) => [a.combo, ...(a.altCombos ?? [])];
 
-  it("no combo uses Option", () => {
-    expect(mac.filter((a) => a.combo.alt)).toEqual([]);
+  it("never claims plain Option, and Ctrl only for tab cycling and previous-tab", () => {
+    const optionOnly = mac.flatMap(allCombos).filter((c) => c.alt && !c.meta);
+    expect(optionOnly).toEqual([]);
+    const ctrl = mac.flatMap((a) => allCombos(a).filter((c) => c.ctrl).map(() => a.id)).sort();
+    expect(ctrl).toEqual(["tab.next", "tab.previous", "tab.togglePrevious"]);
   });
 
-  it("every combo stays in an allowed class and keeps a unique key", () => {
-    expect(mac.filter((a) => !isAllowedShortcutClass(a))).toEqual([]);
-    const keys = mac.map((a) => JSON.stringify([a.combo.ctrl, a.combo.shift, !!a.combo.meta, a.combo.code]));
+  it("every combo is in an allowed class and no two actions share a combo", () => {
+    expect(mac.filter((a) => !isAllowedShortcutClass(a)).map((a) => a.id)).toEqual([]);
+    const keys = mac.flatMap((a) =>
+      allCombos(a).map((c) => JSON.stringify([c.ctrl, c.shift, c.alt, !!c.meta, c.code, !!a.requiresTabFocus])),
+    );
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("Alt+1 becomes Cmd+1 and matches only with Cmd held", () => {
-    const tab1 = mac.find((a) => a.id === "tab.focusByIndex.1");
-    expect(tab1?.display).toBe("Cmd+1");
-    expect(matchesCombo(tab1!.combo, { ctrlKey: false, shiftKey: false, altKey: false, metaKey: true, code: "Digit1" })).toBe(true);
-    expect(matchesCombo(tab1!.combo, { ctrlKey: false, shiftKey: false, altKey: false, code: "Digit1" })).toBe(false);
+  it("keeps ids unique and every non-extra id inside the Windows table", () => {
+    const ids = mac.map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const windowsIds = new Set(SHORTCUTS.map((a) => a.id));
+    const extras = ids.filter((id) => !windowsIds.has(id)).sort();
+    expect(extras).toEqual(["pane.focusDown", "pane.focusLeft", "pane.focusRight", "pane.focusUp"]);
   });
 
-  it("Ctrl+Shift combos are untouched", () => {
-    const create = SHORTCUTS.find((a) => a.id === "tab.new")!;
-    expect(toMacShortcut(create)).toBe(create);
+  it("matches the agreed layout", () => {
+    const shown = (id: string) => byId(id).display;
+    expect(shown("tab.new")).toBe("⌘T");
+    expect(shown("tab.close")).toBe("⌘W");
+    expect(shown("pane.close")).toBe("⇧⌘W");
+    expect(shown("pane.splitRight")).toBe("⌘D");
+    expect(shown("pane.splitDown")).toBe("⇧⌘D");
+    expect(shown("pane.toggleZoom")).toBe("⇧⌘Return");
+    expect(shown("workspace.new")).toBe("⌘N");
+    expect(shown("tab.focusByIndex.1")).toBe("⌘1");
+    expect(shown("workspace.focusByIndex.1")).toBe("⌥⌘1");
+    expect(shown("pane.focusLeft")).toBe("⌥⌘←");
+    expect(shown("herdr.showShortcuts")).toBe("⌘/");
+    expect(shown("agents.jumpToNextNeedingAttention")).toBe("⌘J");
+  });
+
+  it("leaves Move Tab unbound (drag reorders)", () => {
+    expect(mac.find((a) => a.id === "tab.moveLeft")).toBeUndefined();
+    expect(mac.find((a) => a.id === "tab.moveRight")).toBeUndefined();
+  });
+
+  it("accepts the alias combos and requires Cmd for the primary", () => {
+    const next = byId("tab.next");
+    expect(matchesCombo(next.combo, press("BracketRight", { metaKey: true, shiftKey: true }))).toBe(true);
+    expect(next.altCombos!.some((c) => matchesCombo(c, press("Tab", { ctrlKey: true })))).toBe(true);
+    expect(matchesCombo(next.combo, press("BracketRight", { shiftKey: true }))).toBe(false);
+    const zoomIn = byId("view.zoomIn");
+    expect(zoomIn.altCombos!.some((c) => matchesCombo(c, press("Equal", { metaKey: true, shiftKey: true })))).toBe(true);
+  });
+
+  it("Cmd+Option+1 focuses a workspace, Cmd+1 a tab, and they do not collide", () => {
+    expect(matchesCombo(byId("workspace.focusByIndex.1").combo, press("Digit1", { metaKey: true, altKey: true }))).toBe(true);
+    expect(matchesCombo(byId("tab.focusByIndex.1").combo, press("Digit1", { metaKey: true }))).toBe(true);
+    expect(matchesCombo(byId("tab.focusByIndex.1").combo, press("Digit1", { metaKey: true, altKey: true }))).toBe(false);
+  });
+
+  it("Windows actions never match a Cmd press, and the Windows table is untouched", () => {
+    expect(findShortcut(press("KeyT", { ctrlKey: true, shiftKey: true, metaKey: true }), false)).toBeUndefined();
+    expect(SHORTCUTS.find((a) => a.id === "tab.new")?.display).toBe("Ctrl+Shift+T");
   });
 });

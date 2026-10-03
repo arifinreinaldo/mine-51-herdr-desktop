@@ -28,8 +28,12 @@
 
 import { handleCopyModeKeydown, isCopyModeActive } from "../copyMode";
 import type { KeyboardEventLike, MappedKey } from "../input/keymap";
-import { altGrTextCommit, mapKeyboardEvent } from "../input/keymap";
-import { findShortcut, type ShortcutAction } from "../shortcuts";
+import { altGrTextCommit, macCmdTextKey, mapKeyboardEvent } from "../input/keymap";
+import { findShortcut, IS_MAC, type ShortcutAction } from "../shortcuts";
+
+/** Cmd+C / Cmd+V act on the terminal only while it has focus; in a text field
+ * (find bar, dialogs) they must stay the native copy and paste. */
+const TERMINAL_ONLY_MAC_IDS = new Set(["pane.copy", "pane.paste"]);
 import { closeActiveOverlay, isActiveOverlayEscapableFromOutside, isOverlayOpen } from "../ui/overlay";
 
 export interface KeyboardRoutingHandlers {
@@ -74,7 +78,11 @@ export function routeKeydown(
   }
 
   const hasTabFocus = hasTabUiFocus(activeElement);
-  const shortcut = findShortcut(event, hasTabFocus);
+  const found = findShortcut(event, hasTabFocus);
+  const shortcut =
+    found && IS_MAC && TERMINAL_ONLY_MAC_IDS.has(found.id) && activeElement !== keyboardCaptureEl
+      ? undefined
+      : found;
   if (shortcut) {
     event.preventDefault();
     handlers.onShortcut(shortcut);
@@ -128,6 +136,18 @@ export function routeKeydown(
     if (altGrText !== null) {
       event.preventDefault();
       handlers.onTerminalTextCommit(altGrText);
+      return;
+    }
+    // macOS: WebKit skips the native menu item (Cmd+Q Quit, Cmd+H, Cmd+M ...)
+    // when the page calls preventDefault on its keydown, so an unclaimed Cmd
+    // combo must not be forwarded to the terminal. Claimed ones (Cmd+1..9,
+    // Cmd+Shift+W, ...) were already handled by `findShortcut` above.
+    if (IS_MAC && event.metaKey) {
+      const textKey = macCmdTextKey(event);
+      if (textKey) {
+        event.preventDefault();
+        handlers.onTerminalKey(textKey);
+      }
       return;
     }
     const mapped = mapKeyboardEvent(event);

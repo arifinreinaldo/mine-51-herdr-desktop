@@ -3,7 +3,7 @@
 // one flat row per workspace.
 
 import { focusKeyboardCapture, keyboardCaptureReturnTarget } from "../keyboard/focusCapture";
-import { DIRECT_FOCUS_SLOT_COUNT } from "../shortcuts";
+import { DIRECT_FOCUS_SLOT_COUNT, shortcutDisplay } from "../shortcuts";
 import { resolveWorkspacePaletteColor, type ThemeColors } from "../themes/tokens";
 import { LAST_FOCUS_SHORTCUT_DIGIT } from "../workspace/focusByIndex";
 import { openConfirmPopover, type ConfirmPopoverAgentList } from "./confirmPopover";
@@ -377,8 +377,8 @@ export function closeDetailText(counts: WorkspaceAgentCounts): string {
  * showing an attention state instead of the branch. */
 export function sidebarRowTooltip(label: string, index: number, total: number, branch: string | null = null): string {
   const hints: string[] = [];
-  if (index < DIRECT_FOCUS_SLOT_COUNT) hints.push(`Ctrl+Shift+${index + 1}`);
-  if (index === total - 1) hints.push(`Ctrl+Shift+${LAST_FOCUS_SHORTCUT_DIGIT}`);
+  if (index < DIRECT_FOCUS_SLOT_COUNT) hints.push(shortcutDisplay(`workspace.focusByIndex.${index + 1}`) ?? "");
+  if (index === total - 1) hints.push(shortcutDisplay(`workspace.focusByIndex.${LAST_FOCUS_SHORTCUT_DIGIT}`) ?? "");
   const base = hints.length > 0 ? `${label} (${hints.join(" / ")})` : label;
   return branch ? `${base} — ${branch}` : base;
 }

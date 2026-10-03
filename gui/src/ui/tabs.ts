@@ -17,8 +17,8 @@ import { createStatusDotOrSlot } from "./statusDot";
  * also always mentions Alt+9. Plain `label` when neither applies. */
 export function tabShortcutTooltip(label: string, index: number, total: number): string {
   const hints: string[] = [];
-  if (index < DIRECT_FOCUS_SLOT_COUNT) hints.push(`Alt+${index + 1}`);
-  if (index === total - 1) hints.push(`Alt+${LAST_FOCUS_SHORTCUT_DIGIT}`);
+  if (index < DIRECT_FOCUS_SLOT_COUNT) hints.push(shortcutDisplay(`tab.focusByIndex.${index + 1}`) ?? "");
+  if (index === total - 1) hints.push(shortcutDisplay(`tab.focusByIndex.${LAST_FOCUS_SHORTCUT_DIGIT}`) ?? "");
   return hints.length > 0 ? `${label} (${hints.join(" / ")})` : label;
 }
 

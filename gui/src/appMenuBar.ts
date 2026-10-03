@@ -386,6 +386,11 @@ const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   "pane.splitDown": () => menuBarContext.onSplitDown(),
   "pane.close": () => menuBarContext.onClosePane(),
   "pane.toggleZoom": () => menuBarContext.onToggleZoom(),
+  // macOS only (Cmd+Option+arrows, iTerm2): move focus to the neighbouring pane.
+  "pane.focusLeft": () => void api("pane.focus_direction", { direction: "left" }),
+  "pane.focusRight": () => void api("pane.focus_direction", { direction: "right" }),
+  "pane.focusUp": () => void api("pane.focus_direction", { direction: "up" }),
+  "pane.focusDown": () => void api("pane.focus_direction", { direction: "down" }),
   "agents.jumpToNextNeedingAttention": () => menuBarContext.onJumpToNextNeedingAttention(),
   "agents.showList": () => menuBarContext.onToggleAgentList(),
   "view.toggleSidebar": () => menuBarContext.onToggleSidebar(),

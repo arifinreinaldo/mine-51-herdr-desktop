@@ -10,6 +10,7 @@ import { overlayRoot, tabListEl, tabOverflowEl, tabPlusEl } from "./appDom";
 import { focusedWorkspaceTabs, tabLabel } from "./appLookups";
 import { appState, seenDoneTabs, statusAge } from "./appState";
 import type { RawSnapshot, RawTab } from "./appTypes";
+import { shortcutDisplay } from "./shortcuts";
 import { seenTrackingInput } from "./notifications/seenDoneTabs";
 import { formatAge, oldestAgeMs } from "./notifications/statusAge";
 import { isRenderGuarded } from "./ui/renderGuard";
@@ -182,7 +183,7 @@ function openAllTabsMenu(tabs: readonly RawTab[]): void {
       void api("tab.focus", { tab_id: tab.tab_id });
     },
   }));
-  items.push({ id: "new-tab", label: "New tab", icon: "add", shortcut: "Ctrl+Shift+T", separatorBefore: true, onSelect: createTab });
+  items.push({ id: "new-tab", label: "New tab", icon: "add", shortcut: shortcutDisplay("tab.new"), separatorBefore: true, onSelect: createTab });
   // Right-aligned under the chevron; `.tab-overflow-menu` sets the width.
   const left = Math.max(8, rect.right - 300);
   openMenu(overlayRoot, { left, top: rect.bottom }, items, {

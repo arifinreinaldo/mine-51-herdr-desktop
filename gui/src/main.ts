@@ -7,7 +7,7 @@
 
 import "./style.css";
 
-import { IS_MAC } from "./shortcuts";
+import { IS_MAC, shortcutDisplay } from "./shortcuts";
 import { invokeSafe, showErrorNotice } from "./appApi";
 import {
   canvas,
@@ -54,6 +54,16 @@ import { wireTitlebarControls } from "./ui/titlebar";
 // window buttons hide and the title bar clears the lights (`.mac` in style.css).
 if (IS_MAC) document.documentElement.classList.add("mac");
 
+/** The static hints in index.html name the Windows keys; show the active table's. */
+function applyShortcutHints(): void {
+  const newWorkspace = shortcutDisplay("workspace.new") ?? "";
+  const newTab = shortcutDisplay("tab.new") ?? "";
+  document.getElementById("sidebar-new-workspace-btn")?.setAttribute("title", `New Workspace… (${newWorkspace})`);
+  document.getElementById("tab-plus")?.setAttribute("title", `New Tab (${newTab})`);
+  const hint = document.querySelector(".sidebar-footer__hint");
+  if (hint) hint.textContent = newWorkspace;
+}
+
 function paintChromeSkeleton(): void {
   sidebarEl.textContent = "";
   statusUsageEl.textContent = "Claude usage: waiting for a Claude Code session";
@@ -76,17 +86,25 @@ function wireAgeRefresh(): void {
 }
 
 function reportReadyAfterTwoFrames(startedAt: number): void {
+  let sent = false;
+  const send = (): void => {
+    if (sent) return;
+    sent = true;
+    void invokeSafe("report_ready", { ms: performance.now() - startedAt });
+  };
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const ms = performance.now() - startedAt;
-      void invokeSafe("report_ready", { ms });
-    });
+    requestAnimationFrame(send);
   });
+  // WKWebView does not run requestAnimationFrame while the window is hidden,
+  // and the window stays hidden until report_ready, so on macOS the frames
+  // above never arrive. WebView2 does run them, so Windows keeps frames only.
+  if (IS_MAC) window.setTimeout(send, 300);
 }
 
 async function main(): Promise<void> {
   const startedAt = performance.now();
   paintChromeSkeleton();
+  applyShortcutHints();
 
   // Startup order (spec §9.4): settings_get -> apply the theme -> sync_state
   // -> report_ready. The window stays `visible: false` until report_ready.

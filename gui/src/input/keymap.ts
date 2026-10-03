@@ -139,6 +139,20 @@ export function mapKeyboardEvent(event: KeyboardEventLike): MappedKey | null {
 }
 
 /**
+ * macOS line-editing keys, which Terminal.app/iTerm2/Ghostty send to the
+ * program: Cmd+Left/Right = line start/end (Home/End), Cmd+Backspace = kill
+ * the line before the cursor (Ctrl+U). Any other Cmd combo returns `null` so
+ * it stays with the native menu.
+ */
+export function macCmdTextKey(event: KeyboardEventLike): MappedKey | null {
+  if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
+  if (event.key === "ArrowLeft") return { code: { kind: "Home" }, modifiers: 0 };
+  if (event.key === "ArrowRight") return { code: { kind: "End" }, modifiers: 0 };
+  if (event.key === "Backspace") return { code: { kind: "Char", value: "u" }, modifiers: MODIFIER_CONTROL };
+  return null;
+}
+
+/**
  * AltGr detection (terminal-parity spec P0 #2): on Windows, AltGr sets both
  * `ctrlKey` and `altKey`, so left unhandled it would fall into
  * `mapKeyboardEvent`'s Ctrl+Alt `Char` branch above and send a Ctrl+Alt key
