@@ -1,0 +1,20 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Cowbell",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 640,
+        "minHeight": 400,
+        "visible": false,
+        "decorations": true,
+        "backgroundColor": "#1f1f1f",
+        "zoomHotkeysEnabled": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  }
+}

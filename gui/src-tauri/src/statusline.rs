@@ -14,7 +14,10 @@ use crate::commands::ApiError;
 /// bundle also ships under `resources/statusline/*` (spec §2.1) -- so
 /// installing the tap needs no `AppHandle`/resource-path resolution at
 /// runtime, only the bytes that are already part of this binary.
+#[cfg(windows)]
 const TAP_SCRIPT: &[u8] = include_bytes!("../resources/statusline/herdr-usage.ps1");
+#[cfg(not(windows))]
+const TAP_SCRIPT: &[u8] = include_bytes!("../resources/statusline/herdr-usage.sh");
 
 const TRUNCATE_LEN: usize = 120;
 const TAP_COMMAND_MARKER: &str = "herdr-usage";
@@ -74,7 +77,10 @@ pub fn statusline_dir() -> PathBuf {
 }
 
 pub fn tap_script_path() -> PathBuf {
-    statusline_dir().join("herdr-usage.ps1")
+    #[cfg(windows)]
+    return statusline_dir().join("herdr-usage.ps1");
+    #[cfg(not(windows))]
+    return statusline_dir().join("herdr-usage.sh");
 }
 
 pub fn chain_sidecar_path() -> PathBuf {
@@ -109,12 +115,13 @@ pub fn extract_statusline_command(value: &Value) -> Option<&str> {
 /// split into multiple arguments.
 pub fn statusline_command_value(tap_script_path: &Path) -> Value {
     let forward_slash_path = tap_script_path.to_string_lossy().replace('\\', "/");
-    serde_json::json!({
-        "type": "command",
-        "command": format!(
-            "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{forward_slash_path}\""
-        ),
-    })
+    #[cfg(windows)]
+    let command = format!(
+        "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{forward_slash_path}\""
+    );
+    #[cfg(not(windows))]
+    let command = format!("sh \"{forward_slash_path}\"");
+    serde_json::json!({ "type": "command", "command": command })
 }
 
 /// Sets `statusLine` on `settings`, preserving every other key and the key
@@ -567,6 +574,7 @@ mod tests {
 
     // -- statusLine value / preserve-order edit --
 
+    #[cfg(windows)]
     #[test]
     fn statusline_command_uses_forward_slashes_double_quotes_and_no_chain_arg() {
         // Finding #8 (overrides spec §4.3's "no nested quotes"): the path
@@ -585,6 +593,21 @@ mod tests {
         );
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn statusline_command_runs_the_script_with_sh_and_quotes_the_path() {
+        let value = statusline_command_value(Path::new(
+            "/Users/First Last/.claude/statusline/herdr-usage.sh",
+        ));
+        let command = value["command"].as_str().unwrap();
+        assert_eq!(
+            command,
+            "sh \"/Users/First Last/.claude/statusline/herdr-usage.sh\""
+        );
+        assert_eq!(classify_command(Some(command)), StatuslineClass::Herdr);
+    }
+
+    #[cfg(windows)]
     #[test]
     fn statusline_command_quotes_a_path_containing_a_space() {
         let value = statusline_command_value(Path::new(
@@ -659,7 +682,7 @@ mod tests {
         assert!(value["statusLine"]["command"]
             .as_str()
             .unwrap()
-            .contains("herdr-usage.ps1"));
+            .contains(tap_script_path().file_name().unwrap().to_str().unwrap()));
         cleanup(&path);
         drop(scoped);
     }

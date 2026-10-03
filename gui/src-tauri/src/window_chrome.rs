@@ -59,9 +59,9 @@ fn herdr_config_dir() -> std::path::PathBuf {
     if let Ok(dir) = std::env::var("XDG_CONFIG_HOME") {
         return std::path::PathBuf::from(dir).join("herdr");
     }
-    match std::env::var("APPDATA") {
-        Ok(dir) => std::path::PathBuf::from(dir).join("herdr"),
-        Err(_) => std::env::temp_dir().join("herdr"),
+    match crate::socket::config_base() {
+        Some(dir) => std::path::PathBuf::from(dir).join("herdr"),
+        None => std::env::temp_dir().join("herdr"),
     }
 }
 

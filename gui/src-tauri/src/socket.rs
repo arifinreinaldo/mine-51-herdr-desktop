@@ -35,8 +35,24 @@ pub fn client_socket_path() -> PathBuf {
         std::env::var(CLIENT_SOCKET_PATH_ENV_VAR).ok().as_deref(),
         std::env::var(SESSION_ENV_VAR).ok().as_deref(),
         std::env::var("XDG_CONFIG_HOME").ok().as_deref(),
-        std::env::var("APPDATA").ok().as_deref(),
+        config_base().as_deref(),
     )
+}
+
+/// herdr's per-user config base when `XDG_CONFIG_HOME` is unset:
+/// `%APPDATA%` on Windows, `~/.config` on macOS and Linux (herdr's own
+/// `src/config/io.rs`).
+pub fn config_base() -> Option<String> {
+    #[cfg(windows)]
+    {
+        std::env::var("APPDATA").ok()
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("HOME")
+            .ok()
+            .map(|home| format!("{home}/.config"))
+    }
 }
 
 fn client_socket_path_from_env(

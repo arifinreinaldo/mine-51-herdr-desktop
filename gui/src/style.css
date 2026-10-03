@@ -244,6 +244,14 @@ button {
   }
 }
 
+/* macOS: native traffic lights overlay the top-left of the title bar. */
+.mac #window-controls {
+  display: none;
+}
+.mac #titlebar {
+  padding-left: 78px;
+}
+
 #window-controls {
   display: flex;
   height: 100%;

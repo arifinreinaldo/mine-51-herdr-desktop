@@ -107,11 +107,25 @@ pub struct SettingsGetResponse {
     pub corrupted: bool,
 }
 
+/// The per-user app data base: `%APPDATA%` on Windows,
+/// `~/Library/Application Support` on macOS, `~/.local/share` elsewhere.
+pub fn app_data_base() -> PathBuf {
+    #[cfg(windows)]
+    let base = std::env::var_os("APPDATA").map(PathBuf::from);
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME").map(|home| {
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+    });
+    #[cfg(not(any(windows, target_os = "macos")))]
+    let base =
+        std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share"));
+    base.unwrap_or_else(std::env::temp_dir)
+}
+
 fn settings_dir() -> PathBuf {
-    let base = std::env::var("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir());
-    base.join("herdr-gui")
+    app_data_base().join("herdr-gui")
 }
 
 pub fn settings_path() -> PathBuf {
@@ -158,6 +172,10 @@ pub fn load_settings_from(path: &std::path::Path) -> SettingsGetResponse {
 /// effectively impossible even without the caller-side lock below; the
 /// process id covers a second instance racing this one.
 fn unique_tmp_path(path: &Path) -> PathBuf {
+    // macOS's clock has ~1µs resolution, so two threads can read the same
+    // `nanos`; the counter keeps same-process names distinct.
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -166,7 +184,10 @@ fn unique_tmp_path(path: &Path) -> PathBuf {
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("settings.json");
-    path.with_file_name(format!("{base_name}.tmp.{}.{nanos}", std::process::id()))
+    path.with_file_name(format!(
+        "{base_name}.tmp.{}.{nanos}.{seq}",
+        std::process::id()
+    ))
 }
 
 /// Atomically writes `settings` to `path`: a sibling tmp file with a unique

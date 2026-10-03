@@ -23,7 +23,7 @@ use herdr_wire::{
     SurfaceGraphicsScene, SurfaceRect,
 };
 use interprocess::local_socket::tokio::prelude::*;
-use interprocess::local_socket::{GenericNamespaced, ListenerOptions};
+use interprocess::local_socket::{ListenerOptions, Name};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use herdr_gui_lib::conn::Connection;
@@ -38,6 +38,25 @@ const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// (`Os { code: 5, PermissionDenied }`, code review finding #4).
 static SOCKET_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Windows named pipe / Unix filesystem socket, matching `conn.rs`.
+fn listener_name(path: &std::path::Path) -> Name<'static> {
+    #[cfg(windows)]
+    {
+        use interprocess::local_socket::{GenericNamespaced, ToNsName};
+        path.to_string_lossy()
+            .to_string()
+            .to_ns_name::<GenericNamespaced>()
+            .expect("valid local socket name")
+    }
+    #[cfg(unix)]
+    {
+        use interprocess::local_socket::{GenericFilePath, ToFsName};
+        path.to_path_buf()
+            .to_fs_name::<GenericFilePath>()
+            .expect("valid local socket name")
+    }
+}
+
 fn unique_socket_path() -> PathBuf {
     let counter = SOCKET_COUNTER.fetch_add(1, Ordering::SeqCst);
     let unique = format!(
@@ -49,7 +68,12 @@ fn unique_socket_path() -> PathBuf {
             .as_nanos(),
         counter,
     );
-    std::env::temp_dir().join(unique)
+    // sun_path caps at ~104 bytes and macOS's temp_dir is long, so Unix
+    // sockets go under /tmp.
+    #[cfg(unix)]
+    return PathBuf::from("/tmp").join(unique);
+    #[cfg(not(unix))]
+    return std::env::temp_dir().join(unique);
 }
 
 fn expected_hello() -> EndpointClientHello {
@@ -273,11 +297,7 @@ fn bad_patch() -> PaneSurfacePatch {
 #[tokio::test]
 async fn fake_server_drives_handshake_and_patch_resync() {
     let socket_path = unique_socket_path();
-    let name = socket_path
-        .to_string_lossy()
-        .to_string()
-        .to_ns_name::<GenericNamespaced>()
-        .expect("valid local socket name");
+    let name = listener_name(&socket_path);
     let listener = LocalSocketListener::from_options(ListenerOptions::new().name(name))
         .expect("bind fake server");
 
@@ -431,11 +451,7 @@ async fn fake_server_drives_handshake_and_patch_resync() {
 #[tokio::test]
 async fn endpoint_request_serializes_concurrent_calls() {
     let socket_path = unique_socket_path();
-    let name = socket_path
-        .to_string_lossy()
-        .to_string()
-        .to_ns_name::<GenericNamespaced>()
-        .expect("valid local socket name");
+    let name = listener_name(&socket_path);
     let listener = LocalSocketListener::from_options(ListenerOptions::new().name(name))
         .expect("bind fake server");
 

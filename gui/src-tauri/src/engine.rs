@@ -45,20 +45,32 @@ pub enum EngineStatus {
     Broken { path: PathBuf, error: String },
 }
 
-/// `%LOCALAPPDATA%\Programs\Herdr\bin`, the visible junction install.ps1
-/// creates (spec §3.1(2), `install.ps1:726-731`).
-pub fn visible_bin_dir_from(localappdata: Option<&str>) -> PathBuf {
-    let base = localappdata
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    base.join("Programs").join("Herdr").join("bin")
+/// Where herdr's own installer puts the binary. Windows: the visible
+/// junction `%LOCALAPPDATA%\Programs\Herdr\bin` install.ps1 creates (spec
+/// §3.1(2), `install.ps1:726-731`); `base` is `%LOCALAPPDATA%`. macOS and
+/// Linux: `~/.local/bin` (`distribution/install.sh`); `base` is `$HOME`.
+pub fn visible_bin_dir_from(base: Option<&str>) -> PathBuf {
+    let base = base.map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    #[cfg(windows)]
+    return base.join("Programs").join("Herdr").join("bin");
+    #[cfg(not(windows))]
+    return base.join(".local").join("bin");
 }
+
+/// The environment variable `visible_bin_dir_from`'s `base` comes from.
+#[cfg(windows)]
+const BIN_BASE_ENV: &str = "LOCALAPPDATA";
+#[cfg(not(windows))]
+const BIN_BASE_ENV: &str = "HOME";
 
 pub fn visible_bin_dir() -> PathBuf {
-    visible_bin_dir_from(std::env::var("LOCALAPPDATA").ok().as_deref())
+    visible_bin_dir_from(std::env::var(BIN_BASE_ENV).ok().as_deref())
 }
 
+#[cfg(windows)]
 const HERDR_EXE_NAME: &str = "herdr.exe";
+#[cfg(not(windows))]
+const HERDR_EXE_NAME: &str = "herdr";
 
 /// The candidate binary paths in resolution order (spec §3.1): `HERDR_BIN`,
 /// then the visible junction, then every `PATH` directory. Pure function of
@@ -76,9 +88,9 @@ pub fn candidate_paths_from(
     }
     candidates.push(visible_bin_dir_from(localappdata).join(HERDR_EXE_NAME));
     if let Some(path_var) = path_env {
-        for dir in path_var.split(';') {
-            if !dir.is_empty() {
-                candidates.push(PathBuf::from(dir).join(HERDR_EXE_NAME));
+        for dir in std::env::split_paths(path_var) {
+            if !dir.as_os_str().is_empty() {
+                candidates.push(dir.join(HERDR_EXE_NAME));
             }
         }
     }
@@ -86,11 +98,19 @@ pub fn candidate_paths_from(
 }
 
 pub fn candidate_paths() -> Vec<PathBuf> {
-    candidate_paths_from(
+    #[allow(unused_mut)] // only the non-Windows branch below mutates it
+    let mut candidates = candidate_paths_from(
         std::env::var("HERDR_BIN").ok().as_deref(),
-        std::env::var("LOCALAPPDATA").ok().as_deref(),
+        std::env::var(BIN_BASE_ENV).ok().as_deref(),
         std::env::var("PATH").ok().as_deref(),
-    )
+    );
+    // A Finder-launched .app gets only `/usr/bin:/bin:/usr/sbin:/sbin`, so
+    // the Homebrew prefixes (Apple Silicon, then Intel) are tried explicitly.
+    #[cfg(not(windows))]
+    for dir in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        candidates.push(PathBuf::from(dir).join(HERDR_EXE_NAME));
+    }
+    candidates
 }
 
 /// The first candidate `exists` reports as present, if any. Split out from
@@ -242,8 +262,19 @@ const INSTALL_TIMEOUT: Duration = Duration::from_secs(600);
 /// line to `on_line` as it arrives, and keeping the last 20 lines for the
 /// error message on a non-zero exit.
 pub async fn run_install(on_line: impl FnMut(&str)) -> Result<(), InstallError> {
-    let mut cmd = AsyncCommand::new(powershell_exe_path());
-    cmd.args(herdr_install_args());
+    #[cfg(windows)]
+    let cmd = {
+        let mut cmd = AsyncCommand::new(powershell_exe_path());
+        cmd.args(herdr_install_args());
+        cmd
+    };
+    // The one-liner `README.herdr.md` documents for macOS and Linux.
+    #[cfg(not(windows))]
+    let cmd = {
+        let mut cmd = AsyncCommand::new("sh");
+        cmd.args(["-c", "curl -fsSL https://herdr.dev/install.sh | sh"]);
+        cmd
+    };
     run_install_command(cmd, on_line, INSTALL_TIMEOUT).await
 }
 
@@ -380,6 +411,13 @@ pub fn spawn_server(bin: &Path) -> std::io::Result<u32> {
         {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(flags);
+        }
+        // Its own process group, so closing the app (or its terminal)
+        // does not signal the server.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
         }
         let _ = flags;
         cmd.spawn().map(|child| child.id())
@@ -705,9 +743,18 @@ pub async fn node_version() -> Option<String> {
 /// after the command) reproduces exactly that search. `node_version` above
 /// needs none of this, because `node.exe` genuinely exists.
 fn gemini_version_command() -> AsyncCommand {
-    let mut cmd = AsyncCommand::new("cmd.exe");
-    cmd.args(["/d", "/c", "gemini", "--version"]);
-    cmd
+    #[cfg(windows)]
+    {
+        let mut cmd = AsyncCommand::new("cmd.exe");
+        cmd.args(["/d", "/c", "gemini", "--version"]);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = AsyncCommand::new("gemini");
+        cmd.arg("--version");
+        cmd
+    }
 }
 
 /// Wizard step 2's Gemini card detection (spec §4.2: "Gemini is not a
@@ -966,6 +1013,26 @@ mod tests {
 
     // -- binary resolution order (spec §3.1/§3.4, fake filesystem) --
 
+    #[cfg(unix)]
+    #[test]
+    fn candidate_order_is_herdr_bin_then_local_bin_then_path_on_unix() {
+        let candidates = candidate_paths_from(
+            Some("/custom/herdr"),
+            Some("/Users/x"),
+            Some("/opt/homebrew/bin:/usr/bin"),
+        );
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/custom/herdr"),
+                PathBuf::from("/Users/x/.local/bin/herdr"),
+                PathBuf::from("/opt/homebrew/bin/herdr"),
+                PathBuf::from("/usr/bin/herdr"),
+            ]
+        );
+    }
+
+    #[cfg(windows)]
     #[test]
     fn candidate_order_is_herdr_bin_then_junction_then_path() {
         let candidates = candidate_paths_from(
@@ -984,6 +1051,7 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
     #[test]
     fn empty_herdr_bin_env_is_skipped() {
         let candidates = candidate_paths_from(Some(""), Some("C:/AppData"), None);
@@ -1338,8 +1406,33 @@ mod tests {
         assert_eq!(value["kind"], "missing");
     }
 
+    /// A test subprocess: PowerShell on Windows, `sh -c` elsewhere.
+    fn shell_cmd(powershell: &str, sh: &str) -> AsyncCommand {
+        #[cfg(windows)]
+        {
+            let mut cmd = AsyncCommand::new("powershell.exe");
+            cmd.args(["-NoProfile", "-NonInteractive", "-Command", powershell]);
+            cmd
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = powershell;
+            let mut cmd = AsyncCommand::new("sh");
+            cmd.args(["-c", sh]);
+            cmd
+        }
+    }
+
     // -- gemini command builder (finding #7 "gemini detection") --
 
+    #[cfg(not(windows))]
+    #[test]
+    fn gemini_version_command_runs_gemini_directly_off_windows() {
+        let cmd = gemini_version_command();
+        assert_eq!(cmd.as_std().get_program(), std::ffi::OsStr::new("gemini"));
+    }
+
+    #[cfg(windows)]
     #[test]
     fn gemini_version_command_runs_through_cmd_exe_with_the_exact_expected_args() {
         let cmd = gemini_version_command();
@@ -1370,13 +1463,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_install_kills_and_reports_timeout_when_the_process_hangs() {
-        let mut cmd = AsyncCommand::new("powershell.exe");
-        cmd.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "Start-Sleep -Seconds 30",
-        ]);
+        let cmd = shell_cmd("Start-Sleep -Seconds 30", "sleep 30");
         let start = std::time::Instant::now();
         let result = run_install_command(cmd, |_line| {}, Duration::from_millis(300)).await;
         assert!(matches!(result, Err(InstallError::Timeout)));
@@ -1388,13 +1475,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_install_command_succeeds_within_its_timeout() {
-        let mut cmd = AsyncCommand::new("powershell.exe");
-        cmd.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "Write-Output hello",
-        ]);
+        let cmd = shell_cmd("Write-Output hello", "echo hello");
         let mut lines = Vec::new();
         let result = run_install_command(
             cmd,
@@ -1408,13 +1489,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_output_with_timeout_kills_a_hanging_command_and_reports_it() {
-        let mut cmd = AsyncCommand::new("powershell.exe");
-        cmd.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "Start-Sleep -Seconds 30",
-        ]);
+        let mut cmd = shell_cmd("Start-Sleep -Seconds 30", "sleep 30");
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

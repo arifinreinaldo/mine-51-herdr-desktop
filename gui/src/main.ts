@@ -7,6 +7,7 @@
 
 import "./style.css";
 
+import { IS_MAC } from "./shortcuts";
 import { invokeSafe, showErrorNotice } from "./appApi";
 import {
   canvas,
@@ -48,6 +49,10 @@ import { onRenderGuardReleased } from "./ui/renderGuard";
 import { SIDEBAR_RENDER_GUARD_REGION } from "./ui/sidebar";
 import { TerminalRenderer } from "./render/renderer";
 import { wireTitlebarControls } from "./ui/titlebar";
+
+// macOS: native traffic lights (titleBarStyle "Overlay"), so the custom
+// window buttons hide and the title bar clears the lights (`.mac` in style.css).
+if (IS_MAC) document.documentElement.classList.add("mac");
 
 function paintChromeSkeleton(): void {
   sidebarEl.textContent = "";

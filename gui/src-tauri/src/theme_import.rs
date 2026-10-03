@@ -121,10 +121,9 @@ pub struct ThemeImportReport {
 }
 
 pub fn themes_dir() -> PathBuf {
-    let base = std::env::var("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir());
-    base.join("herdr-gui").join("themes")
+    crate::settings::app_data_base()
+        .join("herdr-gui")
+        .join("themes")
 }
 
 // ---------------------------------------------------------------------------

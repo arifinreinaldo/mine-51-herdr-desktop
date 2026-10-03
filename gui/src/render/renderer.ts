@@ -19,7 +19,7 @@ import {
 import { mergeBackgroundRuns } from "./runs";
 import { underlineStyleFromModifier } from "./underline";
 
-export const FONT_STACK = '"Cascadia Mono","Cascadia Code",Consolas,monospace';
+export const FONT_STACK = '"SF Mono",Menlo,"Cascadia Mono","Cascadia Code",Consolas,monospace';
 export const MIN_FONT_SIZE_PX = 10;
 export const MAX_FONT_SIZE_PX = 24;
 export const DEFAULT_FONT_SIZE_PX = 14;

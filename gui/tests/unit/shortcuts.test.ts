@@ -7,7 +7,9 @@ import {
   groupCheatSheetEntriesByMenu,
   isAllowedShortcutClass,
   isPlainCtrlLetter,
+  matchesCombo,
   SHORTCUTS,
+  toMacShortcut,
 } from "../../src/shortcuts";
 
 // Keyboard shortcuts feature (Alt+1..9 tab focus, Ctrl+Shift+1..9 workspace
@@ -217,5 +219,31 @@ describe("cheatSheetEntries / filterCheatSheetEntries / groupCheatSheetEntriesBy
     const groups = groupCheatSheetEntriesByMenu(filtered);
     expect(groups).toHaveLength(1);
     expect(groups[0][0]).toBe("Pane");
+  });
+});
+
+describe("macOS shortcut table (Option types characters, so Alt becomes Cmd)", () => {
+  const mac = SHORTCUTS.map(toMacShortcut);
+
+  it("no combo uses Option", () => {
+    expect(mac.filter((a) => a.combo.alt)).toEqual([]);
+  });
+
+  it("every combo stays in an allowed class and keeps a unique key", () => {
+    expect(mac.filter((a) => !isAllowedShortcutClass(a))).toEqual([]);
+    const keys = mac.map((a) => JSON.stringify([a.combo.ctrl, a.combo.shift, !!a.combo.meta, a.combo.code]));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("Alt+1 becomes Cmd+1 and matches only with Cmd held", () => {
+    const tab1 = mac.find((a) => a.id === "tab.focusByIndex.1");
+    expect(tab1?.display).toBe("Cmd+1");
+    expect(matchesCombo(tab1!.combo, { ctrlKey: false, shiftKey: false, altKey: false, metaKey: true, code: "Digit1" })).toBe(true);
+    expect(matchesCombo(tab1!.combo, { ctrlKey: false, shiftKey: false, altKey: false, code: "Digit1" })).toBe(false);
+  });
+
+  it("Ctrl+Shift combos are untouched", () => {
+    const create = SHORTCUTS.find((a) => a.id === "tab.new")!;
+    expect(toMacShortcut(create)).toBe(create);
   });
 });

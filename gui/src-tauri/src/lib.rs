@@ -273,10 +273,21 @@ fn init_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> {
     Some(guard)
 }
 
-/// `%LOCALAPPDATA%\herdr-gui\logs` (spec §4 "Logging").
+/// `%LOCALAPPDATA%\herdr-gui\logs` on Windows, `~/Library/Logs/herdr-gui`
+/// on macOS (spec §4 "Logging").
 fn log_dir() -> std::path::PathBuf {
-    let base = std::env::var("LOCALAPPDATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir());
-    base.join("herdr-gui").join("logs")
+    #[cfg(target_os = "macos")]
+    let dir = std::env::var_os("HOME").map(|home| {
+        std::path::PathBuf::from(home)
+            .join("Library")
+            .join("Logs")
+            .join("herdr-gui")
+    });
+    #[cfg(not(target_os = "macos"))]
+    let dir = std::env::var_os("LOCALAPPDATA").map(|base| {
+        std::path::PathBuf::from(base)
+            .join("herdr-gui")
+            .join("logs")
+    });
+    dir.unwrap_or_else(|| std::env::temp_dir().join("herdr-gui").join("logs"))
 }

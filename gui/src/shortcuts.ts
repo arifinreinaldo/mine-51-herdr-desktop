@@ -24,6 +24,8 @@ export interface KeyCombo {
   ctrl: boolean;
   shift: boolean;
   alt: boolean;
+  /** Cmd (macOS only); absent means "must not be held". */
+  meta?: boolean;
   /** `KeyboardEvent.code`, e.g. `"KeyN"`, `"Equal"`, `"ArrowDown"`, `"F2"`. */
   code: string;
 }
@@ -349,11 +351,30 @@ function digitRangeShortcuts(
 /** The authoritative shortcut table (see the module doc comment above):
  * the named, single-combo entries plus the two 9-wide "focus by index"
  * ranges (Alt+1..9 for tabs, Ctrl+Shift+1..9 for workspaces). */
-export const SHORTCUTS: readonly ShortcutAction[] = [
+const WINDOWS_SHORTCUTS: readonly ShortcutAction[] = [
   ...NAMED_SHORTCUTS,
   ...digitRangeShortcuts("tab.focusByIndex", "Tab", "Focus Tab", "alt"),
   ...digitRangeShortcuts("workspace.focusByIndex", "Workspace", "Focus Workspace", "ctrlShift"),
 ];
+
+/** On a Mac, Option+key types a character, so every Alt combo becomes the
+ * same combo on Cmd (a terminal never sees Cmd). Ctrl+Shift+* is unchanged. */
+export function toMacShortcut(action: ShortcutAction): ShortcutAction {
+  if (!action.combo.alt) return action;
+  return {
+    ...action,
+    display: action.display.replace("Alt+", "Cmd+"),
+    combo: { ...action.combo, alt: false, meta: true },
+  };
+}
+
+// The webview user agent says "Macintosh"; Node's says "Node.js", so unit tests
+// always exercise the Windows table.
+export const IS_MAC = typeof navigator !== "undefined" && /Macintosh/.test(navigator.userAgent);
+
+export const SHORTCUTS: readonly ShortcutAction[] = IS_MAC
+  ? WINDOWS_SHORTCUTS.map(toMacShortcut)
+  : WINDOWS_SHORTCUTS;
 
 /** The display string of a shortcut (for menu hints and tooltips), by id. */
 export function shortcutDisplay(id: string): string | undefined {
@@ -364,6 +385,7 @@ export interface KeyboardEventLike {
   ctrlKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
+  metaKey?: boolean;
   code: string;
 }
 
@@ -372,6 +394,7 @@ export function matchesCombo(target: KeyCombo, event: KeyboardEventLike): boolea
     target.ctrl === event.ctrlKey &&
     target.shift === event.shiftKey &&
     target.alt === event.altKey &&
+    (target.meta ?? false) === (event.metaKey ?? false) &&
     target.code === event.code
   );
 }
@@ -410,6 +433,7 @@ const ALLOWED_SHIFT_ONLY_CODES = new Set(["Insert", "PageUp", "PageDown", "Home"
  * claims from the terminal. */
 export function isAllowedShortcutClass(action: ShortcutAction): boolean {
   const { ctrl, shift, alt, code } = action.combo;
+  if (action.combo.meta && !ctrl && !alt) return true; // Cmd+* (macOS; a terminal never sees Cmd)
   if (ctrl && shift && !alt) return true; // Ctrl+Shift+* (incl. Ctrl+Shift+Tab, +1..9, +E, +/)
   if (alt && shift && !ctrl) return true; // Alt+Shift+*
   if (ctrl && !shift && !alt && ALLOWED_CTRL_ONLY_CODES.has(code)) return true; // Ctrl+Tab/=/-/0/,
@@ -420,7 +444,7 @@ export function isAllowedShortcutClass(action: ShortcutAction): boolean {
 }
 
 export function isPlainCtrlLetter(combo: KeyCombo): boolean {
-  return combo.ctrl && !combo.shift && !combo.alt && LETTER_CODE.test(combo.code);
+  return combo.ctrl && !combo.shift && !combo.alt && !combo.meta && LETTER_CODE.test(combo.code);
 }
 
 // --------------------------------------------------------------------------
