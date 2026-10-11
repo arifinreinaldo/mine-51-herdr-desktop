@@ -9,6 +9,7 @@ pub mod dispatch;
 pub mod engine;
 pub mod flutter;
 pub mod folder_picker;
+pub mod git;
 pub mod memory;
 pub mod mirror;
 pub mod mirror_tools;
@@ -116,6 +117,11 @@ pub fn run(start: Instant) {
             record::mirror_record_stop,
             record::reveal_in_folder,
             folder_picker::pick_workspace_folder,
+            git::git_status,
+            git::git_diff,
+            git::git_stage,
+            git::git_unstage,
+            git::git_commit,
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,
             notify::notify_agent_done,
