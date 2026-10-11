@@ -99,6 +99,8 @@ export interface SidebarCallbacks {
    * rename UI, not a `window.prompt`, lives in this module now). */
   onRenameWorkspace(workspaceId: string, label: string): void;
   onChangeColor(workspaceId: string, index: number): void;
+  /** Right-click "Open Folder": show the workspace's folder in the file manager. */
+  onOpenFolder(workspaceId: string): void;
   /** A mouse drag dropped the row at caret slot `insertIndex` (0..=count,
    * "insert before the row now at that index"; the same meaning as
    * `workspace.move`'s `insert_index`). */
@@ -263,6 +265,12 @@ function renderRow(
           currentIndex: colorIndex ?? -1,
           onPick: (index) => callbacks.onChangeColor(workspace.workspace_id, index),
         },
+      },
+      {
+        id: "open-folder",
+        label: "Open Folder",
+        separatorBefore: true,
+        onSelect: () => callbacks.onOpenFolder(workspace.workspace_id),
       },
     ];
     openMenu(overlayRoot, { left: x - rootRect.left, top: y - rootRect.top }, items, {

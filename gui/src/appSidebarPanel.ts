@@ -148,6 +148,18 @@ export function renderSidebarNow(): void {
         void api("workspace.focus", { workspace_id: id });
       },
       onCloseWorkspace: closeWorkspace,
+      onOpenFolder: (id) => {
+        // The persisted root (what New Workspace picked) beats
+        // `new_workspace_cwd`, which follows `cd` in the active pane.
+        const folder =
+          appState.settings.workspaceFolders[id] ??
+          appState.snapshot?.workspaces.find((w) => w.workspace_id === id)?.new_workspace_cwd;
+        if (!folder) {
+          showErrorNotice("This workspace has no known folder");
+          return;
+        }
+        void invoke("open_folder", { path: folder }).catch((err) => showErrorNotice(errorMessage(err)));
+      },
       // Finding #14: inline editing in the sidebar row commits the new
       // label itself -- no `window.prompt` anywhere in this flow.
       onRenameWorkspace: (id, label) => {

@@ -94,6 +94,26 @@ pub async fn open_settings(app: AppHandle) -> Result<(), ApiError> {
     }
 }
 
+/// Sidebar `Open Folder`: opens a workspace's folder in the OS file manager.
+/// Only an existing absolute directory; the opener plugin would also launch
+/// files and URLs, so those are refused here.
+#[tauri::command]
+pub async fn open_folder(app: AppHandle, path: String) -> Result<(), ApiError> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.is_absolute() || !p.is_dir() {
+        return Err(ApiError {
+            code: "bad_path".to_string(),
+            message: "Not an existing folder".to_string(),
+        });
+    }
+    app.opener()
+        .open_path(p.to_string_lossy(), None::<&str>)
+        .map_err(|err| ApiError {
+            code: "io_error".to_string(),
+            message: err.to_string(),
+        })
+}
+
 /// `Help ▸ Reconnect` (spec §4): forces the live connection closed so the
 /// background reconnect loop (`dispatch::run_reconnect_loop`) immediately
 /// re-attaches, instead of waiting for the server to actually drop the pipe.

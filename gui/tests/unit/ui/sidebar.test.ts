@@ -33,10 +33,23 @@ function makeCallbacks(overrides: Partial<SidebarCallbacks> = {}): SidebarCallba
     onCloseWorkspace: vi.fn().mockResolvedValue({ groupCloseRequired: false }),
     onRenameWorkspace: vi.fn(),
     onChangeColor: vi.fn(),
+    onOpenFolder: vi.fn(),
     onMoveWorkspace: vi.fn(),
     ...overrides,
   };
 }
+
+describe("sidebar Open Folder menu item", () => {
+  it("row context menu offers Open Folder and passes the workspace id", () => {
+    const callbacks = makeCallbacks();
+    render(callbacks);
+    listEl.querySelector<HTMLElement>(".ws")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    const item = Array.from(overlayRoot.querySelectorAll<HTMLElement>("[role=menuitem]")).find((el) => el.textContent?.includes("Open Folder"));
+    expect(item).toBeTruthy();
+    item!.click();
+    expect(callbacks.onOpenFolder).toHaveBeenCalledWith("w1");
+  });
+});
 
 function workspaces(): SidebarWorkspace[] {
   return [

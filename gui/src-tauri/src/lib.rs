@@ -98,6 +98,7 @@ pub fn run(start: Instant) {
             window_chrome::window_toggle_maximize,
             window_chrome::window_close,
             window_chrome::open_settings,
+            window_chrome::open_folder,
             window_chrome::reconnect,
             settings::settings_get,
             settings::settings_set,
