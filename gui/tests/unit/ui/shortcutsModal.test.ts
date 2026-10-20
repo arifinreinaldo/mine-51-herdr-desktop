@@ -75,4 +75,14 @@ describe("openKeyboardShortcutsModal", () => {
     expect(document.querySelector(".modal-backdrop")).toBeNull();
     expect(document.activeElement).toBe(captureEl);
   });
+
+  it("lists Shift Shift Find File as one static line outside the filtered list", () => {
+    openKeyboardShortcutsModal();
+    const search = document.querySelector<HTMLInputElement>(".shortcuts-modal-search")!;
+    search.value = "xyzzy no such shortcut";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    const line = document.querySelector(".shortcuts-modal-static");
+    expect(line?.textContent).toBe("Find FileShift Shift");
+    expect(line?.querySelector(".key")?.textContent).toBe("Shift Shift");
+  });
 });

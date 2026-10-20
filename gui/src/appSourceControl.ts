@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { errorMessage, invokeSafe, showErrorNotice, showInfoNotice } from "./appApi";
 import {
   diffViewEl,
+  fileViewerEl,
   keyboardCapture,
   sourceControlBodyEl,
   sourceControlBranchEl,
@@ -100,6 +101,7 @@ async function fetchDiff(): Promise<void> {
 function openFile(file: FileChange, staged: boolean): void {
   if (view.kind !== "status") return;
   openDiff = { path: file.path, staged, kind: file.kind, repo: view.status.repo!, untracked: file.kind === "untracked" };
+  fileViewerEl.hidden = true; // file viewer spec §5: the diff and the viewer share #terminal-wrap
   diffViewEl.hidden = false;
   showDiff(null);
   diffViewEl.focus();

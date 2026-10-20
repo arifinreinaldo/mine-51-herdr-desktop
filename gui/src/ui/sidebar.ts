@@ -63,6 +63,8 @@ export interface SidebarWorkspace {
    * today's plain branch line (spec §3's default: "Otherwise it shows the
    * branch as today"). */
   attention?: SidebarAttention;
+  /** The workspace's file tree is open under its row. */
+  filesExpanded?: boolean;
 }
 
 export interface WorkspaceAgentCounts {
@@ -105,6 +107,11 @@ export interface SidebarCallbacks {
    * "insert before the row now at that index"; the same meaning as
    * `workspace.move`'s `insert_index`). */
   onMoveWorkspace(workspaceId: string, insertIndex: number): void;
+  /** The row chevron: show or hide the workspace's file tree. */
+  onToggleFiles(workspaceId: string): void;
+  /** The persistent element that holds the workspace's file tree. Created once per
+   * workspace by the caller; each render re-appends it, so its DOM survives. */
+  filesElement(workspaceId: string): HTMLElement;
 }
 
 function agentLinesFor(
@@ -149,6 +156,19 @@ async function handleCloseConfirmed(
   });
 }
 
+const isolated = new WeakSet<HTMLElement>();
+
+/** Row handlers (focus, Enter/Esc/arrows, context menu, drag) must not see events from inside the tree. */
+function isolateFilesElement(el: HTMLElement): HTMLElement {
+  if (isolated.has(el)) return el;
+  isolated.add(el);
+  el.title = ""; // an empty title stops the row tooltip showing over the tree
+  for (const type of ["click", "dblclick", "contextmenu", "keydown", "pointerdown"]) {
+    el.addEventListener(type, (event) => event.stopPropagation());
+  }
+  return el;
+}
+
 function renderRow(
   workspace: SidebarWorkspace,
   all: readonly SidebarWorkspace[],
@@ -166,6 +186,24 @@ function renderRow(
   if (workspace.focused) row.classList.add("is-selected");
   if (workspace.agent_status === "blocked") row.classList.add("is-blocked");
   row.setAttribute("aria-selected", String(workspace.focused));
+
+  const expanded = workspace.filesExpanded === true;
+  const chevron = document.createElement("span");
+  chevron.className = "ws-chevron";
+  chevron.setAttribute("role", "button");
+  chevron.setAttribute("aria-expanded", String(expanded));
+  chevron.setAttribute("aria-label", expanded ? "Hide files" : "Show files");
+  chevron.tabIndex = -1;
+  const chevronIcon = document.createElement("i");
+  chevronIcon.className = `codicon codicon-chevron-${expanded ? "down" : "right"}`;
+  chevron.appendChild(chevronIcon);
+  row.appendChild(chevron);
+  // The press must not start a drag-reorder (sidebarDrag listens on the row).
+  chevron.addEventListener("pointerdown", (event) => event.stopPropagation());
+  chevron.addEventListener("click", (event) => {
+    event.stopPropagation();
+    callbacks.onToggleFiles(workspace.workspace_id);
+  });
 
   row.appendChild(createStatusDotOrSlot(workspace.agent_status));
 
@@ -227,6 +265,7 @@ function renderRow(
   closeIcon.className = "codicon codicon-close";
   closeBtn.appendChild(closeIcon);
   row.appendChild(closeBtn);
+  if (expanded) row.appendChild(isolateFilesElement(callbacks.filesElement(workspace.workspace_id)));
 
   row.addEventListener("click", (event) => {
     if (closeBtn.contains(event.target as Node)) return;
@@ -400,6 +439,8 @@ export function renderSidebar(
   theme: ThemeColors,
   callbacks: SidebarCallbacks,
 ): void {
+  // Detaching blurs: put focus back on a node that survives (the files tree) after the rebuild.
+  const focused = document.activeElement;
   listEl.textContent = "";
   const attachDrag = createSidebarDrag(listEl, SIDEBAR_RENDER_GUARD_REGION, callbacks.onMoveWorkspace);
   workspaces.forEach((workspace, index) => {
@@ -409,4 +450,7 @@ export function renderSidebar(
     attachDrag(row, index, workspace.workspace_id);
     listEl.appendChild(row);
   });
+  if (focused instanceof HTMLElement && focused.isConnected && listEl.contains(focused) && document.activeElement !== focused) {
+    focused.focus();
+  }
 }

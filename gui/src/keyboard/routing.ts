@@ -30,6 +30,7 @@ import { handleCopyModeKeydown, isCopyModeActive } from "../copyMode";
 import type { KeyboardEventLike, MappedKey } from "../input/keymap";
 import { altGrTextCommit, macCmdTextKey, mapKeyboardEvent } from "../input/keymap";
 import { findShortcut, IS_MAC, type ShortcutAction } from "../shortcuts";
+import { createDoubleShiftTracker } from "./doubleShift";
 
 /** Cmd+C acts on the terminal only while it has focus; in a text field (find
  * bar, dialogs) it must stay the native copy. */
@@ -46,6 +47,11 @@ const TERMINAL_ONLY_IDS = new Set([
 ]);
 import { closeActiveOverlay, isActiveOverlayEscapableFromOutside, isOverlayOpen } from "../ui/overlay";
 
+/** File viewer spec §8.1: inside the viewer, these tab actions act on the file tabs. */
+const FILE_TAB_IDS = new Set(["tab.close", "tab.next", "tab.previous"]);
+/** File viewer spec §7.1: one tracker for the document; every keydown, keyup, pointerdown and wheel feeds it. */
+const doubleShift = createDoubleShiftTracker();
+
 export interface KeyboardRoutingHandlers {
   onShortcut(action: ShortcutAction): void;
   onTerminalKey(mapped: MappedKey): void;
@@ -56,6 +62,10 @@ export interface KeyboardRoutingHandlers {
   /** Terminal-parity spec P0 #2 "AltGr": an AltGr press while the terminal
    * capture has focus, sent as `TextCommit(text)` rather than a `Key` press. */
   onTerminalTextCommit(text: string): void;
+  /** File viewer spec §8.1: a tab action while focus is inside `#file-viewer`. */
+  onFileTabAction(id: string): void;
+  /** File viewer spec §7.1: a double tap on Shift opens Find File. */
+  onDoubleShift(): void;
 }
 
 export function hasTabUiFocus(activeElement: Element | null): boolean {
@@ -81,6 +91,16 @@ export function routeKeydown(
 ): void {
   if (event.isComposing || event.keyCode === 229) return;
 
+  // File viewer spec §7.1: first, so that any other key cancels a pending tap. A pinned
+  // agent popover holds the overlay slot but is not escapable from outside; it must not
+  // block the finder (the finder supersedes it, and it reopens afterwards).
+  // A text field (tab rename, commit box) keeps its Shift taps: the finder would steal focus and commit a half-typed value.
+  const inTextField = activeElement !== keyboardCaptureEl && !!(activeElement as Element | null)?.matches?.("input, textarea, [contenteditable]");
+  if (doubleShift.keydown(event, event.timeStamp) && !inTextField && !(isOverlayOpen() && isActiveOverlayEscapableFromOutside())) {
+    handlers.onDoubleShift();
+    return;
+  }
+
   if (isPasteOverride(event) && activeElement === keyboardCaptureEl) {
     event.preventDefault();
     handlers.onPasteOverride();
@@ -94,7 +114,9 @@ export function routeKeydown(
   const shortcut = terminalOnly && activeElement !== keyboardCaptureEl ? undefined : found;
   if (shortcut) {
     event.preventDefault();
-    handlers.onShortcut(shortcut);
+    // `closest?.`: the unit tests pass plain objects, not DOM elements.
+    if (FILE_TAB_IDS.has(shortcut.id) && activeElement?.closest?.("#file-viewer")) handlers.onFileTabAction(shortcut.id);
+    else handlers.onShortcut(shortcut);
     return;
   }
 
@@ -170,8 +192,14 @@ export function routeKeydown(
   // Step 4: let it bubble to the focused chrome widget's own handler.
 }
 
-/** Installs the single capture-phase `document` `keydown` listener and
- * returns a disposer. */
+/** Feeds a keyup to the double-Shift tracker. Exported for the unit tests. */
+export function routeKeyup(event: KeyboardEvent): void {
+  doubleShift.keyup(event, event.timeStamp);
+}
+
+/** Installs the single capture-phase `document` `keydown` listener, plus the
+ * `keyup`, `pointerdown` and `wheel` listeners the double-Shift tracker needs,
+ * and returns a disposer. */
 export function installKeyboardRouting(
   keyboardCaptureEl: Element,
   handlers: KeyboardRoutingHandlers,
@@ -179,6 +207,16 @@ export function installKeyboardRouting(
   const listener = (event: KeyboardEvent) => {
     routeKeydown(event, keyboardCaptureEl, document.activeElement, handlers);
   };
+  // pointerdown, not mousedown: a pointerdown preventDefault suppresses mousedown.
+  const cancelDoubleShift = (): void => doubleShift.cancel();
   document.addEventListener("keydown", listener, true);
-  return () => document.removeEventListener("keydown", listener, true);
+  document.addEventListener("keyup", routeKeyup, true);
+  document.addEventListener("pointerdown", cancelDoubleShift, true);
+  document.addEventListener("wheel", cancelDoubleShift, { capture: true, passive: true });
+  return () => {
+    document.removeEventListener("keydown", listener, true);
+    document.removeEventListener("keyup", routeKeyup, true);
+    document.removeEventListener("pointerdown", cancelDoubleShift, true);
+    document.removeEventListener("wheel", cancelDoubleShift, true);
+  };
 }

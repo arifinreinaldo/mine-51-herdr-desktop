@@ -354,10 +354,10 @@ button {
 
 .ws {
   position: relative;
-  height: 44px;
-  padding: 4px 12px 4px 10px;
+  min-height: 44px;
+  padding: 4px 12px 4px 4px;
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 16px 18px 1fr;
   column-gap: 6px;
   align-content: center;
   cursor: pointer;
@@ -383,15 +383,17 @@ button {
   background: var(--herdr-status-blocked);
 }
 
+/* Row 1 holds the name; the files tree (when expanded) is the last grid row. */
 .ws .status-dot,
 .ws .status-dot-slot {
+  grid-column: 2;
   grid-row: 1;
   align-self: center;
   justify-self: center;
 }
 
 .ws .ws-name-row {
-  grid-column: 2;
+  grid-column: 3;
   display: flex;
   align-items: center;
   min-width: 0;
@@ -417,7 +419,7 @@ button {
 }
 
 .ws .ws-meta {
-  grid-column: 2;
+  grid-column: 3;
   font-size: 12px;
   color: var(--descriptionForeground);
   display: flex;
@@ -446,6 +448,31 @@ button {
 .ws .ws-ahead-behind {
   margin-left: 4px;
   font-variant-numeric: tabular-nums;
+}
+
+.ws .ws-chevron {
+  grid-column: 1;
+  /* Spans the name line and the branch line, so it centers on the whole row. */
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 14px;
+  color: var(--descriptionForeground);
+  opacity: 0.7;
+}
+
+.ws .ws-chevron:hover {
+  color: var(--foreground);
+  opacity: 1;
+}
+
+.ws .ws-files {
+  grid-column: 1 / -1;
+  cursor: default;
+  /* Bleeds over the row padding so the row's hover and selection colors stop at the workspace line. */
+  margin: 2px -12px -4px -4px;
+  padding-left: 24px;
+  background: var(--sideBar-background);
+  color: var(--foreground);
 }
 
 .ws .ws-close {
@@ -1391,14 +1418,16 @@ body.has-workspace-colors #tab-strip {
   margin-bottom: 10px;
 }
 
-.modal-shortcut-row {
+.modal-shortcut-row,
+.shortcuts-modal-static {
   display: flex;
   justify-content: space-between;
   padding: 3px 0;
   border-bottom: 1px solid var(--menu-separatorBackground);
 }
 
-.modal-shortcut-row .key {
+.modal-shortcut-row .key,
+.shortcuts-modal-static .key {
   color: var(--descriptionForeground);
   font-variant-numeric: tabular-nums;
 }
@@ -1813,6 +1842,50 @@ body.mirror-tools {
   text-transform: uppercase;
   color: var(--descriptionForeground);
   margin: 12px 0 4px;
+}
+
+/* Find File dialog (file viewer spec §7.2). */
+.modal.quick-open {
+  width: 600px;
+}
+
+.qo-list {
+  margin-top: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.qo-row {
+  display: flex;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.qo-row.is-selected {
+  background: var(--list-activeSelectionBackground);
+  color: var(--list-activeSelectionForeground);
+}
+
+.qo-hit {
+  color: var(--focusBorder);
+  font-weight: 600;
+}
+
+.qo-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--descriptionForeground);
+}
+
+.qo-status,
+.qo-footer {
+  padding: 4px 6px;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
 }
 
 .shortcuts-modal-group:first-of-type {
@@ -2533,7 +2606,8 @@ body.mirror-tools {
 /* connection banner (5).                                                 */
 /* ---------------------------------------------------------------------- */
 
-#diff-view {
+#diff-view,
+#file-viewer {
   position: absolute;
   inset: 0;
   z-index: 4;
@@ -2543,11 +2617,13 @@ body.mirror-tools {
   color: var(--terminal-foreground);
 }
 
-#diff-view[hidden] {
+#diff-view[hidden],
+#file-viewer[hidden] {
   display: none;
 }
 
-#diff-view:focus {
+#diff-view:focus,
+#file-viewer:focus {
   outline: none;
 }
 
@@ -2627,4 +2703,196 @@ body.mirror-tools {
 .diff-view__note {
   padding: 8px 12px;
   color: var(--descriptionForeground);
+}
+
+/* ---------------------------------------------------------------------- */
+/* File tree (file viewer spec §6).                                        */
+/* ---------------------------------------------------------------------- */
+
+/* Review W5: two `.ws` rows (44px, style.css:357). With Files and Source Control both open, the workspace list never collapses to 0. */
+#sidebar-list {
+  min-height: 88px;
+}
+
+.ft-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding-left: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ft-row:hover {
+  background: var(--list-hoverBackground);
+}
+
+.ft-row:focus {
+  outline: 1px solid var(--focusBorder);
+  outline-offset: -1px;
+}
+
+.ft-guide {
+  width: 12px;
+  align-self: stretch;
+  flex-shrink: 0;
+  border-left: 1px solid var(--sideBar-border);
+}
+
+.ft-chevron {
+  width: 16px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.ft-ext {
+  min-width: 16px;
+  font-size: 10px;
+  color: var(--descriptionForeground);
+  text-align: center;
+}
+
+.ft-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-row--error {
+  cursor: default;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+  white-space: normal;
+}
+
+/* ---------------------------------------------------------------------- */
+/* File viewer (file viewer spec §8).                                     */
+/* ---------------------------------------------------------------------- */
+
+/* JetBrains Darcula, spec §8.4. The one exception to the rule in this file's header, as the spec requires. */
+:root {
+  --syntax-keyword: #cc7832;
+  --syntax-string: #6a8759;
+  --syntax-number: #6897bb;
+  --syntax-comment: #808080;
+}
+
+.tok-keyword {
+  color: var(--syntax-keyword);
+}
+
+.tok-string {
+  color: var(--syntax-string);
+}
+
+.tok-number {
+  color: var(--syntax-number);
+}
+
+.tok-comment {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.fv-tabs {
+  display: flex;
+  height: 30px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--tab-border);
+  font-size: var(--fs-xs);
+}
+
+.fv-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--descriptionForeground);
+  border-right: 1px solid var(--tab-border);
+}
+
+.fv-tab.is-active {
+  color: var(--foreground);
+  box-shadow: inset 0 -2px var(--focusBorder);
+}
+
+.fv-tab__ext,
+.fv-tab__dir {
+  color: var(--descriptionForeground);
+}
+
+.fv-tab__close {
+  visibility: hidden;
+  font-size: 14px;
+}
+
+.fv-tab:hover .fv-tab__close,
+.fv-tab.is-active .fv-tab__close {
+  visibility: visible;
+}
+
+.fv-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.fv-lines {
+  width: max-content;
+  min-width: 100%;
+  padding: 4px 0;
+}
+
+.fv-line {
+  display: flex;
+  white-space: pre;
+}
+
+.fv-line.is-current {
+  background: var(--list-hoverBackground);
+}
+
+.fv-line__no {
+  position: sticky;
+  left: 0;
+  width: var(--fv-gutter);
+  flex-shrink: 0;
+  padding-right: 1ch;
+  margin-right: 1ch;
+  text-align: right;
+  color: var(--descriptionForeground);
+  background: var(--terminal-background);
+  border-right: 1px solid var(--tab-border);
+  user-select: none;
+}
+
+.fv-line.is-current .fv-line__no {
+  color: var(--foreground);
+  background: var(--list-hoverBackground);
+}
+
+.fv-notice {
+  padding: 8px 12px;
+  color: var(--descriptionForeground);
+}
+
+.fv-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--tab-border);
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.fv-readonly {
+  margin-left: auto;
 }

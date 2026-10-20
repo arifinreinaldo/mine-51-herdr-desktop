@@ -17,6 +17,7 @@ import {
 } from "./appLookups";
 import { applySidebarVisibility } from "./appSidebarResize";
 import { applySourceControlVisibility } from "./appSourceControl";
+import { hideFileViewer } from "./appFiles";
 import { focusSidebarForKeyboard } from "./appSidebarPanel";
 import { appState, persistSettings, tabMru } from "./appState";
 import { focusAgentSequence, openOrRefreshAgentPopover } from "./appStatusBar";
@@ -419,7 +420,10 @@ const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   // Terminal-parity spec.
   "pane.copy": () => void copyLastSelection(), // P0 #1
   "pane.paste": onPasteOverride, // P0 #4 "Shift+Insert", same as Ctrl+Shift+V
-  "pane.find": () => openFindBar(), // P1 #7
+  "pane.find": () => {
+    hideFileViewer(); // the find bar searches the terminal, which the viewer covers
+    openFindBar();
+  }, // P1 #7
   "pane.clear": clearFocusedPane, // P1 #12
   "pane.copyMode": enterCopyMode, // P1 #8
   "pane.scrollPageUp": () => void scrollFocusedPaneByPage("up"), // P1 #10

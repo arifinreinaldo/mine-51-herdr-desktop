@@ -57,6 +57,16 @@ export function openKeyboardShortcutsModal(): () => void {
     list.className = "shortcuts-modal-list";
     body.appendChild(list);
 
+    // File viewer spec §7.1: a modifier-only gesture, so the shortcut table cannot hold it.
+    const findFile = document.createElement("div");
+    findFile.className = "shortcuts-modal-static";
+    findFile.append("Find File");
+    const findFileKey = document.createElement("span");
+    findFileKey.className = "key";
+    findFileKey.textContent = "Shift Shift";
+    findFile.appendChild(findFileKey);
+    body.appendChild(findFile);
+
     renderList(list, "");
     search.addEventListener("input", () => renderList(list, search.value));
     // Deferred: `openModal` hasn't appended `backdrop` to `document.body`

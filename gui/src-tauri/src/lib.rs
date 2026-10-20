@@ -7,6 +7,7 @@ pub mod commands;
 pub mod conn;
 pub mod dispatch;
 pub mod engine;
+pub mod files;
 pub mod flutter;
 pub mod folder_picker;
 pub mod git;
@@ -123,6 +124,9 @@ pub fn run(start: Instant) {
             git::git_stage,
             git::git_unstage,
             git::git_commit,
+            files::fs_list_dir,
+            files::fs_read_text,
+            files::fs_list_files,
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,
             notify::notify_agent_done,

@@ -36,6 +36,7 @@ import {
 } from "./appMenuBar";
 import { appState, doneDetector, statusAge } from "./appState";
 import { renderSidebarNow } from "./appSidebarPanel";
+import { fileTabAction, initFiles, openFindFile } from "./appFiles";
 import { initSourceControl } from "./appSourceControl";
 import { applySidebarVisibility, applySidebarWidth, wireNewWorkspaceControls, wireSidebarResize } from "./appSidebarResize";
 import { refreshAgentPopoverIfOpen, wireUsageRefresh } from "./appStatusBar";
@@ -149,7 +150,14 @@ async function main(): Promise<void> {
   wireMenuBarNow();
   await wireFlutterRun();
   wirePerfHudToggle();
-  installKeyboardRouting(keyboardCapture, { onShortcut, onTerminalKey, onPasteOverride, onTerminalTextCommit });
+  installKeyboardRouting(keyboardCapture, {
+    onShortcut,
+    onTerminalKey,
+    onPasteOverride,
+    onTerminalTextCommit,
+    onFileTabAction: fileTabAction,
+    onDoubleShift: openFindFile,
+  });
   wireFocusReporting();
   wireDragDropFiles((paths) => void installApks(paths));
   // Phase 1.6 spec §6.2 "No painting while minimized": WebView2 reports a
@@ -161,6 +169,7 @@ async function main(): Promise<void> {
 
   await wireEvents();
   await initSourceControl();
+  await initFiles();
   await subscribeSurface();
   void initAutostartState();
   // Phase 1.6 addendum §11 item 2: no first-run auto-open. The Setup wizard

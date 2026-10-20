@@ -5,7 +5,7 @@
 // `document.getElementById(...)` lookups.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { hasTabUiFocus, routeKeydown, type KeyboardRoutingHandlers } from "../../../src/keyboard/routing";
+import { hasTabUiFocus, installKeyboardRouting, routeKeydown, routeKeyup, type KeyboardRoutingHandlers } from "../../../src/keyboard/routing";
 import { closeActiveOverlay, openOverlay } from "../../../src/ui/overlay";
 
 function fakeElement(classes: string[] = []): Element {
@@ -34,11 +34,15 @@ function fakeHandlers(): KeyboardRoutingHandlers & {
   terminalKeys: unknown[];
   pastes: number;
   textCommits: string[];
+  fileTabActions: string[];
+  doubleShifts: number;
 } {
   const shortcuts: string[] = [];
   const terminalKeys: unknown[] = [];
   const textCommits: string[] = [];
+  const fileTabActions: string[] = [];
   let pastes = 0;
+  let doubleShifts = 0;
   return {
     onShortcut: (a) => shortcuts.push(a.id),
     onTerminalKey: (m) => terminalKeys.push(m),
@@ -46,11 +50,19 @@ function fakeHandlers(): KeyboardRoutingHandlers & {
       pastes++;
     },
     onTerminalTextCommit: (text) => textCommits.push(text),
+    onFileTabAction: (id) => fileTabActions.push(id),
+    onDoubleShift: () => {
+      doubleShifts++;
+    },
     shortcuts,
     terminalKeys,
     textCommits,
+    fileTabActions,
     get pastes() {
       return pastes;
+    },
+    get doubleShifts() {
+      return doubleShifts;
     },
   };
 }
@@ -231,6 +243,32 @@ describe("routeKeydown", () => {
     expect(handlers.shortcuts).toEqual(["pane.paste"]);
   });
 
+  // File viewer spec §8.1: while focus is inside #file-viewer, the tab keys act on the file tabs.
+  it("tab.close, tab.next and tab.previous go to the file tabs while focus is inside #file-viewer", () => {
+    const capture = fakeElement();
+    const viewer = document.createElement("div");
+    viewer.id = "file-viewer";
+    const inner = document.createElement("div");
+    viewer.appendChild(inner);
+    const handlers = fakeHandlers();
+    routeKeydown(fakeEvent({ ctrlKey: true, shiftKey: true, code: "KeyW" }), capture, inner, handlers);
+    routeKeydown(fakeEvent({ ctrlKey: true, key: "Tab", code: "Tab" }), capture, viewer, handlers);
+    routeKeydown(fakeEvent({ ctrlKey: true, shiftKey: true, key: "Tab", code: "Tab" }), capture, viewer, handlers);
+    expect(handlers.fileTabActions).toEqual(["tab.close", "tab.next", "tab.previous"]);
+    expect(handlers.shortcuts).toEqual([]);
+    routeKeydown(fakeEvent({ ctrlKey: true, shiftKey: true, code: "KeyW" }), capture, capture, handlers);
+    expect(handlers.shortcuts).toEqual(["tab.close"]);
+  });
+
+  it("other shortcuts inside #file-viewer still reach onShortcut", () => {
+    const viewer = document.createElement("div");
+    viewer.id = "file-viewer";
+    const handlers = fakeHandlers();
+    routeKeydown(fakeEvent({ ctrlKey: true, shiftKey: true, code: "KeyN" }), fakeElement(), viewer, handlers);
+    expect(handlers.shortcuts).toEqual(["workspace.new"]);
+    expect(handlers.fileTabActions).toEqual([]);
+  });
+
   // Finding #4: an overlay (menu/popover/modal/confirm) that opened without
   // moving keyboard focus off the terminal capture (a hover-opened popover,
   // an auto-opened agent popover) must not have Esc forwarded to the
@@ -299,5 +337,104 @@ describe("routeKeydown", () => {
       expect(handlers.terminalKeys).toEqual([]);
       expect(handlers.shortcuts).toEqual([]);
     });
+  });
+});
+
+// File viewer spec §7.1: double-Shift opens Find File from any focus target.
+describe("double-Shift", () => {
+  afterEach(() => {
+    closeActiveOverlay();
+  });
+
+  const shift = (timeStamp: number) => fakeEvent({ key: "Shift", code: "ShiftLeft", shiftKey: true, timeStamp });
+  const keyH = (timeStamp: number) => fakeEvent({ key: "H", code: "KeyH", shiftKey: true, timeStamp });
+
+  function doubleTap(capture: Element, handlers: ReturnType<typeof fakeHandlers>, t0: number): void {
+    routeKeydown(shift(t0), capture, capture, handlers);
+    routeKeyup(shift(t0 + 60));
+    routeKeydown(shift(t0 + 200), capture, capture, handlers);
+  }
+
+  it("opens Find File from the terminal capture and sends nothing to the terminal", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    doubleTap(capture, handlers, 1_000);
+    expect(handlers.doubleShifts).toBe(1);
+    expect(handlers.terminalKeys).toEqual([]);
+  });
+
+  it("does not fire while an overlay is open", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    openOverlay(vi.fn());
+    doubleTap(capture, handlers, 10_000);
+    expect(handlers.doubleShifts).toBe(0);
+  });
+
+  it("still fires over a pinned agent popover (escapableFromOutside: false)", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    openOverlay(vi.fn(), { escapableFromOutside: false });
+    doubleTap(capture, handlers, 20_000);
+    expect(handlers.doubleShifts).toBe(1);
+  });
+
+  it("does not fire while typing in a text field, but fires from other non-capture focus", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    const tap = (target: Element, t0: number) => {
+      routeKeydown(shift(t0), capture, target, handlers);
+      routeKeyup(shift(t0 + 60));
+      routeKeydown(shift(t0 + 200), capture, target, handlers);
+    };
+    const input = document.createElement("input");
+    tap(input, 30_000);
+    expect(handlers.doubleShifts).toBe(0);
+    tap(document.createElement("div"), 40_000);
+    expect(handlers.doubleShifts).toBe(1);
+  });
+
+  // Review W7: without the H cancel, each of these two sequences would fire.
+  it("Shift↓ H↓ Shift↑ then Shift↓ (typing a capital) does not fire", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    routeKeydown(shift(30_000), capture, capture, handlers);
+    routeKeydown(keyH(30_020), capture, capture, handlers);
+    routeKeyup(shift(30_050));
+    routeKeydown(shift(30_300), capture, capture, handlers);
+    expect(handlers.doubleShifts).toBe(0);
+  });
+
+  it("Shift↓ Shift↑ H↓ Shift↓ does not fire", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    routeKeydown(shift(40_000), capture, capture, handlers);
+    routeKeyup(shift(40_030));
+    routeKeydown(keyH(40_060), capture, capture, handlers);
+    routeKeydown(shift(40_100), capture, capture, handlers);
+    expect(handlers.doubleShifts).toBe(0);
+  });
+
+  it("installKeyboardRouting: a wheel turn or a pointer press between the taps cancels them", () => {
+    const handlers = fakeHandlers();
+    const dispose = installKeyboardRouting(document.createElement("textarea"), handlers);
+    const key = (type: string) =>
+      document.dispatchEvent(new KeyboardEvent(type, { key: "Shift", code: "ShiftLeft", shiftKey: type === "keydown" }));
+    try {
+      for (const between of ["wheel", "pointerdown"]) {
+        key("keydown");
+        key("keyup");
+        document.dispatchEvent(new Event(between));
+        key("keydown"); // tap 1 again, no fire
+        document.dispatchEvent(new Event(between)); // clear before the next round
+      }
+      expect(handlers.doubleShifts).toBe(0);
+      key("keydown");
+      key("keyup");
+      key("keydown");
+      expect(handlers.doubleShifts).toBe(1);
+    } finally {
+      dispose();
+    }
   });
 });

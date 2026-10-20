@@ -54,7 +54,7 @@ pub struct GitDiff {
 }
 
 const DIFF_CAP_BYTES: usize = 2 * 1024 * 1024;
-const GIT_TIMEOUT: Duration = Duration::from_secs(15);
+pub(crate) const GIT_TIMEOUT: Duration = Duration::from_secs(15);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 const STDERR_MAX_CHARS: usize = 2000;
 
@@ -209,12 +209,12 @@ fn finish_diff(stdout: &[u8]) -> GitDiff {
     }
 }
 
-struct GitOutput {
-    code: Option<i32>,
-    stdout: Vec<u8>,
+pub(crate) struct GitOutput {
+    pub(crate) code: Option<i32>,
+    pub(crate) stdout: Vec<u8>,
     stderr: String,
     /// The stdout read stopped at its cap.
-    capped: bool,
+    pub(crate) capped: bool,
 }
 
 /// Reads `pipe` in 64 KiB chunks into a shared buffer. It stops at EOF, at a
@@ -250,7 +250,7 @@ fn spawn_reader(
 
 /// Runs every git call (spec §3.1). A non-zero exit is not an error here;
 /// the caller maps it.
-async fn run_git(
+pub(crate) async fn run_git(
     dir: &str,
     args: &[&str],
     stdin: Option<&[u8]>,

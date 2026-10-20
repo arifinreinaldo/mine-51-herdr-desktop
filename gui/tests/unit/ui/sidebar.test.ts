@@ -35,6 +35,8 @@ function makeCallbacks(overrides: Partial<SidebarCallbacks> = {}): SidebarCallba
     onChangeColor: vi.fn(),
     onOpenFolder: vi.fn(),
     onMoveWorkspace: vi.fn(),
+    onToggleFiles: vi.fn(),
+    filesElement: () => document.createElement("div"),
     ...overrides,
   };
 }
@@ -575,5 +577,59 @@ describe("sidebar drag to reorder workspaces", () => {
     pointer(w3, "pointercancel", 10);
     expect(callbacks.onMoveWorkspace).not.toHaveBeenCalled();
     expect(isRenderGuarded(SIDEBAR_RENDER_GUARD_REGION)).toBe(false);
+  });
+});
+
+describe("sidebar file tree under a row", () => {
+  function renderExpanded(callbacks: SidebarCallbacks, expanded = true): void {
+    const ws = workspaces().map((w) => ({ ...w, filesExpanded: expanded }));
+    renderSidebar(listEl, overlayRoot, ws, new Map(), {}, DARK_MODERN_COLORS, callbacks);
+  }
+
+  it("the chevron toggles files and does not focus the workspace", () => {
+    const callbacks = makeCallbacks();
+    render(callbacks);
+    listEl.querySelector<HTMLElement>(".ws-chevron")!.click();
+    expect(callbacks.onToggleFiles).toHaveBeenCalledWith("w1");
+    expect(callbacks.onFocusWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("an expanded row ends with the files element; a collapsed row has none", () => {
+    const files = document.createElement("div");
+    renderExpanded(makeCallbacks({ filesElement: () => files }));
+    const row = listEl.querySelector<HTMLElement>(".ws")!;
+    expect(row.lastElementChild).toBe(files);
+    expect(row.querySelector(".ws-chevron")!.getAttribute("aria-expanded")).toBe("true");
+    expect(listEl.children[0]).toBe(row);
+    renderExpanded(makeCallbacks({ filesElement: () => files }), false);
+    expect(files.isConnected).toBe(false);
+  });
+
+  it("keeps the same files node across renders and restores focus inside it", () => {
+    const files = document.createElement("div");
+    const btn = document.createElement("button");
+    files.appendChild(btn);
+    const callbacks = makeCallbacks({ filesElement: () => files });
+    renderExpanded(callbacks);
+    btn.focus();
+    expect(document.activeElement).toBe(btn);
+    renderExpanded(callbacks);
+    expect(btn.parentElement).toBe(files);
+    expect(files.isConnected).toBe(true);
+    expect(document.activeElement).toBe(btn);
+  });
+
+  it("click and keys inside the files element do not reach the row", () => {
+    const files = document.createElement("div");
+    const callbacks = makeCallbacks({ filesElement: () => files });
+    renderExpanded(callbacks);
+    files.click();
+    for (const key of ["Enter", "ArrowDown"]) {
+      files.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    }
+    files.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    expect(callbacks.onFocusWorkspace).not.toHaveBeenCalled();
+    expect(overlayRoot.querySelector("[role=menuitem]")).toBeNull();
+    expect(files.title).toBe("");
   });
 });

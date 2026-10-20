@@ -5,6 +5,7 @@ import { agentDisplayName } from "./agentText";
 import { api, errorMessage, showErrorNotice } from "./appApi";
 import { requireConnected } from "./appConnectionGuard";
 import { overlayRoot, sidebarEl } from "./appDom";
+import { isFilesExpanded, toggleWorkspaceFiles, workspaceFilesElement } from "./appFiles";
 import { currentThemeDef, tabLabel, updateWorkspaceColorTitlebarVar } from "./appLookups";
 import { appState, persistSettings, statusAge } from "./appState";
 import { formatAge, newestAgeMs, oldestAgeMs } from "./notifications/statusAge";
@@ -132,6 +133,7 @@ export function renderSidebarNow(): void {
     git_ahead_behind: w.git_ahead_behind,
     worktree_key: w.worktree?.key ?? null,
     attention: attentionByWorkspace.get(w.workspace_id),
+    filesExpanded: isFilesExpanded(w.workspace_id),
   }));
   renderSidebar(
     sidebarEl,
@@ -148,6 +150,11 @@ export function renderSidebarNow(): void {
         void api("workspace.focus", { workspace_id: id });
       },
       onCloseWorkspace: closeWorkspace,
+      onToggleFiles: (id) => {
+        toggleWorkspaceFiles(id);
+        renderSidebarNow();
+      },
+      filesElement: workspaceFilesElement,
       onOpenFolder: (id) => {
         // The persisted root (what New Workspace picked) beats
         // `new_workspace_cwd`, which follows `cd` in the active pane.
