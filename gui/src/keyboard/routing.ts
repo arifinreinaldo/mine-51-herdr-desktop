@@ -31,9 +31,19 @@ import type { KeyboardEventLike, MappedKey } from "../input/keymap";
 import { altGrTextCommit, macCmdTextKey, mapKeyboardEvent } from "../input/keymap";
 import { findShortcut, IS_MAC, type ShortcutAction } from "../shortcuts";
 
-/** Cmd+C / Cmd+V act on the terminal only while it has focus; in a text field
- * (find bar, dialogs) they must stay the native copy and paste. */
-const TERMINAL_ONLY_MAC_IDS = new Set(["pane.copy", "pane.paste"]);
+/** Cmd+C acts on the terminal only while it has focus; in a text field (find
+ * bar, dialogs) it must stay the native copy. */
+const TERMINAL_ONLY_MAC_IDS = new Set(["pane.copy"]);
+/** Paste and the scrollback keys act on the terminal only while it has focus,
+ * on every OS: in a text field (find bar, dialogs, the commit box) Shift+Insert,
+ * Shift+PgUp/PgDn/Home/End and Cmd+V/Up/Down must stay native. */
+const TERMINAL_ONLY_IDS = new Set([
+  "pane.paste",
+  "pane.scrollPageUp",
+  "pane.scrollPageDown",
+  "pane.scrollToTop",
+  "pane.scrollToBottom",
+]);
 import { closeActiveOverlay, isActiveOverlayEscapableFromOutside, isOverlayOpen } from "../ui/overlay";
 
 export interface KeyboardRoutingHandlers {
@@ -79,10 +89,9 @@ export function routeKeydown(
 
   const hasTabFocus = hasTabUiFocus(activeElement);
   const found = findShortcut(event, hasTabFocus);
-  const shortcut =
-    found && IS_MAC && TERMINAL_ONLY_MAC_IDS.has(found.id) && activeElement !== keyboardCaptureEl
-      ? undefined
-      : found;
+  const terminalOnly =
+    found && (TERMINAL_ONLY_IDS.has(found.id) || (IS_MAC && TERMINAL_ONLY_MAC_IDS.has(found.id)));
+  const shortcut = terminalOnly && activeElement !== keyboardCaptureEl ? undefined : found;
   if (shortcut) {
     event.preventDefault();
     handlers.onShortcut(shortcut);

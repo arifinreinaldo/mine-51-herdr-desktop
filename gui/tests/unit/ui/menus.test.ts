@@ -40,6 +40,8 @@ function fakeContext(): MenuBarContext {
     onSetAgentSort: noop,
     sidebarVisible: true,
     onToggleSidebar: noop,
+    sourceControlOpen: false,
+    onToggleSourceControl: noop,
     themes: [{ id: "dark-modern", label: "Dark Modern", kind: "dark", colors: DARK_MODERN_COLORS }],
     currentThemeId: "dark-modern",
     onSelectTheme: noop,

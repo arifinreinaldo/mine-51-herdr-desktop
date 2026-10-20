@@ -178,6 +178,13 @@ const NAMED_SHORTCUTS: readonly ShortcutAction[] = [
     combo: combo(true, true, false, "KeyB"),
   },
   {
+    id: "view.sourceControl",
+    menu: "View",
+    label: "Source Control",
+    display: "Ctrl+Shift+G",
+    combo: combo(true, true, false, "KeyG"),
+  },
+  {
     id: "view.zoomIn",
     menu: "View",
     label: "Zoom In",
@@ -440,6 +447,7 @@ const MAC_ENTRIES: Readonly<Record<string, MacEntry>> = {
   "agents.jumpToNextNeedingAttention": { combo: cmd("KeyJ") },
   "agents.showList": { combo: cmd("KeyA", { shift: true }) },
   "view.toggleSidebar": { combo: cmd("KeyB") },
+  "view.sourceControl": { combo: cmd("KeyG", { shift: true }) },
   "view.focusSidebar": { combo: cmd("KeyE", { shift: true }) },
   "view.zoomIn": { combo: cmd("Equal"), altCombos: [cmd("Equal", { shift: true })] }, // Cmd+= and Cmd++
   "view.zoomOut": { combo: cmd("Minus") },

@@ -36,6 +36,7 @@ import {
 } from "./appMenuBar";
 import { appState, doneDetector, statusAge } from "./appState";
 import { renderSidebarNow } from "./appSidebarPanel";
+import { initSourceControl } from "./appSourceControl";
 import { applySidebarVisibility, applySidebarWidth, wireNewWorkspaceControls, wireSidebarResize } from "./appSidebarResize";
 import { refreshAgentPopoverIfOpen, wireUsageRefresh } from "./appStatusBar";
 import { renderTabsNow, wireTabStripControls } from "./appTabStrip";
@@ -159,6 +160,7 @@ async function main(): Promise<void> {
   });
 
   await wireEvents();
+  await initSourceControl();
   await subscribeSurface();
   void initAutostartState();
   // Phase 1.6 addendum §11 item 2: no first-run auto-open. The Setup wizard

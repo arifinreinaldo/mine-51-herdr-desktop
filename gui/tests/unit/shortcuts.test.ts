@@ -149,6 +149,12 @@ describe("findShortcut: keyboard shortcuts feature", () => {
     ).toBe("view.focusSidebar");
   });
 
+  it("Ctrl+Shift+G resolves to view.sourceControl", () => {
+    expect(
+      findShortcut({ ctrlKey: true, shiftKey: true, altKey: false, code: "KeyG" }, false)?.id,
+    ).toBe("view.sourceControl");
+  });
+
   it("Ctrl+Shift+/ resolves to herdr.showShortcuts", () => {
     expect(
       findShortcut({ ctrlKey: true, shiftKey: true, altKey: false, code: "Slash" }, false)?.id,
@@ -272,6 +278,7 @@ describe("macOS shortcut table", () => {
     expect(shown("pane.focusLeft")).toBe("⌥⌘←");
     expect(shown("herdr.showShortcuts")).toBe("⌘/");
     expect(shown("agents.jumpToNextNeedingAttention")).toBe("⌘J");
+    expect(shown("view.sourceControl")).toBe("⇧⌘G");
   });
 
   it("leaves Move Tab unbound (drag reorders)", () => {

@@ -62,6 +62,10 @@ pub struct Settings {
     /// `{project dir -> flavor}`, the last pick. Typed into a shell on Play.
     #[serde(default)]
     pub flutter_flavors: HashMap<String, String>,
+    /// Git MVP spec §6.1: the Source Control section is open.
+    /// `#[serde(default)]` keeps an older `settings.json` loading (`false`).
+    #[serde(default)]
+    pub source_control_open: bool,
 }
 
 fn default_theme() -> String {
@@ -95,6 +99,7 @@ impl Default for Settings {
             agent_list_pinned: false,
             flutter_devices: HashMap::new(),
             flutter_flavors: HashMap::new(),
+            source_control_open: false,
         }
     }
 }
@@ -340,6 +345,7 @@ mod tests {
         // UX pass 1 spec §3: an older settings.json written before this
         // field existed must still load fine, defaulting to unpinned.
         assert!(!response.settings.agent_list_pinned);
+        assert!(!response.settings.source_control_open);
         let _ = std::fs::remove_file(&path);
     }
 }

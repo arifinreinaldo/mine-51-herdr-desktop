@@ -24,6 +24,8 @@ export interface Settings {
   flutterDevices: Record<string, string>;
   /** `{project dir -> flavor}`, the last pick. */
   flutterFlavors: Record<string, string>;
+  /** Git MVP spec §6.1: the Source Control section is open. */
+  sourceControlOpen: boolean;
 }
 
 export interface SettingsGetResponse {
@@ -44,6 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   agentListPinned: false,
   flutterDevices: {},
   flutterFlavors: {},
+  sourceControlOpen: false,
 };
 
 export async function loadSettings(): Promise<SettingsGetResponse> {

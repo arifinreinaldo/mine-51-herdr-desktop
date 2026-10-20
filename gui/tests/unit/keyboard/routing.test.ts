@@ -213,6 +213,24 @@ describe("routeKeydown", () => {
     expect(handlers2.pastes).toBe(0);
   });
 
+  // Git MVP plan step 17: paste and the scrollback keys are terminal-only on
+  // every OS, so a text field (the commit box, the find bar) keeps its native
+  // Shift+Insert paste and Shift+Home/End/PgUp/PgDn selection.
+  it("step 2: Shift+Insert and the Shift scrollback keys act on the terminal only while the capture has focus", () => {
+    const capture = fakeElement();
+    const textField = fakeElement();
+    for (const code of ["Insert", "PageUp", "PageDown", "Home", "End"]) {
+      const handlers = fakeHandlers();
+      const event = fakeEvent({ shiftKey: true, key: code, code });
+      routeKeydown(event, capture, textField, handlers);
+      expect(handlers.shortcuts).toEqual([]);
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    }
+    const handlers = fakeHandlers();
+    routeKeydown(fakeEvent({ shiftKey: true, key: "Insert", code: "Insert" }), capture, capture, handlers);
+    expect(handlers.shortcuts).toEqual(["pane.paste"]);
+  });
+
   // Finding #4: an overlay (menu/popover/modal/confirm) that opened without
   // moving keyboard focus off the terminal capture (a hover-opened popover,
   // an auto-opened agent popover) must not have Esc forwarded to the

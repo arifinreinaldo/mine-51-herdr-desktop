@@ -45,6 +45,8 @@ export interface MenuBarContext {
 
   sidebarVisible: boolean;
   onToggleSidebar(): void;
+  sourceControlOpen: boolean;
+  onToggleSourceControl(): void;
   themes: readonly ThemeDefinition[];
   currentThemeId: string;
   onSelectTheme(id: string): void;
@@ -221,6 +223,13 @@ function viewMenuItems(ctx: MenuBarContext): MenuItemSpec[] {
       checked: ctx.desktopNotifications,
       separatorBefore: true,
       onSelect: ctx.onToggleDesktopNotifications,
+    },
+    {
+      id: "view.sourceControl",
+      label: "Source Control",
+      shortcut: shortcutDisplay("view.sourceControl"),
+      checked: ctx.sourceControlOpen,
+      onSelect: ctx.onToggleSourceControl,
     },
   ];
 }

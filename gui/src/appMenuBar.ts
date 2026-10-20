@@ -16,6 +16,7 @@ import {
   neighbourWorkspaceId,
 } from "./appLookups";
 import { applySidebarVisibility } from "./appSidebarResize";
+import { applySourceControlVisibility } from "./appSourceControl";
 import { focusSidebarForKeyboard } from "./appSidebarPanel";
 import { appState, persistSettings, tabMru } from "./appState";
 import { focusAgentSequence, openOrRefreshAgentPopover } from "./appStatusBar";
@@ -174,6 +175,19 @@ export const menuBarContext: MenuBarContext = {
     applySidebarVisibility();
     persistSettings();
   },
+  sourceControlOpen: appState.settings.sourceControlOpen,
+  onToggleSourceControl: () => {
+    appState.settings.sourceControlOpen = !appState.settings.sourceControlOpen;
+    menuBarContext.sourceControlOpen = appState.settings.sourceControlOpen;
+    // The section lives in the sidebar: opening it while hidden would show nothing.
+    if (appState.settings.sourceControlOpen && !appState.settings.sidebarVisible) {
+      appState.settings.sidebarVisible = true;
+      menuBarContext.sidebarVisible = true;
+      applySidebarVisibility();
+    }
+    applySourceControlVisibility();
+    persistSettings();
+  },
   themes: BUILT_IN_THEMES,
   currentThemeId: appState.settings.theme,
   onSelectTheme: (id: string) => {
@@ -308,6 +322,7 @@ export const menuBarContext: MenuBarContext = {
 export function refreshMenuBarContext(): void {
   menuBarContext.agentSort = appState.settings.agentSort;
   menuBarContext.sidebarVisible = appState.settings.sidebarVisible;
+  menuBarContext.sourceControlOpen = appState.settings.sourceControlOpen;
   menuBarContext.currentThemeId = appState.settings.theme;
   menuBarContext.themes = appState.themeRegistry.list();
   menuBarContext.desktopNotifications = appState.settings.desktopNotifications;
@@ -394,6 +409,7 @@ const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   "agents.jumpToNextNeedingAttention": () => menuBarContext.onJumpToNextNeedingAttention(),
   "agents.showList": () => menuBarContext.onToggleAgentList(),
   "view.toggleSidebar": () => menuBarContext.onToggleSidebar(),
+  "view.sourceControl": () => menuBarContext.onToggleSourceControl(),
   "view.zoomIn": () => menuBarContext.onZoomIn(),
   "view.zoomOut": () => menuBarContext.onZoomOut(),
   "view.zoomReset": () => menuBarContext.onZoomReset(),

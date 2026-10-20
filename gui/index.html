@@ -52,6 +52,28 @@
           </button>
         </div>
         <div id="sidebar-list" role="listbox" aria-label="Workspaces"></div>
+        <section id="source-control" aria-label="Source Control" hidden>
+          <div class="sidebar-header">
+            <i class="codicon codicon-chevron-down sidebar-header__chevron"></i>
+            <span class="sidebar-header__label">SOURCE CONTROL</span>
+            <span class="sidebar-header__spacer"></span>
+            <button id="source-control-refresh" class="icon-btn" title="Refresh" aria-label="Refresh">
+              <i class="codicon codicon-refresh"></i>
+            </button>
+          </div>
+          <div id="source-control-branch" class="sc-branch" hidden></div>
+          <div id="source-control-commit" class="sc-commit" hidden>
+            <textarea
+              id="source-control-message"
+              rows="2"
+              spellcheck="false"
+              placeholder="Message (Ctrl+Enter to commit)"
+              aria-label="Commit message"
+            ></textarea>
+            <button type="button" id="source-control-commit-btn" class="btn btn--primary" disabled>Commit</button>
+          </div>
+          <div id="source-control-body"></div>
+        </section>
         <div class="sidebar-footer" id="sidebar-footer" tabindex="0" role="button">
           <i class="codicon codicon-add"></i>
           <span>New Workspace…</span>
@@ -95,6 +117,7 @@
             aria-hidden="true"
           ></textarea>
           <div id="perf-hud" hidden></div>
+          <div id="diff-view" tabindex="-1" role="region" aria-label="Diff" hidden></div>
         </div>
       </section>
     </div>

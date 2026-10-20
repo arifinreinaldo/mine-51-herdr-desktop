@@ -2352,3 +2352,279 @@ body.mirror-tools {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Source Control (git MVP spec §6.1). `max-height: 50%` keeps the        */
+/* workspace list at least half the sidebar.                              */
+/* ---------------------------------------------------------------------- */
+
+#source-control {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  max-height: 50%;
+  min-height: 0;
+  border-top: 1px solid var(--sideBar-border);
+}
+
+#source-control[hidden],
+.sc-branch[hidden] {
+  display: none;
+}
+
+#source-control-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 4px;
+}
+
+.sc-branch {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px 4px;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.sc-branch .codicon {
+  font-size: 14px;
+}
+
+.sc-branch__repo {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-message {
+  padding: 4px 12px;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+.sc-link {
+  color: var(--focusBorder);
+  cursor: pointer;
+}
+
+.sc-error {
+  padding: 2px 12px 4px;
+  font-size: var(--fs-xs);
+  color: var(--errorForeground);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sc-group-header {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px 0 12px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--sideBarSectionHeader-foreground);
+}
+
+.sc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px 0 20px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sc-row:hover {
+  background: var(--list-hoverBackground);
+}
+
+.sc-row__status {
+  width: 12px;
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: center;
+  color: var(--descriptionForeground);
+}
+
+.sc-row__name {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-row__dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+}
+
+.sc-row--more {
+  cursor: default;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+}
+
+.sc-row--more:hover {
+  background: none;
+}
+
+/* Source Control actions and commit box (git MVP spec §6.1). */
+
+.sc-row__action {
+  visibility: hidden;
+  flex-shrink: 0;
+}
+
+.sc-row:hover .sc-row__action,
+.sc-row:focus-within .sc-row__action {
+  visibility: visible;
+}
+
+.sc-group-header .icon-btn {
+  margin-left: auto;
+}
+
+.sc-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 12px 6px;
+  flex-shrink: 0;
+}
+
+.sc-commit[hidden] {
+  display: none;
+}
+
+.sc-commit textarea {
+  resize: vertical;
+  min-height: 40px;
+  max-height: 160px;
+  padding: 4px 6px;
+  border: 1px solid var(--menu-border);
+  border-radius: 4px;
+  background: var(--terminal-background);
+  color: var(--terminal-foreground);
+  font: inherit;
+  font-size: var(--fs-xs);
+}
+
+.sc-commit .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  filter: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Diff view (git MVP spec §6.2): covers the canvas, which stays alive    */
+/* under it. Above pane chrome (1) and the find bar (3), below the        */
+/* connection banner (5).                                                 */
+/* ---------------------------------------------------------------------- */
+
+#diff-view {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  background: var(--terminal-background);
+  color: var(--terminal-foreground);
+}
+
+#diff-view[hidden] {
+  display: none;
+}
+
+#diff-view:focus {
+  outline: none;
+}
+
+.diff-view__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--tab-border);
+  font-size: var(--fs-xs);
+  color: var(--foreground);
+}
+
+.diff-view__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-view__tag {
+  color: var(--descriptionForeground);
+}
+
+.diff-view__header .icon-btn {
+  margin-left: auto;
+}
+
+.diff-view__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.diff-view__lines {
+  width: max-content;
+  min-width: 100%;
+  padding: 4px 0;
+}
+
+.diff-row {
+  display: flex;
+  white-space: pre;
+}
+
+.diff-row__no {
+  width: 6ch;
+  flex-shrink: 0;
+  padding-right: 1ch;
+  text-align: right;
+  color: var(--descriptionForeground);
+  user-select: none;
+}
+
+.diff-row__text {
+  padding: 0 12px 0 4px;
+}
+
+.diff-row--add {
+  background: color-mix(in srgb, var(--terminal-ansiGreen) 15%, transparent);
+}
+
+.diff-row--del {
+  background: color-mix(in srgb, var(--terminal-ansiRed) 15%, transparent);
+}
+
+.diff-row--hunk {
+  color: var(--descriptionForeground);
+}
+
+.diff-row--meta {
+  color: var(--descriptionForeground);
+  font-style: italic;
+}
+
+.diff-view__note {
+  padding: 8px 12px;
+  color: var(--descriptionForeground);
+}
