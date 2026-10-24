@@ -36,10 +36,13 @@ describe("cssColor", () => {
     expect(cssColor(0x02_ff_80_00, DEFAULT_PALETTE)).toBe("rgb(255, 128, 0)");
   });
 
-  it("maps an indexed colour through the xterm 256 table (spot check: index 9 = bright red)", () => {
-    // The xterm 256 table is a distinct, larger table from herdr's own
-    // 16-colour named palette (spec §6): index 9 is the standard
-    // "bright red" in every common xterm 256-colour reference chart.
-    expect(cssColor(0x01_00_00_09, DEFAULT_PALETTE)).toBe("#ff0000");
+  it("maps indexed 0-15 through the theme palette, like the named colours", () => {
+    const palette = DEFAULT_PALETTE.map((c, i) => (i === 5 ? "#6cb6ff" : c));
+    expect(cssColor(0x01_00_00_04, palette)).toBe("#6cb6ff"); // Indexed(4) = Blue = named 5
+    expect(cssColor(0x01_00_00_09, DEFAULT_PALETTE)).toBe(DEFAULT_PALETTE[10]); // bright red
+  });
+
+  it("maps indexed 16-255 through the xterm 256 table (spot check: 196 = cube red)", () => {
+    expect(cssColor(0x01_00_00_c4, DEFAULT_PALETTE)).toBe("#ff0000");
   });
 });

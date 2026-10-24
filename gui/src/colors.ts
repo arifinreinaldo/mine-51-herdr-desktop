@@ -102,6 +102,8 @@ export function cssColor(packed: number, palette: readonly string[]): string {
   }
   if (kind === "indexed") {
     const index = payload & 0xff;
+    // Indexed 0-15 are the ANSI colours, so they follow the theme like named ones (a fixed #000080 blue is unreadable on dark themes).
+    if (index < 16) return palette[index + 1] ?? XTERM_256_TABLE[index];
     return XTERM_256_TABLE[index] ?? palette[0];
   }
   // Named: index 0 is Reset, 1-16 are the 16 named colours.
