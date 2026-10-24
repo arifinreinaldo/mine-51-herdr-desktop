@@ -19,6 +19,10 @@ const TAP_SCRIPT: &[u8] = include_bytes!("../resources/statusline/herdr-usage.ps
 #[cfg(not(windows))]
 const TAP_SCRIPT: &[u8] = include_bytes!("../resources/statusline/herdr-usage.sh");
 
+/// The POSIX tap, installed in the shared-settings case on every OS (Claude
+/// Code runs statusLine commands through Git Bash on Windows).
+const SH_SCRIPT: &[u8] = include_bytes!("../resources/statusline/herdr-usage.sh");
+
 const TRUNCATE_LEN: usize = 120;
 const TAP_COMMAND_MARKER: &str = "herdr-usage";
 
@@ -43,6 +47,19 @@ pub fn classify_command(command: Option<&str>) -> StatuslineClass {
         Some(cmd) => StatuslineClass::Other {
             display_command: truncate_chars(cmd, TRUNCATE_LEN),
         },
+    }
+}
+
+/// Like `classify_command` for a shared settings file: only the command
+/// `shared_command` wrote counts as already installed. An older herdr tap
+/// (the Windows python script) is "other": it still needs replacing.
+pub fn classify_shared_command(command: Option<&str>) -> StatuslineClass {
+    match command {
+        Some(cmd) if cmd.contains(SHARED_MARKER) => StatuslineClass::Herdr,
+        Some(cmd) => StatuslineClass::Other {
+            display_command: truncate_chars(cmd, TRUNCATE_LEN),
+        },
+        None => StatuslineClass::None,
     }
 }
 
@@ -85,6 +102,38 @@ pub fn tap_script_path() -> PathBuf {
 
 pub fn chain_sidecar_path() -> PathBuf {
     statusline_dir().join("herdr-usage.chain.txt")
+}
+
+/// True when `path` is a symlink, i.e. the file is shared with something else
+/// (a dotfiles repo, another machine). It is edited at its target: renaming a
+/// temp file over the link would replace the link itself.
+pub fn is_shared_settings(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
+}
+
+/// Marks a `statusLine.command` that `shared_command` wrote.
+const SHARED_MARKER: &str = "herdr-usage.sh";
+
+pub fn shared_script_path() -> PathBuf {
+    statusline_dir().join(SHARED_MARKER)
+}
+
+/// The one `statusLine.command` a shared settings file holds, so it is right
+/// on every machine that reads it: run this machine's tap script when it
+/// exists, otherwise `fallback` (the command that was there before, so a
+/// machine without the script behaves exactly as it did). `$HOME` is expanded
+/// by the inner `sh`, so no machine-specific path is stored.
+pub fn shared_command(fallback: Option<&str>) -> String {
+    let fallback = fallback
+        .map(str::trim)
+        .filter(|cmd| !cmd.is_empty() && !cmd.contains(SHARED_MARKER))
+        .unwrap_or(":");
+    let escaped = fallback.replace('\'', "'\\''");
+    format!(
+        "sh -c 'f=\"$HOME/.claude/statusline/{SHARED_MARKER}\"; if [ -f \"$f\" ]; then exec sh \"$f\"; else {escaped}; fi'"
+    )
 }
 
 /// Reads and parses `path` (spec §4.3: "Parse it with `serde_json`. If
@@ -248,6 +297,13 @@ pub struct InstallReport {
 /// #9a: validated *before* any write, not just at `apply_statusline`'s own
 /// check at the very end).
 pub fn install_tap(settings_path: &Path, tap_script_bytes: &[u8]) -> Result<InstallReport, String> {
+    let shared = is_shared_settings(settings_path);
+    // A symlinked settings.json is written at its target, so the link stays.
+    let write_path = if shared {
+        std::fs::canonicalize(settings_path).map_err(|err| err.to_string())?
+    } else {
+        settings_path.to_path_buf()
+    };
     let existing = read_settings_value(settings_path)?;
     if let Some(value) = &existing {
         if !value.is_object() {
@@ -261,14 +317,30 @@ pub fn install_tap(settings_path: &Path, tap_script_bytes: &[u8]) -> Result<Inst
         .as_ref()
         .and_then(extract_statusline_command)
         .map(str::to_string);
-    let class = classify_command(previous_command.as_deref());
+    let class = if shared {
+        classify_shared_command(previous_command.as_deref())
+    } else {
+        classify_command(previous_command.as_deref())
+    };
 
     let tap_dir = statusline_dir();
     std::fs::create_dir_all(&tap_dir).map_err(|err| err.to_string())?;
 
-    // 1. Copy the script.
-    let tap_path = tap_script_path();
-    std::fs::write(&tap_path, tap_script_bytes).map_err(|err| err.to_string())?;
+    // 1. Copy the script. A shared file gets the POSIX tap on every OS.
+    let tap_path = if shared {
+        shared_script_path()
+    } else {
+        tap_script_path()
+    };
+    let script_bytes = if shared { SH_SCRIPT } else { tap_script_bytes };
+    std::fs::write(&tap_path, script_bytes).map_err(|err| err.to_string())?;
+    if shared && matches!(class, StatuslineClass::Herdr) {
+        // Already wired: the script is refreshed, settings.json stays as is.
+        return Ok(InstallReport {
+            backup_path: None,
+            chained: false,
+        });
+    }
 
     // 2. Back up settings.json, or record that none existed yet (finding
     // #9d) -- but never a *new* backup when the tap is already herdr's own
@@ -298,7 +370,13 @@ pub fn install_tap(settings_path: &Path, tap_script_bytes: &[u8]) -> Result<Inst
 
     // 3. Chain sidecar, only when the previous command was some other tool's
     // (the full untruncated command, never the classifier's display copy).
-    let chained = if matches!(class, StatuslineClass::Other { .. }) {
+    // A shared file's older herdr tap (the Windows python script) is replaced,
+    // not chained: it stays only as the dispatcher's fallback.
+    let chain_previous = match (&class, &previous_command) {
+        (StatuslineClass::Other { .. }, Some(cmd)) => !(shared && cmd.contains(TAP_COMMAND_MARKER)),
+        _ => false,
+    };
+    let chained = if chain_previous {
         if let Some(cmd) = &previous_command {
             std::fs::write(chain_sidecar_path(), cmd.as_bytes()).map_err(|err| err.to_string())?;
         }
@@ -309,8 +387,21 @@ pub fn install_tap(settings_path: &Path, tap_script_bytes: &[u8]) -> Result<Inst
 
     // 4/5. Set statusLine and write atomically, 2-space indent, every
     // other key and key order unchanged.
-    apply_statusline(&mut settings_value, &tap_path)?;
-    write_json_atomically(settings_path, &settings_value)?;
+    if shared {
+        let object = settings_value
+            .as_object_mut()
+            .ok_or_else(|| "settings.json root is not an object".to_string())?;
+        object.insert(
+            "statusLine".to_string(),
+            serde_json::json!({
+                "type": "command",
+                "command": shared_command(previous_command.as_deref()),
+            }),
+        );
+    } else {
+        apply_statusline(&mut settings_value, &tap_path)?;
+    }
+    write_json_atomically(&write_path, &settings_value)?;
 
     Ok(InstallReport {
         backup_path,
@@ -429,24 +520,41 @@ pub struct StatuslineStatusWire {
     /// Set when `settings.json` exists but failed to parse (spec §4.3:
     /// "abort this step with a message").
     pub error: Option<String>,
+    /// `settings.json` is a symlink (shared); this is the file it points to.
+    pub shared_target: Option<String>,
+}
+
+/// Where a symlinked `settings.json` points, as shown in the consent text.
+fn shared_target_path() -> Option<String> {
+    let path = settings_json_path();
+    if !is_shared_settings(&path) {
+        return None;
+    }
+    std::fs::canonicalize(&path)
+        .ok()
+        .map(|target| target.to_string_lossy().into_owned())
 }
 
 fn status_wire_from(class: StatuslineClass, error: Option<String>) -> StatuslineStatusWire {
+    let shared_target = shared_target_path();
     match class {
         StatuslineClass::None => StatuslineStatusWire {
             class: "none".to_string(),
             other_command: None,
             error,
+            shared_target,
         },
         StatuslineClass::Herdr => StatuslineStatusWire {
             class: "herdr".to_string(),
             other_command: None,
             error,
+            shared_target,
         },
         StatuslineClass::Other { display_command } => StatuslineStatusWire {
             class: "other".to_string(),
             other_command: Some(display_command),
             error,
+            shared_target,
         },
     }
 }
@@ -458,7 +566,12 @@ pub async fn statusline_status() -> StatuslineStatusWire {
     match read_settings_value(&settings_json_path()) {
         Ok(value) => {
             let command = value.as_ref().and_then(extract_statusline_command);
-            status_wire_from(classify_command(command), None)
+            let class = if is_shared_settings(&settings_json_path()) {
+                classify_shared_command(command)
+            } else {
+                classify_command(command)
+            };
+            status_wire_from(class, None)
         }
         Err(err) => status_wire_from(StatuslineClass::None, Some(err)),
     }
@@ -469,15 +582,20 @@ pub async fn statusline_status() -> StatuslineStatusWire {
 pub struct StatuslineInstallWire {
     pub backup_path: Option<String>,
     pub chained: bool,
+    /// The settings file was a symlink and was edited at its target.
+    pub shared: bool,
 }
 
 /// Wizard step 3's `[Install]` (spec §4.3), after explicit consent.
 #[tauri::command]
 pub async fn statusline_install() -> Result<StatuslineInstallWire, ApiError> {
-    install_tap(&settings_json_path(), TAP_SCRIPT)
+    let settings_path = settings_json_path();
+    let shared = is_shared_settings(&settings_path);
+    install_tap(&settings_path, TAP_SCRIPT)
         .map(|report| StatuslineInstallWire {
             backup_path: report.backup_path.map(|p| p.to_string_lossy().into_owned()),
             chained: report.chained,
+            shared,
         })
         .map_err(|message| ApiError {
             code: "statusline_install_failed".to_string(),
@@ -997,5 +1115,174 @@ mod tests {
             }
             let _ = std::fs::remove_dir_all(&self.dir);
         }
+    }
+
+    #[cfg(unix)]
+    fn temp_dir_for(name: &str) -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("herdr-gui-shared-{name}-{n}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_regular_settings_file_is_not_shared() {
+        let path = temp_settings_path("not-shared");
+        std::fs::write(&path, "{}").unwrap();
+        assert!(!is_shared_settings(&path));
+        cleanup(&path);
+        assert!(!is_shared_settings(&path), "a missing file is not shared");
+    }
+
+    #[test]
+    fn the_shared_command_runs_the_local_script_else_the_previous_command() {
+        let windows = r#"python "C:/Users/Reinaldo/.claude/statusline/herdr-usage.py""#;
+        let command = shared_command(Some(windows));
+        assert!(command.contains("$HOME/.claude/statusline/herdr-usage.sh"));
+        assert!(
+            command.contains(windows),
+            "the Windows path stays as the fallback"
+        );
+        assert!(
+            !command.contains("/Users/reinaldoarifin"),
+            "no machine-specific path"
+        );
+        assert_eq!(
+            classify_shared_command(Some(&command)),
+            StatuslineClass::Herdr
+        );
+    }
+
+    #[test]
+    fn the_shared_command_escapes_quotes_and_never_nests() {
+        assert!(shared_command(Some("echo 'hi'")).contains(r#"echo '\''hi'\''"#));
+        assert!(shared_command(None).contains("else :; fi"));
+        let first = shared_command(Some("ccusage"));
+        assert!(
+            shared_command(Some(&first)).contains("else :; fi"),
+            "an existing shared command is not wrapped again"
+        );
+    }
+
+    #[test]
+    fn an_older_herdr_tap_in_a_shared_file_needs_replacing() {
+        let python = r#"python "C:/x/herdr-usage.py""#;
+        assert!(matches!(
+            classify_shared_command(Some(python)),
+            StatuslineClass::Other { .. }
+        ));
+        assert!(matches!(
+            classify_command(Some(python)),
+            StatuslineClass::Herdr
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn installing_through_a_symlink_edits_the_target_and_keeps_the_link() {
+        let scoped = scoped_home();
+        let dotfiles = temp_dir_for("dotfiles");
+        let target = dotfiles.join("settings.json");
+        let windows = r#"python "C:/Users/Reinaldo/.claude/statusline/herdr-usage.py""#;
+        std::fs::write(
+            &target,
+            format!(
+                r#"{{"model":"opus","statusLine":{{"type":"command","command":{windows:?}}}}}"#
+            ),
+        )
+        .unwrap();
+        let link = temp_settings_path("shared-link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let report = install_tap(&link, b"# fake script").unwrap();
+
+        assert!(is_shared_settings(&link), "the link must still be a link");
+        let value: Value =
+            serde_json::from_str(&std::fs::read_to_string(&target).unwrap()).unwrap();
+        let command = value["statusLine"]["command"].as_str().unwrap();
+        assert_eq!(command, shared_command(Some(windows)));
+        assert_eq!(value["model"], "opus", "other keys are untouched");
+        assert!(
+            !report.chained,
+            "an older herdr tap is replaced, not chained"
+        );
+        let backup = report.backup_path.expect("a backup of the shared file");
+        assert_eq!(
+            backup.parent(),
+            link.parent(),
+            "the backup stays out of the dotfiles repo"
+        );
+        assert!(!std::fs::read_dir(&dotfiles)
+            .unwrap()
+            .any(|e| e.unwrap().file_name() != "settings.json"));
+        assert!(shared_script_path().exists());
+
+        // A second install changes nothing.
+        let before = std::fs::read_to_string(&target).unwrap();
+        let again = install_tap(&link, b"# fake script").unwrap();
+        assert!(again.backup_path.is_none());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), before);
+
+        // Undo restores the dotfiles content through the link.
+        undo_tap(&link).unwrap();
+        assert!(is_shared_settings(&link));
+        assert!(std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("herdr-usage.py"));
+        assert!(!std::fs::read_to_string(&target)
+            .unwrap()
+            .contains("herdr-usage.sh"));
+
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_dir_all(&dotfiles);
+        cleanup(&link);
+        drop(scoped);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_shared_command_works_when_run_by_sh() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let home = temp_dir_for("home");
+        let out = home.join("fallback.out");
+        let fallback = format!("cat > {}", out.display());
+        let command = shared_command(Some(&fallback));
+        let run = |input: &str| {
+            let mut child = Command::new("sh")
+                .arg("-c")
+                .arg(&command)
+                .env("HOME", &home)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(input.as_bytes())
+                .unwrap();
+            child.wait_with_output().unwrap()
+        };
+
+        // No script on this machine: the previous command runs, with the same stdin.
+        run("{\"x\":1}");
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "{\"x\":1}");
+
+        // With the script installed, it runs instead and writes the usage file.
+        let dir = home.join(".claude").join("statusline");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(SHARED_MARKER), SH_SCRIPT).unwrap();
+        std::fs::remove_file(&out).unwrap();
+        run(r#"{"rate_limits":{"five_hour":{"used_percentage":7,"resets_at":1}}}"#);
+        assert!(
+            !out.exists(),
+            "the fallback must not run when the script exists"
+        );
+        let usage = std::fs::read_to_string(home.join(".claude").join("herdr-usage.json")).unwrap();
+        assert!(usage.contains("\"used_percentage\":7"), "{usage}");
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

@@ -299,6 +299,22 @@ const MENU_BUILDERS: Readonly<Record<string, (ctx: MenuBarContext) => MenuItemSp
   help: helpMenuItems,
 };
 
+const MENU_TITLES: readonly (readonly [string, string])[] = [
+  ["herdr", "Cowbell"],
+  ["workspace", "Workspace"],
+  ["tab", "Tab"],
+  ["pane", "Pane"],
+  ["agents", "Agents"],
+  ["view", "View"],
+  ["help", "Help"],
+];
+
+/** Every top-level menu in menu-bar order, for the native macOS menu bar. The
+ * Cowbell menu comes first because macOS puts the app menu there. */
+export function allMenus(ctx: MenuBarContext) {
+  return MENU_TITLES.map(([name, title]) => ({ name, title, items: MENU_BUILDERS[name](ctx) }));
+}
+
 export function wireMenuBar(menuTitleEls: readonly HTMLElement[], ctx: MenuBarContext): void {
   let openMenuName: string | null = null;
 

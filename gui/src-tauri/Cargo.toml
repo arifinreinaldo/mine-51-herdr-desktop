@@ -106,5 +106,9 @@ windows = { version = "0.61", features = [
     "Win32_Security",                 # CreateJobObjectW's SECURITY_ATTRIBUTES parameter
 ] }
 
+# macOS only: restores the main window's size and position between launches.
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-plugin-window-state = "2.4.1"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs", "test-util"] }

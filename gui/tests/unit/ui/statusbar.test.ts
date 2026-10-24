@@ -174,3 +174,44 @@ describe("formatAsOfClock (UX pass 1 spec §4)", () => {
     expect(formatAsOfClock(epochMs)).toBe("as of 00:00");
   });
 });
+
+describe("renderUsageStatusItem: no data yet opens the setup dialog", () => {
+  const missing = () => usage({ five_hour: null, seven_day: null, captured_at: null, status: "missing" });
+
+  it("turns a missing or unreadable item into a button that calls onSetup once per click", () => {
+    const onSetup = vi.fn();
+    renderUsageStatusItem(el, overlayRoot, missing(), NOW, onSetup);
+    expect(el.classList.contains("is-actionable")).toBe(true);
+    expect(el.getAttribute("role")).toBe("button");
+    el.click();
+    expect(onSetup).toHaveBeenCalledTimes(1);
+
+    // Re-renders (every usage tick) must not stack listeners.
+    renderUsageStatusItem(el, overlayRoot, missing(), NOW + 30, onSetup);
+    renderUsageStatusItem(el, overlayRoot, usage({ status: "invalid" }), NOW + 60, onSetup);
+    el.click();
+    expect(onSetup).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens from the keyboard", () => {
+    const onSetup = vi.fn();
+    renderUsageStatusItem(el, overlayRoot, missing(), NOW, onSetup);
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(onSetup).toHaveBeenCalledTimes(1);
+  });
+
+  it("is not a button once data arrives, and a stale click does nothing", () => {
+    const onSetup = vi.fn();
+    renderUsageStatusItem(el, overlayRoot, missing(), NOW, onSetup);
+    renderUsageStatusItem(el, overlayRoot, usage(), NOW + 30, onSetup);
+    expect(el.classList.contains("is-actionable")).toBe(false);
+    expect(el.getAttribute("role")).toBeNull();
+    el.click();
+    expect(onSetup).not.toHaveBeenCalled();
+  });
+
+  it("stays a plain label when no handler is given", () => {
+    renderUsageStatusItem(el, overlayRoot, missing(), NOW);
+    expect(el.classList.contains("is-actionable")).toBe(false);
+  });
+});

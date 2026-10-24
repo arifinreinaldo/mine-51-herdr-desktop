@@ -33,7 +33,8 @@ import type { AgentSort } from "./settings";
 import type { ShortcutAction } from "./shortcuts";
 import { BUILT_IN_THEMES } from "./themes/index";
 import { openModal } from "./ui/modal";
-import { wireMenuBar, type MenuBarContext } from "./ui/menus";
+import { syncNativeMenu } from "./macShell";
+import { allMenus, wireMenuBar, type MenuBarContext } from "./ui/menus";
 import { closeActiveOverlay } from "./ui/overlay";
 import { openKeyboardShortcutsModal } from "./ui/shortcutsModal";
 import { openLicensesModal } from "./ui/licensesModal";
@@ -335,6 +336,7 @@ export function refreshMenuBarContext(): void {
   const dotLabel = menuBarContext.updateAvailable ? "herdr update available" : "Integration updates available";
   herdrMenuDotEl.title = dotLabel;
   herdrMenuDotEl.setAttribute("aria-label", dotLabel);
+  syncNativeMenu(allMenus(menuBarContext));
 }
 
 /** Alt+1..8 / Ctrl+Shift+1..8 (fixed position) and Alt+9 / Ctrl+Shift+9
@@ -496,4 +498,5 @@ export function wirePerfHudToggle(): void {
 
 export function wireMenuBarNow(): void {
   wireMenuBar(menuTitleEls, menuBarContext);
+  syncNativeMenu(allMenus(menuBarContext));
 }

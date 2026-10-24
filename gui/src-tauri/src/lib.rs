@@ -12,6 +12,7 @@ pub mod files;
 pub mod flutter;
 pub mod folder_picker;
 pub mod git;
+pub mod macos;
 pub mod memory;
 pub mod mirror;
 pub mod mirror_tools;
@@ -55,7 +56,20 @@ pub fn run(start: Instant) {
 
     let prevent_default_plugin = build_prevent_default_plugin();
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // macOS: restore the main window's size and position between launches.
+    // Visibility is left out: the window stays hidden until `report_ready`.
+    #[cfg(target_os = "macos")]
+    let builder = {
+        use tauri_plugin_window_state::StateFlags;
+        builder.plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED)
+                .with_filter(|label| label == "main")
+                .build(),
+        )
+    };
+    let app = builder
         // Phase 1.6 addendum §11 item 4: registered first, before every
         // other plugin. A second launch focuses/unminimizes the existing
         // window instead of failing to create its own webview
@@ -97,6 +111,9 @@ pub fn run(start: Instant) {
             commands::app_version,
             commands::sync_state,
             commands::set_client_focus,
+            macos::dock_badge,
+            macos::dock_bounce,
+            macos::set_native_menu,
             window_chrome::window_minimize,
             window_chrome::window_toggle_maximize,
             window_chrome::window_close,
@@ -175,6 +192,14 @@ pub fn run(start: Instant) {
             }
             // SQLite inspector copies left by a crash or an exit with the window open.
             tauri::async_runtime::spawn_blocking(android_db::clear_local_copies);
+            // Native menu clicks go to the page, which owns every action.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Emitter;
+                app.on_menu_event(|app, event| {
+                    let _ = app.emit("native-menu", event.id().0.clone());
+                });
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

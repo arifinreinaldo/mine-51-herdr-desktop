@@ -248,6 +248,10 @@ button {
 .mac #window-controls {
   display: none;
 }
+/* macOS: the native menu bar replaces the in-window one. */
+.mac #menubar {
+  display: none;
+}
 .mac #titlebar {
   padding-left: 78px;
 }
@@ -922,6 +926,17 @@ body.has-workspace-colors #tab-strip {
 
 .statusbar-spacer {
   flex: 1;
+}
+
+#status-usage.is-actionable {
+  cursor: pointer;
+}
+#status-usage.is-actionable > span {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+#status-usage.is-actionable:hover {
+  background: var(--toolbar-hoverBackground, rgba(127, 127, 127, 0.2));
 }
 
 #status-usage.is-warning {

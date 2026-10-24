@@ -4,6 +4,7 @@ import { agentDisplayName, agentTaskTitle } from "./agentText";
 // §7, finding #16 extraction from `main.ts`.
 
 import { invokeSafe } from "./appApi";
+import { bounceDock } from "./macShell";
 import { openOrRefreshAgentPopover } from "./appStatusBar";
 import { tabLabel, workspaceLabel } from "./appLookups";
 import { appState, doneToastDedup, highlightCards, hoveredHighlightPaneIds, seenDoneTabs } from "./appState";
@@ -53,6 +54,7 @@ export function handleDoneTransitions(all: AgentForDetection[]): void {
       if (highlightCards.list().length === 0 && appState.agentPopoverAutoOpened) appState.agentPopoverCloser?.();
     }, 8100);
   } else {
+    bounceDock();
     for (const t of transitions) {
       // P1 #13: the dedup key here is the same one `handleSemanticNotification`
       // below checks, so whichever source (this snapshot diff, or a

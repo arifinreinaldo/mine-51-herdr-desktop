@@ -10,10 +10,10 @@
         "minHeight": 400,
         "visible": false,
         "decorations": true,
-        "backgroundColor": "#1f1f1f",
         "zoomHotkeysEnabled": false,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "backgroundColor": "#1f1f1f"
       }
     ]
   }

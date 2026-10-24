@@ -23,6 +23,8 @@ import {
   type OpenAgentPopoverOptions,
 } from "./ui/statusbar";
 import type { UsageState as FormatUsageState } from "./usage";
+import { syncDockBadge } from "./macShell";
+import { openUsageSetup } from "./wizard/usageSetup";
 
 function computeAgentCounts(): AgentCounts {
   const counts: AgentCounts = { working: 0, blocked: 0, done: 0, idle: 0 };
@@ -182,9 +184,11 @@ export function renderStatusBarNow(): void {
     appState.lastConnectionStatus === "connected"
       ? null
       : { asOfLabel: appState.lastSnapshotAt !== null ? formatAsOfClock(appState.lastSnapshotAt) : "" };
+  const counts = computeAgentCounts();
+  syncDockBadge(counts.blocked + counts.done);
   renderAgentCounts(
     statusAgentCountsEl,
-    computeAgentCounts(),
+    counts,
     (status) => {
       // MINOR (finding #4): clicking the counts while the *pinned* list is
       // already open closes it -- a toggle -- rather than just refreshing
@@ -210,10 +214,13 @@ export function renderUsageBarNow(): void {
     captured_at: appState.usagePayload.captured_at,
     status: appState.usagePayload.status,
   };
-  renderUsageStatusItem(statusUsageEl, overlayRoot, state, Math.floor(Date.now() / 1000));
+  renderUsageStatusItem(statusUsageEl, overlayRoot, state, Math.floor(Date.now() / 1000), openUsageSetup);
 }
 
 const USAGE_REFRESH_INTERVAL_MS = 30_000;
 export function wireUsageRefresh(): void {
+  // Render now: without it the HTML placeholder stays for up to 30s, and a
+  // missing-data item is not yet the "set up" button.
+  renderUsageBarNow();
   window.setInterval(renderUsageBarNow, USAGE_REFRESH_INTERVAL_MS);
 }

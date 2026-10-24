@@ -10,6 +10,9 @@ interface StatuslineStatusWire {
   class: "none" | "herdr" | "other";
   otherCommand: string | null;
   error: string | null;
+  /** settings.json is a symlink (shared with a dotfiles repo or another
+   * machine); this is the file it points to. */
+  sharedTarget: string | null;
 }
 
 function renderConsent(container: HTMLElement, detail: string, onConfirm: () => void, onCancel: () => void): void {
@@ -81,8 +84,12 @@ export function renderUsageStep(
       installBtn.remove();
       renderConsent(
         body,
-        "Copy herdr-usage.ps1 to ~/.claude/statusline/, back up settings.json, and set statusLine " +
-          (status.class === "other" ? "(chaining the existing command)." : "."),
+        status.sharedTarget
+          ? `Copy the usage tap script to ~/.claude/statusline/, back up settings.json, and edit the shared file it links to (${status.sharedTarget}). ` +
+            "The statusLine becomes one line that runs the tap on this machine and keeps the current command as the fallback for machines without it. " +
+            "The link stays a link; commit the change in that repository yourself."
+          : "Copy the usage tap script to ~/.claude/statusline/, back up settings.json, and set statusLine " +
+            (status.class === "other" ? "(chaining the existing command)." : "."),
         () => void runInstall(body),
         () => render(),
       );

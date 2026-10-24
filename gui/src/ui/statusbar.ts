@@ -264,25 +264,52 @@ function wireUsageItemInteractions(el: HTMLElement, overlayRoot: HTMLElement, st
   });
 }
 
+/** Elements whose "set up" click is already wired (once per element). */
+const setupWired = new WeakSet<HTMLElement>();
+
+/** With no usage data the item becomes a button that opens the setup dialog. */
+function makeSetupAction(el: HTMLElement, onSetup: (() => void) | undefined): void {
+  if (!onSetup) return;
+  el.classList.add("is-actionable");
+  el.setAttribute("role", "button");
+  el.title = "Click to set up Claude usage";
+  if (setupWired.has(el)) return;
+  setupWired.add(el);
+  el.addEventListener("click", () => {
+    if (el.classList.contains("is-actionable")) onSetup();
+  });
+  el.addEventListener("keydown", (event) => {
+    if ((event.key === "Enter" || event.key === " ") && el.classList.contains("is-actionable")) {
+      event.preventDefault();
+      onSetup();
+    }
+  });
+}
+
 export function renderUsageStatusItem(
   el: HTMLElement,
   overlayRoot: HTMLElement,
   usage: UsageState,
   now: number,
+  onSetup?: () => void,
 ): void {
   el.textContent = "";
-  el.classList.remove("is-warning", "is-danger");
+  el.classList.remove("is-warning", "is-danger", "is-actionable");
+  el.removeAttribute("role");
+  el.removeAttribute("title");
 
   if (usage.status === "missing") {
     const label = document.createElement("span");
     label.textContent = "Claude usage: waiting";
     el.appendChild(label);
+    makeSetupAction(el, onSetup);
     return;
   }
   if (usage.status === "invalid") {
     const label = document.createElement("span");
     label.textContent = "Claude usage: unreadable file";
     el.appendChild(label);
+    makeSetupAction(el, onSetup);
     return;
   }
 

@@ -7,6 +7,7 @@
 
 import "./style.css";
 
+import { wireNativeMenuClicks } from "./macShell";
 import { IS_MAC, shortcutDisplay } from "./shortcuts";
 import { invokeSafe, showErrorNotice } from "./appApi";
 import {
@@ -148,6 +149,7 @@ async function main(): Promise<void> {
   wireAgeRefresh();
   wireTitlebarControls(winMinimizeEl, winMaximizeEl, winCloseEl);
   wireMenuBarNow();
+  await wireNativeMenuClicks();
   await wireFlutterRun();
   wirePerfHudToggle();
   installKeyboardRouting(keyboardCapture, {

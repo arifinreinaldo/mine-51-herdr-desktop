@@ -9,7 +9,8 @@
 # writes an empty rate_limits object. Always exits 0 so a broken tap can never
 # break Claude Code's UI.
 
-claude_dir="${HOME}/.claude"
+# Git Bash on Windows sets HOME; USERPROFILE is the fallback.
+claude_dir="${HOME:-$USERPROFILE}/.claude"
 tmp=$(mktemp "${TMPDIR:-/tmp}/herdr-usage.XXXXXX") || exit 0
 trap 'rm -f "$tmp"' EXIT
 cat > "$tmp"
@@ -18,8 +19,9 @@ mkdir -p "$claude_dir" 2>/dev/null
 json=""
 if command -v jq >/dev/null 2>&1; then
     json=$(jq -c --argjson t "$(date +%s)" '{captured_at: $t, rate_limits: (.rate_limits // {})}' "$tmp" 2>/dev/null)
-elif command -v python3 >/dev/null 2>&1; then
-    json=$(python3 -c 'import json,sys,time
+elif command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
+    py=python3; command -v python3 >/dev/null 2>&1 || py=python
+    json=$("$py" -c 'import json,sys,time
 d=json.load(open(sys.argv[1]))
 print(json.dumps({"captured_at":int(time.time()),"rate_limits":d.get("rate_limits") or {}},separators=(",",":")))' "$tmp" 2>/dev/null)
 fi
