@@ -77,6 +77,7 @@ pub fn run(start: Instant) {
         ))
         .manage(app_state)
         .manage(android::ScreenshotSlot::default())
+        .manage(files::PagedIndexes::default())
         .manage(mirror_tools::MirrorToolsState::default())
         .manage(record::RecordingState::default())
         .invoke_handler(tauri::generate_handler![
@@ -134,6 +135,10 @@ pub fn run(start: Instant) {
             files::fs_list_dir,
             files::fs_read_text,
             files::fs_list_files,
+            files::fs_stat,
+            files::fs_open_paged,
+            files::fs_read_lines,
+            files::fs_search,
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,
             notify::notify_agent_done,

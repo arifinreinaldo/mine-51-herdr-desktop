@@ -3,16 +3,17 @@
 import { listen } from "@tauri-apps/api/event";
 import { api, errorMessage } from "./appApi";
 import { requireConnected } from "./appConnectionGuard";
-import { fileViewerEl, keyboardCapture, sidebarEl, tabListEl } from "./appDom";
+import { fileTabsEl, fileViewerEl, keyboardCapture, sidebarEl, tabListEl } from "./appDom";
 import { closeDiff } from "./appSourceControl";
 import { appState } from "./appState";
 import type { RawSnapshot } from "./appTypes";
-import { fsListDir, fsReadText, type DirEntry } from "./files/filesApi";
+import { fsListDir, fsOpenPaged, fsReadLines, fsReadText, fsSearch, fsStat, type DirEntry } from "./files/filesApi";
 import { focusKeyboardCapture } from "./keyboard/focusCapture";
 import { renderFileTree } from "./ui/fileTree";
-import { closeTab, cycleTab, openTab, renderFileViewer, viewOf, type TabView, type ViewerContent } from "./ui/fileViewer";
+import { closeTab, cycleTab, openTab, renderFileTabs, renderFileViewer, viewOf, type TabView, type ViewerContent } from "./ui/fileViewer";
 import { closeFindBar } from "./ui/findBar";
 import { openQuickOpen } from "./ui/quickOpen";
+import { closeViewerFind, openViewerFind } from "./ui/viewerFind";
 
 interface WorkspaceFiles {
   root: string; // the cwd of this state's key
@@ -30,6 +31,10 @@ let current: WorkspaceFiles | null = null;
 let activeTabId: string | null = null;
 let content: ViewerContent = { kind: "loading" };
 let readSeq = 0; // drops stale reads (spec §5)
+let reading = false; // a read is in flight: the poll waits, so a read slower than POLL_MS still finishes
+let stamp: string | null = null; // "mtimeMs:size" of the shown file at its last read; null when it could not be read
+const POLL_MS = 2000;
+const MAX_SEARCH_MATCHES = 10_000; // paged find: the count shows "+" past this
 
 function newState(cwd: string): WorkspaceFiles {
   return { root: cwd, expanded: new Set(), children: new Map(), tabs: [], active: null, views: new Map() };
@@ -168,6 +173,7 @@ function onSnapshot(snapshot: RawSnapshot): void {
   if (key === activeKey) return;
   activeKey = key;
   current = focused ? stateFor(focused.workspace_id) : null;
+  renderTabsBar();
   // The pending open comes after the hide above, which a key change always does.
   const pending = pendingOpen;
   pendingOpen = null;
@@ -176,6 +182,12 @@ function onSnapshot(snapshot: RawSnapshot): void {
 
 export async function initFiles(): Promise<void> {
   fileViewerEl.addEventListener("keydown", (event) => {
+    // Ctrl+F (Cmd+F on macOS): find in the file. Ctrl+Shift+F reaches the same bar through `pane.find`.
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyF") {
+      event.preventDefault();
+      openViewerFind(fileViewerEl);
+      return;
+    }
     if (event.key !== "Escape") return;
     event.preventDefault();
     hideFileViewer(); // spec §5: keeps the tabs
@@ -196,38 +208,125 @@ export async function initFiles(): Promise<void> {
       true,
     );
   }
+  // A press on the bottom strip keeps focus where it was (terminal or viewer); the strip is not focusable.
+  fileTabsEl.addEventListener("mousedown", (event) => {
+    if (event.button === 0) event.preventDefault();
+  });
+  // Every show or hide of the viewer (here, or the diff view's direct hide) updates the tab strip's active mark.
+  // A hide also closes find, which stops its backend search: the diff view hides the viewer without hideFileViewer.
+  new MutationObserver(() => {
+    if (fileViewerEl.hidden) closeViewerFind();
+    renderTabsBar();
+  }).observe(fileViewerEl, { attributes: true, attributeFilter: ["hidden"] });
+  // Freshness (D7, revised): read the shown file again on window focus, and poll its stat while the viewer shows.
+  // The interval checks `hidden` on each tick: the diff view hides the viewer directly (appSourceControl.ts openFile).
+  window.addEventListener("focus", () => {
+    if (!fileViewerEl.hidden && !reading) void readActive(true); // a read in flight brings the new content already
+  });
+  window.setInterval(() => {
+    if (!fileViewerEl.hidden && !document.hidden) void pollActive();
+  }, POLL_MS);
   await listen<RawSnapshot>("snapshot", (e) => onSnapshot(e.payload));
 }
 
-function renderViewer(): void {
-  if (!current || current.active === null) return;
-  renderFileViewer(
-    fileViewerEl,
-    { root: current.root, tabs: current.tabs, active: current.active, content, view: viewOf(current, current.active) },
-    appState.renderer?.getFontSizePx() ?? appState.settings.fontSize,
+/** The bottom strip of open files: visible whenever the workspace has one, even while a terminal tab shows. */
+function renderTabsBar(): void {
+  const ws = current;
+  fileTabsEl.hidden = !ws || ws.tabs.length === 0;
+  if (!ws || fileTabsEl.hidden) {
+    fileTabsEl.textContent = "";
+    return;
+  }
+  renderFileTabs(
+    fileTabsEl,
+    { root: ws.root, tabs: ws.tabs, active: fileViewerEl.hidden ? null : ws.active },
     { onActivate: activateTab, onClose: closeFileTab },
   );
 }
 
-/** Reads the active file again on each activation (D7). */
-async function readActive(): Promise<void> {
+/** `keepFind`: a refresh keeps the find bar open over text or paged content; the bar marks the new rows (viewerFind.ts). */
+function renderViewer(keepFind = false): void {
+  if (!current || current.active === null) return;
+  const hadFocus = fileViewerEl.contains(document.activeElement); // read first: closing the bar or the render can drop focus
+  // Otherwise its marks point into the lines this render replaces.
+  if (!keepFind || (content.kind !== "text" && content.kind !== "paged")) closeViewerFind();
+  renderFileViewer(
+    fileViewerEl,
+    { root: current.root, tabs: current.tabs, active: current.active, content, view: viewOf(current, current.active) },
+    appState.renderer?.getFontSizePx() ?? appState.settings.fontSize,
+  );
+  // Esc, Ctrl+F and the file-tab keys (routing.ts) work only while focus is inside the viewer.
+  if (hadFocus && !fileViewerEl.contains(document.activeElement)) fileViewerEl.focus();
+  renderTabsBar();
+}
+
+/** "mtimeMs:size" of a file, or null when it cannot be read. */
+async function statStamp(root: string, rel: string): Promise<string | null> {
+  try {
+    const stat = await fsStat(root, rel);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return null;
+  }
+}
+
+/** The 2 s poll: reads the active file again only when its stat changed after the last read. */
+async function pollActive(): Promise<void> {
+  const ws = current;
+  if (reading || !ws || ws.active === null) return;
+  const seq = readSeq;
+  const next = await statStamp(ws.root, ws.active);
+  if (seq === readSeq && next !== stamp) void readActive(true);
+}
+
+/**
+ * Reads the active file. A tab activation shows "Loading…" first. A `refresh` (window focus, a click on the active
+ * tab, the poll) keeps the shown content, its scroll position, its current line and the find bar until the new content arrives.
+ */
+async function readActive(refresh = false): Promise<void> {
   const ws = current;
   if (!ws || ws.active === null) return;
+  const root = ws.root;
+  const rel = ws.active;
   const seq = ++readSeq;
-  content = { kind: "loading" };
-  renderViewer();
+  reading = true;
+  if (!refresh) {
+    content = { kind: "loading" };
+    renderViewer();
+  }
+  const nextStamp = await statStamp(root, rel); // before the read: a write during the read shows at the next poll
   let next: ViewerContent;
   try {
-    const result = await fsReadText(ws.root, ws.active);
+    const result = await fsReadText(root, rel);
     if (result.kind === "text") next = { kind: "text", text: result.content ?? "" };
     else if (result.kind === "binary") next = { kind: "binary" };
-    else next = { kind: "tooLarge", size: result.size };
+    else {
+      // Paged mode (8 MiB and more): the backend indexes the lines; the viewer fetches only the rows it shows.
+      const lineCount = await fsOpenPaged(root, rel);
+      next = {
+        kind: "paged",
+        file: {
+          lineCount,
+          readLines: (start, count) => fsReadLines(root, rel, start, count),
+          search: (query) => fsSearch(root, rel, query, MAX_SEARCH_MATCHES),
+        },
+      };
+    }
   } catch (err) {
     next = (err as { code?: string })?.code === "not_found" ? { kind: "missing" } : { kind: "error", message: errorMessage(err) };
   }
   if (seq !== readSeq) return;
+  reading = false;
+  // The same content again: no render, so a text selection and the loaded rows stay.
+  const same =
+    refresh &&
+    (next.kind === "text" && content.kind === "text"
+      ? next.text === content.text
+      : next.kind === "paged" && content.kind === "paged" && nextStamp !== null && nextStamp === stamp);
+  stamp = nextStamp;
+  if (same || fileViewerEl.hidden) return; // hidden: the diff view hid the viewer during the read (appSourceControl.ts openFile)
   content = next;
-  renderViewer();
+  renderViewer(refresh);
 }
 
 function openFileInViewer(rel: string): void {
@@ -241,7 +340,16 @@ function openFileInViewer(rel: string): void {
 }
 
 function activateTab(rel: string): void {
-  if (!current || current.active === rel) return; // W3: a click on the active tab does not read again
+  if (!current) return;
+  // From the bottom strip while a terminal tab shows: bring the file back.
+  if (fileViewerEl.hidden) {
+    openFileInViewer(rel);
+    return;
+  }
+  if (current.active === rel) {
+    if (!reading) void readActive(true); // reverses W3: a click on the active tab reads the file again, without "Loading…"
+    return;
+  }
   current.active = rel;
   void readActive();
 }
@@ -250,6 +358,10 @@ function closeFileTab(rel: string): void {
   if (!current) return;
   const before = current.active;
   closeTab(current, rel);
+  if (fileViewerEl.hidden) {
+    renderTabsBar(); // closed from the bottom strip while a terminal tab shows: nothing to read
+    return;
+  }
   if (current.active === null) hideFileViewer();
   else if (current.active !== before) void readActive();
   else renderViewer(); // the view of the active tab restores its scroll position and current line
@@ -259,10 +371,18 @@ export function hideFileViewer(): void {
   if (fileViewerEl.hidden) return;
   const hadFocus = fileViewerEl.contains(document.activeElement); // read first: hiding blurs to body
   ++readSeq;
+  closeViewerFind();
   fileViewerEl.hidden = true;
   fileViewerEl.textContent = "";
   // Only when the viewer held focus: a hide that a snapshot causes must not take focus from the finder or the commit box.
   if (hadFocus) focusKeyboardCapture();
+}
+
+/** `pane.find` while the viewer shows: search the file, not the terminal under it. Returns false when hidden. */
+export function findInFileViewer(): boolean {
+  if (fileViewerEl.hidden) return false;
+  openViewerFind(fileViewerEl);
+  return true;
 }
 
 export function openFindFile(): void {

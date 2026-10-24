@@ -19,6 +19,7 @@ export const sourceControlMessageEl = document.getElementById("source-control-me
 export const sourceControlCommitBtn = document.getElementById("source-control-commit-btn") as HTMLButtonElement;
 export const diffViewEl = document.getElementById("diff-view") as HTMLDivElement;
 export const fileViewerEl = document.getElementById("file-viewer") as HTMLDivElement;
+export const fileTabsEl = document.getElementById("file-tabs") as HTMLDivElement;
 export const tabListEl = document.getElementById("tab-list") as HTMLDivElement;
 export const tabPlusEl = document.getElementById("tab-plus") as HTMLButtonElement;
 export const tabOverflowEl = document.getElementById("tab-overflow") as HTMLButtonElement;

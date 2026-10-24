@@ -17,7 +17,7 @@ import {
 } from "./appLookups";
 import { applySidebarVisibility } from "./appSidebarResize";
 import { applySourceControlVisibility } from "./appSourceControl";
-import { hideFileViewer } from "./appFiles";
+import { findInFileViewer } from "./appFiles";
 import { focusSidebarForKeyboard } from "./appSidebarPanel";
 import { appState, persistSettings, tabMru } from "./appState";
 import { focusAgentSequence, openOrRefreshAgentPopover } from "./appStatusBar";
@@ -421,7 +421,7 @@ const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   "pane.copy": () => void copyLastSelection(), // P0 #1
   "pane.paste": onPasteOverride, // P0 #4 "Shift+Insert", same as Ctrl+Shift+V
   "pane.find": () => {
-    hideFileViewer(); // the find bar searches the terminal, which the viewer covers
+    if (findInFileViewer()) return; // the viewer shows: search the file, not the terminal it covers
     openFindBar();
   }, // P1 #7
   "pane.clear": clearFocusedPane, // P1 #12

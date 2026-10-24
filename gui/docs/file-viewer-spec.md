@@ -23,7 +23,7 @@ Success criterion: the live check in section 9 passes, and all test suites pass.
 | D4 | The finder index uses `git ls-files`; a fallback walk applies outside git. | Finder includes ignored files. |
 | D5 | A hand-written, table-driven tokenizer gives syntax highlighting. Git P1 (O2 in `git-p1-plan.md`) reuses it. | No highlighting; highlight.js. |
 | D6 | The viewer has its own file-tab row inside the overlay. Terminal tabs do not change. | Single file; file tabs in the main tab strip. |
-| D7 | No file watcher. The viewer re-reads on tab activation; the tree re-reads on expand and on refresh. | Live watcher. |
+| D7 | No file watcher. The viewer reads the file again on tab activation, on a click on the active tab, on window focus, and when a 2 s `fs_stat` poll sees a new mtime or size. The tree re-reads on expand and on refresh. | Live watcher (new crate). |
 | D8 | UI state lives in memory only. A restart starts clean. | Persist open tabs and expanded folders. |
 
 ## 3. Rust backend
@@ -49,8 +49,9 @@ These are the first general file commands in the app. Every command confines pat
 
 `fs_read_text(root: String, rel: String) -> ReadResult`
 
-- `ReadResult` is `{ kind: "text" | "binary" | "tooLarge", content: Option<String>, size: u64 }`.
-- A file larger than 2 MB returns `tooLarge` without content.
+- `ReadResult` is `{ kind: "text" | "binary" | "paged", content: Option<String>, size: u64 }`.
+- A file of 8 MiB or more returns `paged` without content. The viewer then calls `fs_open_paged` (the line count), `fs_read_lines` and `fs_search`. A line index in Rust state (at most 8 files) serves these commands. An append extends the index; any other change builds it again.
+- `fs_stat(root, rel) -> { mtimeMs, size }` feeds the freshness poll.
 - A NUL byte in the first 8 KB returns `binary` without content.
 - Otherwise the command decodes the bytes as lossy UTF-8 and returns `text`.
 - A missing file returns an error. The frontend shows the "missing" notice.
@@ -89,7 +90,7 @@ Mount points:
 - The root is the focused workspace's `new_workspace_cwd` from the snapshot, the same source as Source Control.
 - A workspace switch hides the viewer and renders the tree from the state of the new workspace.
 - Freshness rules (D7):
-  - The viewer calls `fs_read_text` each time a tab becomes active.
+  - The viewer calls `fs_read_text` when a tab becomes active, on a click on the active tab, and on window focus. A 2 s `fs_stat` poll reads again when the mtime or the size changes. A refresh keeps the top line, the current line and the find bar.
   - The tree calls `fs_list_dir` each time a folder expands.
   - A ↻ button in the tree section header re-reads all expanded folders.
 - The viewer and the diff view share `#terminal-wrap`. Opening one closes the other.
@@ -156,8 +157,8 @@ The shortcut table in `shortcuts.ts` cannot express a modifier-only key. The tra
 - A click on a line marks it as the current line. The current line gets a background, and its number becomes brighter.
 - No wrap. Horizontal scroll for long lines.
 - Native text selection and copy.
-- The viewer renders at most 5,000 lines. A longer file shows a notice under line 5,000.
-- Notices replace the body for `binary`, `tooLarge` and missing files.
+- The viewer renders only the rows near the viewport (virtual rows). All rows have one height. Find in the file searches all lines, not the rendered rows.
+- Notices replace the body for `binary` and missing files.
 
 ### 8.3 Breadcrumb
 
@@ -180,7 +181,7 @@ The shortcut table in `shortcuts.ts` cannot express a modifier-only key. The tra
 - `tests/unit/files/fuzzy.test.ts`: subsequence hit and miss, camel-hump, ranking order, tie break, the 50-result cap.
 - `tests/unit/files/highlight.test.ts`: per language — keyword, string, number, comment; multi-line comment state; escaped quotes; unknown extension.
 - `tests/unit/keyboard/doubleShift.test.ts`: fast double tap fires; slow tap, long hold, `Shift+H` between taps, repeat event, Ctrl+Shift do not fire.
-- `tests/unit/ui/fileViewer.test.ts` (jsdom): open, dedupe, close, cycle tabs; same-name tabs; binary, too-large and missing notices.
+- `tests/unit/ui/fileViewer.test.ts` (jsdom): open, dedupe, close, cycle tabs; same-name tabs; binary and missing notices; virtual rows; paged rows.
 - `tests/unit/ui/fileTree.test.ts` (jsdom): lazy expand, sort order, error row.
 - `tests/unit/keyboard/routing.test.ts`: double-Shift opens the finder from the terminal; no fire while an overlay is open; tab actions go to file tabs while the viewer has focus.
 
@@ -188,7 +189,7 @@ The shortcut table in `shortcuts.ts` cannot express a modifier-only key. The tra
 
 - `../` escape rejected; symlink to outside root rejected.
 - `.git` omitted; sort order correct.
-- Binary detection, 2 MB cap, lossy UTF-8.
+- Binary detection, paged threshold, lossy UTF-8, line index (build and append), line reads, search and its cancel.
 - `fs_list_files`: git path (temp repo with `.gitignore`) and fallback walk (skip list, cap).
 
 ### 9.3 Commands
@@ -208,7 +209,7 @@ Run in a Herdr pane and keep the output as evidence:
 
 ## 10. Risks and falsifiers
 
-- DOM render of 5,000 highlighted lines can stutter. If the live check shows lag, virtual scrolling becomes the first slice.
+- Native selection covers only the rendered rows. Paged mode colours each page from a null tokenizer state and cuts lines at 64 KiB. A multi-GB file that is rewritten (not appended) is indexed again in full at each change.
 - The 400 ms window can misfire for fast typists. If it does, the window becomes a setting.
 - The root comes from the frontend. Confinement protects paths below the root, not the choice of root. This is acceptable because the frontend is the app's own code with no remote content.
 
