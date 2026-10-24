@@ -240,7 +240,7 @@ impl MirrorToolsState {
 /// WebView2 environment and user data folder, and a webview built with other
 /// browser arguments fails to create.
 #[cfg(windows)]
-fn main_browser_args(app: &tauri::AppHandle) -> Option<String> {
+pub(crate) fn main_browser_args(app: &tauri::AppHandle) -> Option<String> {
     app.config()
         .app
         .windows

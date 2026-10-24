@@ -23,12 +23,18 @@ export interface RunToolbarView {
   mirrorBusy: boolean;
   mirrorDisabled: boolean;
   mirrorTitle: string;
+  /** The SQLite inspector button. Disabled unless the device is an adb device in state "device". */
+  dbDisabled: boolean;
+  dbTitle: string;
+  /** Play: Flutter projects only; a native Android project hides it. */
+  playVisible: boolean;
 }
 
 export interface RunToolbarHandlers {
   onDeviceClick: (anchor: HTMLElement) => void;
   onFlavorClick: () => void;
   onMirror: () => void;
+  onDatabase: () => void;
   onPlay: () => void;
   onReload: () => void;
   onRestart: () => void;
@@ -76,12 +82,13 @@ export function createRunToolbar(root: HTMLElement, handlers: RunToolbarHandlers
 
   const mirror = makeButton("run-btn--mirror", "screen-full", "Mirror the device screen", handlers.onMirror);
   const mirrorIcon = mirror.querySelector("i") as HTMLElement;
+  const db = makeButton("run-btn--db", "database", "Inspect SQLite databases", handlers.onDatabase);
   const play = makeButton("run-btn--play", "play", "Run on the selected device", handlers.onPlay);
   const playIcon = play.querySelector("i") as HTMLElement;
   const reload = makeButton("run-btn--reload", "flame", "Hot Reload", handlers.onReload);
   const restart = makeButton("run-btn--restart", "debug-restart", "Hot Restart", handlers.onRestart);
   const stop = makeButton("run-btn--stop", "debug-stop", "Stop", handlers.onStop);
-  root.append(deviceBtn, flavorBtn, mirror, play, reload, restart, stop);
+  root.append(deviceBtn, flavorBtn, mirror, db, play, reload, restart, stop);
 
   return {
     render(view) {
@@ -106,9 +113,12 @@ export function createRunToolbar(root: HTMLElement, handlers: RunToolbarHandlers
         : "codicon codicon-screen-full";
       mirror.disabled = view.mirrorDisabled;
       mirror.title = view.mirrorTitle;
+      db.disabled = view.dbDisabled;
+      db.title = view.dbTitle;
       play.classList.toggle("run-btn--running", running && !view.starting);
       play.disabled = view.playDisabled;
       play.title = view.playTitle;
+      play.hidden = !view.playVisible;
       for (const btn of [reload, restart, stop]) {
         btn.hidden = !running;
         btn.disabled = view.actionsDisabled;

@@ -2,6 +2,7 @@
 //! is stubbed vs. implemented for real.
 
 pub mod android;
+pub mod android_db;
 pub mod clipboard;
 pub mod commands;
 pub mod conn;
@@ -114,6 +115,12 @@ pub fn run(start: Instant) {
             android::android_screenshot,
             android::screenshot_copy,
             android::screenshot_save,
+            android_db::android_db_window,
+            android_db::android_running_apps,
+            android_db::android_app_databases,
+            android_db::android_pull_database,
+            android_db::android_db_query,
+            android_db::android_push_database,
             mirror_tools::mirror_tools_resize,
             record::mirror_record_start,
             record::mirror_record_stop,
@@ -161,6 +168,8 @@ pub fn run(start: Instant) {
             if let Some(window) = app.get_webview_window("main") {
                 memory::wire_memory_target(&window);
             }
+            // SQLite inspector copies left by a crash or an exit with the window open.
+            tauri::async_runtime::spawn_blocking(android_db::clear_local_copies);
             Ok(())
         })
         .build(tauri::generate_context!())

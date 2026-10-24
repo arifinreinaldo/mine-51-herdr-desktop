@@ -76,6 +76,12 @@ arboard = "3"
 # PNG decode for the screenshot Copy button (RGBA for arboard). Already in
 # the tree through arboard's `image`, so this adds no second copy.
 png = "0.17"
+# SQLite inspector (`android_db.rs`): reads the pulled database copy
+# read-only. `bundled` compiles SQLite from source; no system library.
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+# Push check (`android_db.rs`): SHA-1 of the local copy, compared with the
+# device's toybox `sha1sum`. Already in the tree through `zip`.
+sha1 = "0.10"
 # WebView2 memory target (Phase 1.6 §6.1): dropped to LOW while the window
 # is minimized/hidden, back to NORMAL on restore. Windows only -- `wry`
 # already depends on this exact version, so this adds no second copy.

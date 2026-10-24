@@ -8,13 +8,12 @@
 // exist on this page.
 
 import "./style.css";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { dockSideFrom, parseMirrorToolsParams } from "./android/mirrorToolsParams";
 import { errorMessage } from "./appApi";
 import { COUNTDOWN_SECONDS, formatElapsed, recordButtonView, recordFailureText, type RecState } from "./android/recordFormat";
 import { mirrorRecordStart, mirrorRecordStop, mirrorToolsResize, type RecordResult } from "./flutter/flutterApi";
-import { ThemeRegistry, applyThemeById, importedThemeId } from "./themes/index";
+import { applySavedTheme } from "./themes/savedTheme";
 import { mountRecordPanel } from "./ui/recordPanel";
 import { mountScreenshotPanel, type ScreenshotPanel } from "./ui/screenshotPanel";
 
@@ -32,30 +31,6 @@ function errorCode(err: unknown): unknown {
   return err && typeof err === "object" ? (err as { code?: unknown }).code : undefined;
 }
 
-/** Applies the saved theme once, at startup. A later change in the main window reaches this page with the next tools window. */
-async function applyTheme(): Promise<void> {
-  const registry = new ThemeRegistry();
-  let themeId = "dark-modern";
-  try {
-    const { settings } = await invoke<{ settings: { theme: string } }>("settings_get");
-    themeId = settings.theme;
-    const imported = await invoke<{ slug: string; name: string; type: string; colors: Record<string, string> }[]>(
-      "list_imported_themes",
-    );
-    registry.setImported(
-      imported.map((t) => ({
-        id: importedThemeId(t.slug),
-        label: t.name,
-        kind: t.type as "light" | "dark" | "hc",
-        colors: t.colors,
-      })),
-    );
-  } catch {
-    themeId = "dark-modern";
-  }
-  applyThemeById(registry, themeId, document.documentElement.style);
-}
-
 function codicon(name: string): HTMLElement {
   const i = document.createElement("i");
   i.className = `codicon codicon-${name}`;
@@ -70,7 +45,7 @@ async function main(): Promise<void> {
     root.textContent = "Invalid mirror tools parameters";
     return;
   }
-  await applyTheme();
+  await applySavedTheme();
 
   const strip = document.createElement("div");
   strip.className = "mt-strip";

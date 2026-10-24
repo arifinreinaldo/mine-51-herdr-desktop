@@ -8,6 +8,8 @@ import { invoke } from "@tauri-apps/api/core";
 export interface FlutterProject {
   dir: string;
   name: string;
+  /** "android": a native Android project. The run toolbar then hides Play and flavors. */
+  kind: "flutter" | "android";
 }
 
 export interface AndroidDevice {
@@ -74,6 +76,56 @@ export function screenshotCopy(): Promise<void> {
 /** Save dialog for the latest screenshot. Resolves the saved path, or `null` when cancelled. */
 export function screenshotSave(suggestedName: string): Promise<string | null> {
   return invoke<string | null>("screenshot_save", { suggestedName });
+}
+
+/** Opens the SQLite inspector window for an adb device, or focuses the open one. */
+export function androidDbWindow(deviceId: string, deviceName?: string): Promise<void> {
+  return invoke<void>("android_db_window", { deviceId, deviceName });
+}
+
+/** Third-party packages with a running process on the device, sorted. */
+export function androidRunningApps(deviceId: string): Promise<string[]> {
+  return invoke<string[]>("android_running_apps", { deviceId });
+}
+
+/** Paths, relative to the app data folder, of the SQLite databases the app holds open now. Rejects `not_running` and `not_debuggable`. */
+export function androidAppDatabases(deviceId: string, packageName: string): Promise<string[]> {
+  return invoke<string[]>("android_app_databases", { deviceId, packageName });
+}
+
+export interface PulledDatabase {
+  /** The local copy, for a tooltip. */
+  path: string;
+  tables: string[];
+}
+
+/** Pulls the database with its `-wal` and `-shm` to a temp copy (replacing the last one) and lists its tables and views. */
+export function androidPullDatabase(deviceId: string, packageName: string, dbPath: string): Promise<PulledDatabase> {
+  return invoke<PulledDatabase>("android_pull_database", { deviceId, packageName, dbPath });
+}
+
+export interface QueryPage {
+  columns: string[];
+  /** Display text per cell; `null` is SQL NULL. Integers are strings, so 64-bit values keep every digit. */
+  rows: (string | null)[][];
+  hasMore: boolean;
+  /** True when write mode ran a statement that changed the copy: one "Rows changed" row. */
+  wrote: boolean;
+}
+
+/** Runs one statement on the local copy, up to 100 rows from `offset`. Read-only unless `write`. */
+export function androidDbQuery(deviceId: string, packageName: string, dbPath: string, sql: string, offset: number, write: boolean): Promise<QueryPage> {
+  return invoke<QueryPage>("android_db_query", { deviceId, packageName, dbPath, sql, offset, write });
+}
+
+export interface PushedDatabase {
+  /** The device database as it was before the push, for a tooltip. */
+  backupPath: string;
+}
+
+/** Force-stops the app, backs up its database, copies the local copy over it and checks the SHA-1. */
+export function androidPushDatabase(deviceId: string, packageName: string, dbPath: string): Promise<PushedDatabase> {
+  return invoke<PushedDatabase>("android_push_database", { deviceId, packageName, dbPath });
 }
 
 export type StopCause = "user" | "mirror_closed" | "tools_closed" | "app_exit" | "device_lost" | "start_timeout";

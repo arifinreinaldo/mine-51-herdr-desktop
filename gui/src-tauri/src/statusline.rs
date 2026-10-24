@@ -139,10 +139,10 @@ pub fn apply_statusline(settings: &mut Value, tap_script_path: &Path) -> Result<
 }
 
 /// Days-since-epoch civil calendar conversion (Howard Hinnant's
-/// `civil_from_days`, public domain), used only to format the backup
-/// filename's `yyyyMMddHHmmss` timestamp (UTC) -- this crate has no
+/// `civil_from_days`, public domain), used to format backup
+/// file name timestamps (UTC; also android_db.rs) -- this crate has no
 /// calendar/time dependency (spec §7 lists none).
-fn civil_from_unix_utc(epoch_secs: i64) -> (i64, u32, u32, u32, u32, u32) {
+pub(crate) fn civil_from_unix_utc(epoch_secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = epoch_secs.div_euclid(86400);
     let secs_of_day = epoch_secs.rem_euclid(86400);
     let hour = (secs_of_day / 3600) as u32;

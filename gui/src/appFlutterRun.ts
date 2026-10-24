@@ -10,6 +10,7 @@ import { overlayRoot, runToolbarEl } from "./appDom";
 import { appState, persistSettings } from "./appState";
 import type { RawSnapshot } from "./appTypes";
 import {
+  androidDbWindow,
   androidDevices,
   androidInstallApk,
   androidMirror,
@@ -67,6 +68,7 @@ const toolbar = createRunToolbar(runToolbarEl, {
   onDeviceClick: (anchor) => openDeviceMenu(anchor),
   onFlavorClick: () => openFlavorMenu(),
   onMirror: () => void mirror(),
+  onDatabase: () => void openDbInspector(),
   onPlay: () => void play(),
   onReload: () => void sendRunKey("r"),
   onRestart: () => void sendRunKey("R"),
@@ -74,7 +76,8 @@ const toolbar = createRunToolbar(runToolbarEl, {
 });
 
 function allDevices(): AndroidDevice[] {
-  return mergeDevices(adbDevices ?? [], flutterList);
+  // An Android workspace runs nothing through flutter: desktop and web entries do not apply.
+  return project?.kind === "android" ? (adbDevices ?? []) : mergeDevices(adbDevices ?? [], flutterList);
 }
 
 /** The saved device if it is listed, else the first runnable one. The saved
@@ -83,6 +86,11 @@ function selectedDevice(): AndroidDevice | null {
   const devices = allDevices();
   const saved = project ? appState.settings.flutterDevices[project.dir] : undefined;
   return devices.find((d) => d.id === saved) ?? devices.find((d) => d.state === "device") ?? null;
+}
+
+/** A connected adb device: the SQLite inspector needs adb, so flutter-only entries (Windows, Chrome) do not count. */
+function isAdbDevice(device: AndroidDevice | null): device is AndroidDevice {
+  return device?.state === "device" && (adbDevices?.some((d) => d.id === device.id) ?? false);
 }
 
 /** The saved flavor if the project still has it, else the first one. `null`
@@ -96,7 +104,13 @@ function selectedFlavor(): string | null {
 /** Both sources finished and neither gave a list (spec §10.2: the error
  * label shows only when both fail). */
 function bothFailed(): boolean {
-  return adbErrorCode !== null && adbDevices === null && flutterList === null && !adbLoading && !flutterLoading;
+  const flutterAbsent = !usesFlutter() || (flutterList === null && !flutterLoading);
+  return adbErrorCode !== null && adbDevices === null && !adbLoading && flutterAbsent;
+}
+
+/** Android workspaces ignore `flutter devices`; its session-cached state must not leak into their toolbar. */
+function usesFlutter(): boolean {
+  return project?.kind === "flutter";
 }
 
 function render(): void {
@@ -115,6 +129,9 @@ function render(): void {
       mirrorBusy: false,
       mirrorDisabled: true,
       mirrorTitle: "",
+      dbDisabled: true,
+      dbTitle: "",
+      playVisible: false,
     });
     return;
   }
@@ -125,7 +142,7 @@ function render(): void {
   let loading = false;
   let playTitle = `Run on ${device?.name ?? "the selected device"}`;
 
-  if (!device && (adbLoading || flutterLoading) && adbDevices === null) {
+  if (!device && (adbLoading || (flutterLoading && usesFlutter())) && adbDevices === null) {
     label = "Loading devices…";
     labelTitle = label;
     loading = true;
@@ -175,6 +192,9 @@ function render(): void {
     mirrorBusy,
     mirrorDisabled: mirrorBusy || device?.state !== "device",
     mirrorTitle: mirrorBusy ? "Starting scrcpy…" : `Mirror ${device?.name ?? "the device"} with scrcpy`,
+    dbDisabled: !isAdbDevice(device),
+    dbTitle: `Inspect SQLite databases on ${device?.name ?? "the device"}`,
+    playVisible: project.kind === "flutter",
   });
 }
 
@@ -254,7 +274,7 @@ function settled(): void {
 function loadAllDevices(force: boolean): void {
   if (!force && (adbLoading || flutterLoading)) return;
   loadAdb(true);
-  loadFlutter();
+  if (project?.kind !== "android") loadFlutter();
 }
 
 // ---------------------------------------------------------------------
@@ -273,7 +293,7 @@ function deviceMenuItems(): MenuItemSpec[] {
       onSelect: () => chooseDevice(device.id),
     };
   });
-  if (flutterLoading) {
+  if (flutterLoading && usesFlutter()) {
     items.push({
       id: "flutter.device.looking",
       label: "Looking for more devices…",
@@ -361,7 +381,7 @@ async function sendToPane(paneId: string, events: unknown[]): Promise<boolean> {
 }
 
 async function play(): Promise<void> {
-  if (playing || !project || !activeWorkspaceId || !appState.snapshot) return;
+  if (playing || !project || project.kind !== "flutter" || !activeWorkspaceId || !appState.snapshot) return;
   const device = selectedDevice();
   if (!device || device.state !== "device") return;
   // Settings are editable on disk, and this id is typed into a shell.
@@ -456,11 +476,27 @@ async function mirror(): Promise<void> {
   }
 }
 
+/** Opens (or focuses) the SQLite inspector window for the selected adb device. */
+async function openDbInspector(): Promise<void> {
+  const device = selectedDevice();
+  if (!isAdbDevice(device)) return;
+  // Settings are editable on disk; the backend checks this id again.
+  if (!isValidDeviceId(device.id)) {
+    showErrorNotice(`Unsafe device id: ${device.id}`);
+    return;
+  }
+  try {
+    await androidDbWindow(device.id, device.name);
+  } catch (err) {
+    showErrorNotice(errorMessage(err));
+  }
+}
+
 /** Installs dropped APKs on the selected device, one after the other. */
 export async function installApks(paths: string[]): Promise<void> {
   const device = selectedDevice();
   if (!device || device.state !== "device") {
-    showErrorNotice("No ready device. Connect one in a Flutter workspace");
+    showErrorNotice("No ready device. Connect one in a Flutter or Android workspace");
     return;
   }
   if (!isValidDeviceId(device.id)) {
@@ -520,14 +556,15 @@ function loadFlavors(dir: string): void {
 function activateProject(found: FlutterProject | null): void {
   const changed = found !== null && found.dir !== project?.dir;
   project = found;
-  if (!found) flavors = [];
+  // Flavors are a Flutter concept; clearing them keeps a Flutter project's picker out of an Android workspace.
+  if (!found || found.kind !== "flutter") flavors = [];
   else if (changed) loadFlavors(found.dir);
   render();
   if (!changed) return;
   // Only adb on activation; the flutter result is cached for the session
   // (spec section 10.2), and "Refresh devices" is the way to update it.
   loadAdb(false);
-  if (flutterList === null && !flutterLoading) loadFlutter();
+  if (found.kind === "flutter" && flutterList === null && !flutterLoading) loadFlutter();
 }
 
 function onSnapshot(snapshot: RawSnapshot): void {

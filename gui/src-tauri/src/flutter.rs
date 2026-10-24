@@ -23,11 +23,21 @@ const PUBSPEC_MAX_BYTES: u64 = 256 * 1024;
 const STDERR_MAX_CHARS: usize = 2000;
 const SKIPPED_SUBFOLDERS: [&str; 3] = ["build", "node_modules", "ios"];
 
+/// What the run toolbar shows: Flutter gets Play and flavors; a native
+/// Android project gets the device picker, Mirror and the SQLite inspector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProjectKind {
+    Flutter,
+    Android,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlutterProject {
     pub dir: String,
     pub name: String,
+    pub kind: ProjectKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -340,13 +350,52 @@ fn match_flutter_dir(dir: &Path) -> Option<FlutterProject> {
     Some(FlutterProject {
         dir: dir.to_string_lossy().into_owned(),
         name,
+        kind: ProjectKind::Flutter,
     })
+}
+
+/// A native Android project: `settings.gradle(.kts)` beside
+/// `app/src/main/AndroidManifest.xml`. The name is the folder name.
+// shortcut: only the `app` module is checked; read settings.gradle's includes if other module names show up.
+fn match_android_dir(dir: &Path) -> Option<FlutterProject> {
+    let settings = ["settings.gradle", "settings.gradle.kts"]
+        .iter()
+        .any(|f| dir.join(f).is_file());
+    let manifest = dir
+        .join("app")
+        .join("src")
+        .join("main")
+        .join("AndroidManifest.xml");
+    if !settings || !manifest.is_file() {
+        return None;
+    }
+    Some(FlutterProject {
+        dir: dir.to_string_lossy().into_owned(),
+        name: dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        kind: ProjectKind::Android,
+    })
+}
+
+/// A Flutter project, else a native Android one. Flutter is searched
+/// first, so a Flutter project's own `android/` folder reports Flutter.
+pub fn find_run_project(cwd: &Path) -> Option<FlutterProject> {
+    find_project(cwd, match_flutter_dir).or_else(|| find_project(cwd, match_android_dir))
+}
+
+pub fn find_flutter_project(cwd: &Path) -> Option<FlutterProject> {
+    find_project(cwd, match_flutter_dir)
 }
 
 /// `cwd` and each ancestor first, then each immediate subfolder of `cwd`
 /// sorted by name.
-pub fn find_flutter_project(cwd: &Path) -> Option<FlutterProject> {
-    if let Some(found) = cwd.ancestors().find_map(match_flutter_dir) {
+fn find_project(
+    cwd: &Path,
+    matcher: fn(&Path) -> Option<FlutterProject>,
+) -> Option<FlutterProject> {
+    if let Some(found) = cwd.ancestors().find_map(matcher) {
         return Some(found);
     }
     let mut subfolders: Vec<PathBuf> = std::fs::read_dir(cwd)
@@ -360,12 +409,12 @@ pub fn find_flutter_project(cwd: &Path) -> Option<FlutterProject> {
         .map(|entry| entry.path())
         .collect();
     subfolders.sort();
-    subfolders.iter().find_map(|dir| match_flutter_dir(dir))
+    subfolders.iter().find_map(|dir| matcher(dir))
 }
 
 #[tauri::command]
 pub async fn flutter_project(cwd: String) -> Result<Option<FlutterProject>, ApiError> {
-    tokio::task::spawn_blocking(move || find_flutter_project(Path::new(&cwd)))
+    tokio::task::spawn_blocking(move || find_run_project(Path::new(&cwd)))
         .await
         .map_err(|err| api_error("flutter_project_failed", err.to_string()))
 }
@@ -750,6 +799,50 @@ mod tests {
         let root = scratch("quotes");
         write_pubspec(&root, "name: \"my_app\"\nflutter:\n  sdk: flutter\n");
         assert_eq!(find_flutter_project(&root).unwrap().name, "my_app");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn write_android(dir: &Path, settings: &str) {
+        let main = dir.join("app").join("src").join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::write(main.join("AndroidManifest.xml"), b"<manifest/>").unwrap();
+        std::fs::write(dir.join(settings), b"").unwrap();
+    }
+
+    #[test]
+    fn detects_a_native_android_project_from_a_module_folder() {
+        let root = scratch("android");
+        write_android(&root, "settings.gradle.kts");
+        let found = find_run_project(&root.join("app")).unwrap();
+        assert_eq!(found.kind, ProjectKind::Android);
+        assert_eq!(found.dir, root.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_groovy_settings_file_also_matches() {
+        let root = scratch("android-groovy");
+        write_android(&root, "settings.gradle");
+        assert_eq!(find_run_project(&root).unwrap().kind, ProjectKind::Android);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn flutter_wins_over_its_own_android_folder() {
+        let root = scratch("flutter-android");
+        write_pubspec(&root, FLUTTER_PUBSPEC);
+        write_android(&root.join("android"), "settings.gradle");
+        let found = find_run_project(&root.join("android")).unwrap();
+        assert_eq!(found.kind, ProjectKind::Flutter);
+        assert_eq!(found.dir, root.to_string_lossy());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn gradle_without_an_app_manifest_does_not_match() {
+        let root = scratch("gradle-only");
+        std::fs::write(root.join("settings.gradle"), b"").unwrap();
+        assert!(find_run_project(&root).is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 
