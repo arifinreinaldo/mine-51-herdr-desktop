@@ -47,7 +47,7 @@ import { canvas, overlayRoot, terminalWrapEl } from "./appDom";
 import { appState } from "./appState";
 import { showCopiedNotice } from "./copyNotice";
 import { focusKeyboardCapture } from "./keyboard/focusCapture";
-import { activateLink, hoverCallAllowed, resolveLinkRegions, type PaneLinkRegion } from "./links";
+import { activateLink, hoverCallAllowed, openLocalPath, pathAtColumn, resolveLinkRegions, type PaneLinkRegion } from "./links";
 import {
   absoluteRowForViewportRow,
   clampToPaneLocal,
@@ -350,6 +350,10 @@ async function onPointerDown(event: PointerEvent): Promise<void> {
       col: local.col,
       content_revision: hit.content_revision,
       offset_from_bottom: hit.scroll?.offset_from_bottom,
+    }).then(async (handled) => {
+      if (handled) return;
+      const match = pathAtColumn(await readViewportRow(hit, top, local.row), local.col);
+      if (match) openLocalPath(match.path);
     });
     return;
   }
@@ -627,6 +631,18 @@ async function finishSelection(opts: {
   if (await writeToClipboard(result?.text)) showCopiedNotice();
 }
 
+/** Reads one viewport row's text (shared by word selection and path links). */
+async function readViewportRow(hit: PaneMouseHit, top: number, viewportRow: number): Promise<string> {
+  const row = absoluteRowForViewportRow(viewportRow, top);
+  const result = await api<{ text?: string }>("pane.selection.read", {
+    pane_id: hit.pane_id,
+    anchor: { row, col: 0 },
+    cursor: { row, col: Math.max(0, hit.inner_rect.width - 1) },
+    content_revision: hit.content_revision,
+  });
+  return result?.text ?? "";
+}
+
 /** P1 #9 double-click: reads the clicked row (mirroring `request_word_
  * selection_row`, `src/client/shell/word_selection.rs:62-91`), finds the
  * word bounds at the clicked column client-side
@@ -634,14 +650,7 @@ async function finishSelection(opts: {
  * finishes the selection over just that word. */
 async function startWordSelection(hit: PaneMouseHit, top: number, viewportRows: number, local: { col: number; row: number }): Promise<void> {
   const row = absoluteRowForViewportRow(local.row, top);
-  const width = hit.inner_rect.width;
-  const rowResult = await api<{ text?: string }>("pane.selection.read", {
-    pane_id: hit.pane_id,
-    anchor: { row, col: 0 },
-    cursor: { row, col: Math.max(0, width - 1) },
-    content_revision: hit.content_revision,
-  });
-  const text = rowResult?.text ?? "";
+  const text = await readViewportRow(hit, top, local.row);
   const bounds = wordBoundsAtColumn(text, local.col) ?? [local.col, local.col];
   await finishSelection({
     paneId: hit.pane_id,
@@ -735,13 +744,18 @@ async function onCtrlHover(event: PointerEvent): Promise<void> {
   }
   const viewportRows = hit.scroll?.viewport_rows ?? hit.inner_rect.height;
   const local = clampToPaneLocal(cell.col, cell.row, hit.inner_rect);
-  const regions = await resolveLinkRegions({
+  let regions = await resolveLinkRegions({
     pane_id: hit.pane_id,
     viewport_row: local.row,
     col: local.col,
     content_revision: hit.content_revision,
     offset_from_bottom: hit.scroll?.offset_from_bottom,
   });
+  if (regions.length === 0) {
+    const text = await readViewportRow(hit, viewportTopRow(hit.scroll), local.row);
+    const match = pathAtColumn(text, local.col, local.row);
+    if (match) regions = [match.region];
+  }
   paintLinkHoverRegions(regions, viewportRows, hit.inner_rect, renderer);
 }
 

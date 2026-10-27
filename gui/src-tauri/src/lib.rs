@@ -94,6 +94,7 @@ pub fn run(start: Instant) {
             commands::write_clipboard_text,
             commands::clipboard_read_text,
             commands::open_external_url,
+            commands::open_local_path,
             commands::app_version,
             commands::sync_state,
             commands::set_client_focus,
