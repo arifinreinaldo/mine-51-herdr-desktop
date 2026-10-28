@@ -27,10 +27,40 @@ export interface PaneLinkRegion {
  * didn't handle it itself and returned an http(s) URL, opens it via the
  * Rust `open_external_url` command (which re-validates the scheme --
  * `commands.rs`'s `is_safe_web_url`, never trusts this call site alone). */
-export async function activateLink(params: PaneLinkParams): Promise<void> {
+export async function activateLink(params: PaneLinkParams): Promise<boolean> {
   const result = await api<{ url?: string; handled?: boolean }>("pane.link.activate", { ...params });
-  if (!result || result.handled) return;
-  if (result.url) void invokeSafe("open_external_url", { url: result.url });
+  if (!result) return false;
+  if (result.handled) return true;
+  if (result.url) {
+    void invokeSafe("open_external_url", { url: result.url });
+    return true;
+  }
+  return false;
+}
+
+export interface PathMatch {
+  path: string;
+  region: PaneLinkRegion;
+}
+
+// shortcut: Windows drive paths without spaces, one row only, col == string
+// index (ASCII); upgrade to quoted/spaced/wrapped paths when one is missed.
+const WIN_PATH = /[A-Za-z]:\\[^\s"'<>|*?]+/g;
+
+/** Finds the `C:\...\file.ext` path under `col` in a row of terminal text. */
+export function pathAtColumn(rowText: string, col: number, row = 0): PathMatch | null {
+  for (const m of rowText.matchAll(WIN_PATH)) {
+    const path = m[0].replace(/[.,;:!)\]}]+$/, "");
+    const start = m.index ?? 0;
+    const end = start + path.length - 1;
+    if (col >= start && col <= end) return { path, region: { row, start_col: start, end_col: end } };
+  }
+  return null;
+}
+
+/** Ctrl+click fallback: opens the file path under the click, if any. */
+export function openLocalPath(path: string): void {
+  void invokeSafe("open_local_path", { path });
 }
 
 /** Ctrl+hover: resolves the link region(s) at/around the hovered cell, for

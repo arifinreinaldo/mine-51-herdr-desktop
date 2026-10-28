@@ -3,7 +3,7 @@
 ## Convention
 A `// shortcut:` comment marks a deliberate simplification. The text states the ceiling and the upgrade path. Find all with `grep -rn "// shortcut:" src src-tauri/src`. Ignore the object key `shortcut:` in menu code.
 
-## List (checked 2026-10-24)
+## List (checked 2026-10-27)
 | Location | Ceiling | Upgrade |
 |---|---|---|
 | `src/appSourceControl.ts:30` | 3 s poll, no file watcher | notify-based watching |
@@ -14,6 +14,7 @@ A `// shortcut:` comment marks a deliberate simplification. The text states the 
 | `src/files/highlight.ts:3` | lexical only; PHP heredoc and regex literals can mis-color | none stated (spec section 8.4) |
 | `src/files/fuzzy.ts:42` | ranks every path on each keystroke | debounce at 50,000 files |
 | `src/git/diffParse.ts:9` | combined conflict diffs (`@@@`) render as meta rows | parse them |
+| `src/links.ts:46` | file-path links: `C:\` paths without spaces, one row, ASCII columns; `open_local_path` opens only allowlisted document and media types | quoted and spaced paths, wrapped rows |
 | `src/keyboard/doubleShift.ts:3` | fixed 400 ms window | make it a setting |
 | `src-tauri/src/flutter.rs:359` | only the `app` module is checked | read `settings.gradle` includes |
 | `src-tauri/src/git.rs:309` | `kill_on_drop` ends git but not hook grandchildren | job object |
@@ -25,4 +26,4 @@ A `// shortcut:` comment marks a deliberate simplification. The text states the 
 | `src-tauri/src/android_db.rs:204` | backups are never pruned | keep-last-N |
 | `src-tauri/src/android_db.rs:662` | deep pages step through every earlier row; a runaway query cannot be cancelled | progress handler |
 
-18 markers. A new marker needs a row here.
+19 markers. A new marker needs a row here.

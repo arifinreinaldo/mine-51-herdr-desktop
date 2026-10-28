@@ -6,7 +6,7 @@
 // `hoverCallAllowed` predicate below.
 
 import { describe, expect, it } from "vitest";
-import { hoverCallAllowed, isUnsupportedMethod } from "../../src/links";
+import { hoverCallAllowed, isUnsupportedMethod, pathAtColumn } from "../../src/links";
 
 describe("hoverCallAllowed", () => {
   it("always allows the first call (lastCallAt is null)", () => {
@@ -35,5 +35,21 @@ describe("isUnsupportedMethod", () => {
   it("does not match other errors", () => {
     expect(isUnsupportedMethod({ message: "pane_not_found: gone" })).toBe(false);
     expect(isUnsupportedMethod("boom")).toBe(false);
+  });
+});
+
+describe("pathAtColumn", () => {
+  const ROW = "  I've exported it to C:\\Users\\Reinaldo\\stockbit-portfolio\\research_2026-10-27.xlsx. It has";
+
+  it("finds the path under the column and trims trailing punctuation", () => {
+    const m = pathAtColumn(ROW, 30, 4);
+    expect(m?.path).toBe("C:\\Users\\Reinaldo\\stockbit-portfolio\\research_2026-10-27.xlsx");
+    expect(m?.region.row).toBe(4);
+    expect(m?.region.end_col).toBe(m!.region.start_col + m!.path.length - 1);
+  });
+
+  it("returns null outside the path or on a row without one", () => {
+    expect(pathAtColumn(ROW, 2)).toBeNull();
+    expect(pathAtColumn("no path here", 3)).toBeNull();
   });
 });

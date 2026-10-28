@@ -625,6 +625,48 @@ pub fn open_external_url(app: AppHandle, url: String) -> Result<(), ApiError> {
         })
 }
 
+/// Opens an existing local file in its OS default app (Ctrl+click on a file
+/// path in the terminal). Rust re-validates: absolute, a real file, and an
+/// allowlisted document/media extension. Terminal output is untrusted text,
+/// so the allowlist limits what a crafted path can launch.
+#[tauri::command]
+pub fn open_local_path(app: AppHandle, path: String) -> Result<(), ApiError> {
+    let p = std::path::Path::new(&path);
+    if !is_safe_local_file(p) {
+        return Err(ApiError {
+            code: "unsafe_path".to_string(),
+            message: format!("refusing to open: {path}"),
+        });
+    }
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|err| ApiError {
+            code: "io_error".to_string(),
+            message: err.to_string(),
+        })
+}
+
+fn is_safe_local_file(p: &std::path::Path) -> bool {
+    // Allowlist, not a denylist: Windows has too many runnable types
+    // (pif, msc, docm macros, ...) to enumerate. Macro-capable Office types
+    // (docm, xlsm, pptm) are left out on purpose.
+    const ALLOWED: &[&str] = &[
+        "xlsx", "xls", "csv", "tsv", "docx", "doc", "pptx", "pdf", "txt", "md", "log", "json", "yml", "yaml", "png", "jpg",
+        "jpeg", "gif", "svg", "webp", "mp4", "mov", "mp3", "wav",
+    ];
+    // Canonicalize first: it resolves symlinks/junctions and drops a trailing
+    // dot or space, so the extension check sees the real on-disk file.
+    let Ok(real) = p.canonicalize() else {
+        return false;
+    };
+    if !p.is_absolute() || !real.is_file() {
+        return false;
+    }
+    let ext = real.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    ALLOWED.contains(&ext.as_str())
+}
+
 /// `http://`/`https://` only, byte-for-byte the same rule as herdr's TUI
 /// client's own `safe_web_url` (`src/app/actions.rs:1035-1037`): no
 /// `file:`, no `javascript:`, no scheme-relative or bare paths.
@@ -715,7 +757,27 @@ pub async fn sync_state(state: tauri::State<'_, AppState>, app: AppHandle) -> Re
 
 #[cfg(test)]
 mod safe_web_url_tests {
-    use super::is_safe_web_url;
+    use super::{is_safe_local_file, is_safe_web_url};
+
+    #[test]
+    fn local_file_gate_rejects_relative_missing_and_executables() {
+        let dir = std::env::temp_dir();
+        let ok = dir.join("herdr_open_path_test.xlsx");
+        let bad = dir.join("herdr_open_path_test.BAT");
+        let pif = dir.join("herdr_open_path_test.pif");
+        std::fs::write(&ok, b"x").unwrap();
+        std::fs::write(&bad, b"x").unwrap();
+        std::fs::write(&pif, b"x").unwrap();
+        assert!(is_safe_local_file(&ok));
+        assert!(!is_safe_local_file(&bad));
+        assert!(!is_safe_local_file(&pif)); // not on the allowlist
+        assert!(!is_safe_local_file(&dir)); // a directory
+        assert!(!is_safe_local_file(&dir.join("herdr_missing_file.xlsx")));
+        assert!(!is_safe_local_file(std::path::Path::new("relative.xlsx")));
+        let _ = std::fs::remove_file(ok);
+        let _ = std::fs::remove_file(bad);
+        let _ = std::fs::remove_file(pif);
+    }
 
     #[test]
     fn accepts_http_and_https() {
