@@ -43,17 +43,75 @@ export interface PathMatch {
   region: PaneLinkRegion;
 }
 
-// shortcut: Windows drive paths without spaces, one row only, col == string
-// index (ASCII); upgrade to quoted/spaced/wrapped paths when one is missed.
-const WIN_PATH = /[A-Za-z]:\\[^\s"'<>|*?]+/g;
+// shortcut: Windows drive paths without spaces, col == string index (ASCII);
+// upgrade to quoted/spaced paths when one is missed.
+const WIN_PATH = /(?<![A-Za-z0-9])[A-Za-z]:\\[^\s"'<>|*?]+/g;
+
+/** The path in `m`, without trailing punctuation. */
+function trimmedPath(m: RegExpMatchArray): { path: string; start: number; end: number } {
+  const path = m[0].replace(/[.,;:!)\]}]+$/, "");
+  const start = m.index ?? 0;
+  return { path, start, end: start + path.length - 1 };
+}
 
 /** Finds the `C:\...\file.ext` path under `col` in a row of terminal text. */
 export function pathAtColumn(rowText: string, col: number, row = 0): PathMatch | null {
   for (const m of rowText.matchAll(WIN_PATH)) {
-    const path = m[0].replace(/[.,;:!)\]}]+$/, "");
-    const start = m.index ?? 0;
-    const end = start + path.length - 1;
+    const { path, start, end } = trimmedPath(m);
     if (col >= start && col <= end) return { path, region: { row, start_col: start, end_col: end } };
+  }
+  return null;
+}
+
+/** Most rows one wrapped path may span: a full screen of text must not stitch together. */
+export const MAX_WRAP_ROWS = 8;
+
+/** A row wrapped early when it is within this many columns of the pane width.
+ * Measured in Claude Code's TUI: it breaks a long path one column short
+ * (135 of 136) and indents the next row by 2. */
+export const WRAP_SLACK = 2;
+
+/** Whether the text of a row continues on the next row: it reaches the pane edge. */
+export function wrapsOntoNextRow(rowText: string, paneWidth: number): boolean {
+  return rowText.length >= paneWidth - WRAP_SLACK;
+}
+
+export interface WrappedPathMatch {
+  path: string;
+  /** One region per row the path covers, for the hover underline. */
+  regions: PaneLinkRegion[];
+}
+
+/** Finds a path that the terminal wrapped over 2+ rows. `rows` are consecutive
+ * viewport rows in which every row but the last reaches the pane edge (see
+ * `WRAP_SLACK`), so the text continues on the next row. The indent in front of
+ * a continuation row is not part of the path. `null` for a one-row path:
+ * `pathAtColumn` and the server handle those. */
+export function pathAtWrappedRows(rows: { row: number; text: string }[], row: number, col: number): WrappedPathMatch | null {
+  const at = rows.findIndex((r) => r.row === row);
+  if (at < 0) return null;
+  // `starts[k]`: where row k's text lands in `joined`; `skips[k]`: indent columns dropped.
+  const starts: number[] = [];
+  const skips: number[] = [];
+  let joined = "";
+  rows.forEach((r, k) => {
+    const skip = k === 0 ? 0 : r.text.length - r.text.trimStart().length;
+    starts.push(joined.length);
+    skips.push(skip);
+    joined += r.text.slice(skip);
+  });
+  if (col < skips[at]) return null;
+  const pos = starts[at] + col - skips[at];
+  for (const m of joined.matchAll(WIN_PATH)) {
+    const { path, start, end } = trimmedPath(m);
+    if (pos < start || pos > end) continue;
+    const regions: PaneLinkRegion[] = [];
+    rows.forEach((r, k) => {
+      const from = Math.max(start, starts[k]);
+      const to = Math.min(end, starts[k] + r.text.length - skips[k] - 1);
+      if (from <= to) regions.push({ row: r.row, start_col: from - starts[k] + skips[k], end_col: to - starts[k] + skips[k] });
+    });
+    return regions.length > 1 ? { path, regions } : null;
   }
   return null;
 }
@@ -78,12 +136,18 @@ export async function resolveLinkRegions(params: PaneLinkParams): Promise<PaneLi
     // Ctrl+mouse move, so a notice per call floods the screen: stop asking
     // for this session and stay silent. Any other error still shows.
     if (isUnsupportedMethod(err)) hoverUnsupported = true;
-    else showErrorNotice(errorMessage(err));
+    else if (!isStaleError(err)) showErrorNotice(errorMessage(err));
     return [];
   }
 }
 
 let hoverUnsupported = false;
+
+/** A moving pane makes the hovered revision stale within one tick; the
+ * TUI client stays silent for these too (`actions.rs:709`). */
+export function isStaleError(err: unknown): boolean {
+  return /^(stale_content|stale_target|endpoint_cancelled)/.test(errorMessage(err));
+}
 
 export function isUnsupportedMethod(err: unknown): boolean {
   return errorMessage(err).startsWith("unsupported_method");

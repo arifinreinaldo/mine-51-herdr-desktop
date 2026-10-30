@@ -649,22 +649,31 @@ pub fn open_local_path(app: AppHandle, path: String) -> Result<(), ApiError> {
 
 fn is_safe_local_file(p: &std::path::Path) -> bool {
     // Allowlist, not a denylist: Windows has too many runnable types
-    // (pif, msc, docm macros, ...) to enumerate. Macro-capable Office types
-    // (docm, xlsm, pptm) are left out on purpose.
+    // (pif, msc, ...) to enumerate. Macro-capable formats (docm, xlsm, pptm,
+    // and the legacy binary doc/xls) are left out on purpose.
     const ALLOWED: &[&str] = &[
-        "xlsx", "xls", "csv", "tsv", "docx", "doc", "pptx", "pdf", "txt", "md", "log", "json", "yml", "yaml", "png", "jpg",
-        "jpeg", "gif", "svg", "webp", "mp4", "mov", "mp3", "wav",
+        "xlsx", "csv", "tsv", "docx", "pptx", "pdf", "txt", "md", "log", "json", "yml", "yaml", "png", "jpg", "jpeg", "gif",
+        "svg", "webp", "mp4", "mov", "mp3", "wav",
     ];
-    // Canonicalize first: it resolves symlinks/junctions and drops a trailing
-    // dot or space, so the extension check sees the real on-disk file.
+    let allowed_ext = |path: &std::path::Path| {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        ALLOWED.contains(&ext.as_str())
+    };
+    // Drive-letter paths only: a UNC path (`\\host\share`) would make
+    // `canonicalize` connect to a remote host. A `:` past the drive letter is
+    // an NTFS alternate data stream (`evil.bat:s.txt`). A mapped drive or a
+    // symlink to a UNC path can still reach the network; accepted.
+    let b = p.to_str().unwrap_or("").as_bytes();
+    if !(b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\') || b[2..].contains(&b':') {
+        return false;
+    }
+    // Canonicalize resolves symlinks/junctions and drops a trailing dot or
+    // space. Both names must pass: the OS opens `p`, not `real`, so a `.bat`
+    // symlink to a `.txt` must not slip through on the target's extension.
     let Ok(real) = p.canonicalize() else {
         return false;
     };
-    if !p.is_absolute() || !real.is_file() {
-        return false;
-    }
-    let ext = real.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-    ALLOWED.contains(&ext.as_str())
+    real.is_file() && allowed_ext(p) && allowed_ext(&real)
 }
 
 /// `http://`/`https://` only, byte-for-byte the same rule as herdr's TUI
@@ -759,6 +768,7 @@ pub async fn sync_state(state: tauri::State<'_, AppState>, app: AppHandle) -> Re
 mod safe_web_url_tests {
     use super::{is_safe_local_file, is_safe_web_url};
 
+    #[cfg(windows)] // the gate accepts only drive-letter paths
     #[test]
     fn local_file_gate_rejects_relative_missing_and_executables() {
         let dir = std::env::temp_dir();
@@ -771,6 +781,29 @@ mod safe_web_url_tests {
         assert!(is_safe_local_file(&ok));
         assert!(!is_safe_local_file(&bad));
         assert!(!is_safe_local_file(&pif)); // not on the allowlist
+        // Each case uses a file that exists with an allowlisted extension, so
+        // only the prefix/stream check can reject it.
+        let name = ok.to_str().unwrap();
+        assert!(!is_safe_local_file(std::path::Path::new(&format!(r"\\?\{name}")))); // verbatim prefix
+        assert!(!is_safe_local_file(std::path::Path::new(&format!(r"\\localhost\{}", name.replacen(':', "$", 1))))); // UNC
+        assert!(!is_safe_local_file(std::path::Path::new(&name.replace('\\', "/")))); // forward slashes
+        assert!(!is_safe_local_file(std::path::Path::new(&format!("{name}:s.txt")))); // alternate data stream
+        let xls = dir.join("herdr_open_path_legacy.xls");
+        std::fs::write(&xls, b"x").unwrap();
+        assert!(!is_safe_local_file(&xls)); // macro-capable legacy format
+        let _ = std::fs::remove_file(xls);
+
+        // A `.bat` symlink to a `.txt`: the target passes, the name must not.
+        let target = dir.join("herdr_open_path_target.txt");
+        let link = dir.join("herdr_open_path_link.bat");
+        std::fs::write(&target, b"x").unwrap();
+        let _ = std::fs::remove_file(&link);
+        if std::os::windows::fs::symlink_file(&target, &link).is_ok() {
+            assert!(is_safe_local_file(&target));
+            assert!(!is_safe_local_file(&link));
+        } // else: no symlink privilege on this machine; the check is skipped
+        let _ = std::fs::remove_file(&link);
+        let _ = std::fs::remove_file(&target);
         assert!(!is_safe_local_file(&dir)); // a directory
         assert!(!is_safe_local_file(&dir.join("herdr_missing_file.xlsx")));
         assert!(!is_safe_local_file(std::path::Path::new("relative.xlsx")));

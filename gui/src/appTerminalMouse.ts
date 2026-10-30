@@ -42,12 +42,23 @@
 // without also supporting a subsequent word-wise drag-extend.
 
 import { invoke } from "@tauri-apps/api/core";
-import { api, invokeSafe } from "./appApi";
+import { api, errorMessage, invokeSafe, showErrorNotice } from "./appApi";
 import { canvas, overlayRoot, terminalWrapEl } from "./appDom";
 import { appState } from "./appState";
 import { showCopiedNotice } from "./copyNotice";
 import { focusKeyboardCapture } from "./keyboard/focusCapture";
-import { activateLink, hoverCallAllowed, openLocalPath, pathAtColumn, resolveLinkRegions, type PaneLinkRegion } from "./links";
+import {
+  activateLink,
+  hoverCallAllowed,
+  isStaleError,
+  MAX_WRAP_ROWS,
+  openLocalPath,
+  pathAtColumn,
+  pathAtWrappedRows,
+  resolveLinkRegions,
+  wrapsOntoNextRow,
+  type PaneLinkRegion,
+} from "./links";
 import {
   absoluteRowForViewportRow,
   clampToPaneLocal,
@@ -344,17 +355,25 @@ async function onPointerDown(event: PointerEvent): Promise<void> {
   // override (that's specifically a *drag* selection request).
   if (!shiftSelectOverride && event.ctrlKey) {
     const local = clampToPaneLocal(cell.col, cell.row, hit.inner_rect);
-    void activateLink({
-      pane_id: hit.pane_id,
-      viewport_row: local.row,
-      col: local.col,
-      content_revision: hit.content_revision,
-      offset_from_bottom: hit.scroll?.offset_from_bottom,
-    }).then(async (handled) => {
+    void (async () => {
+      // A path wrapped over several rows goes first: the server sees only one
+      // row's fragment of it.
+      const wrapped = pathAtWrappedRows(await readWrappedRows(hit, top, viewportRows, local.row), local.row, local.col);
+      if (wrapped) {
+        openLocalPath(wrapped.path);
+        return;
+      }
+      const handled = await activateLink({
+        pane_id: hit.pane_id,
+        viewport_row: local.row,
+        col: local.col,
+        content_revision: hit.content_revision,
+        offset_from_bottom: hit.scroll?.offset_from_bottom,
+      });
       if (handled) return;
       const match = pathAtColumn(await readViewportRow(hit, top, local.row), local.col);
       if (match) openLocalPath(match.path);
-    });
+    })();
     return;
   }
 
@@ -632,15 +651,48 @@ async function finishSelection(opts: {
 }
 
 /** Reads one viewport row's text (shared by word selection and path links). */
-async function readViewportRow(hit: PaneMouseHit, top: number, viewportRow: number): Promise<string> {
+async function readViewportRow(hit: PaneMouseHit, top: number, viewportRow: number, quiet = false): Promise<string> {
   const row = absoluteRowForViewportRow(viewportRow, top);
-  const result = await api<{ text?: string }>("pane.selection.read", {
+  const params = {
     pane_id: hit.pane_id,
     anchor: { row, col: 0 },
     cursor: { row, col: Math.max(0, hit.inner_rect.width - 1) },
     content_revision: hit.content_revision,
-  });
+  };
+  // Hover fires every 100 ms on a moving pane, where a stale revision is
+  // normal: it must not raise an error notice per tick.
+  const result = quiet
+    ? await invoke<{ text?: string }>("api", { method: "pane.selection.read", params }).catch((err: unknown) => {
+        if (!isStaleError(err)) showErrorNotice(errorMessage(err));
+        return undefined;
+      })
+    : await api<{ text?: string }>("pane.selection.read", params);
   return result?.text ?? "";
+}
+
+/** The clicked row plus the rows it wraps with: a row that reaches the pane
+ * edge continues on the next one (`wrapsOntoNextRow`). Only the rows that
+ * join the clicked row are read, at most `MAX_WRAP_ROWS`. */
+async function readWrappedRows(
+  hit: PaneMouseHit,
+  top: number,
+  viewportRows: number,
+  viewportRow: number,
+  quiet = false,
+): Promise<{ row: number; text: string }[]> {
+  const width = hit.inner_rect.width;
+  const read = async (row: number) => ({ row, text: await readViewportRow(hit, top, row, quiet) });
+  const rows = [await read(viewportRow)];
+  for (let r = viewportRow - 1; r >= 0 && rows.length < MAX_WRAP_ROWS; r--) {
+    const above = await read(r);
+    if (!wrapsOntoNextRow(above.text, width)) break;
+    rows.unshift(above);
+  }
+  for (let r = viewportRow + 1; r < viewportRows && rows.length < MAX_WRAP_ROWS; r++) {
+    if (!wrapsOntoNextRow(rows[rows.length - 1].text, width)) break;
+    rows.push(await read(r));
+  }
+  return rows;
 }
 
 /** P1 #9 double-click: reads the clicked row (mirroring `request_word_
@@ -744,6 +796,12 @@ async function onCtrlHover(event: PointerEvent): Promise<void> {
   }
   const viewportRows = hit.scroll?.viewport_rows ?? hit.inner_rect.height;
   const local = clampToPaneLocal(cell.col, cell.row, hit.inner_rect);
+  const top = viewportTopRow(hit.scroll);
+  const wrapped = pathAtWrappedRows(await readWrappedRows(hit, top, viewportRows, local.row, true), local.row, local.col);
+  if (wrapped) {
+    paintLinkHoverRegions(wrapped.regions, viewportRows, hit.inner_rect, renderer);
+    return;
+  }
   let regions = await resolveLinkRegions({
     pane_id: hit.pane_id,
     viewport_row: local.row,
@@ -752,7 +810,7 @@ async function onCtrlHover(event: PointerEvent): Promise<void> {
     offset_from_bottom: hit.scroll?.offset_from_bottom,
   });
   if (regions.length === 0) {
-    const text = await readViewportRow(hit, viewportTopRow(hit.scroll), local.row);
+    const text = await readViewportRow(hit, viewportTopRow(hit.scroll), local.row, true);
     const match = pathAtColumn(text, local.col, local.row);
     if (match) regions = [match.region];
   }
