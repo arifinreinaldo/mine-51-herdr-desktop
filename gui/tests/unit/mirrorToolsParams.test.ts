@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dockSideFrom, parseMirrorToolsParams } from "../../src/android/mirrorToolsParams";
+import { dockSideFrom, installView, parseMirrorToolsParams } from "../../src/android/mirrorToolsParams";
 
 describe("parseMirrorToolsParams", () => {
   it("reads a valid query", () => {
@@ -51,6 +51,33 @@ describe("dockSideFrom", () => {
   it("rejects everything else", () => {
     for (const bad of ["up", 1, null, {}, undefined, "Left"]) {
       expect(dockSideFrom(bad)).toBeNull();
+    }
+  });
+});
+
+describe("installView", () => {
+  const ev = (p: Record<string, unknown> = {}) => ({ device: "RF8W3085JEW", phase: "start", index: 2, total: 3, file: "app.apk", ...p });
+
+  it("shows the queue position while installing", () => {
+    expect(installView(ev(), "RF8W3085JEW")).toEqual({ busy: true, tone: "busy", text: "Installing 2 of 3", file: "app.apk" });
+  });
+
+  it("drops the position for a single file", () => {
+    expect(installView(ev({ index: 1, total: 1 }), "RF8W3085JEW")?.text).toBe("Installing");
+  });
+
+  it("shows the result", () => {
+    expect(installView(ev({ phase: "ok" }), "RF8W3085JEW")).toEqual({ busy: false, tone: "ok", text: "Installed", file: "app.apk" });
+    expect(installView(ev({ phase: "failed" }), "RF8W3085JEW")).toEqual({ busy: false, tone: "failed", text: "Failed", file: "app.apk" });
+  });
+
+  it("ignores another device's install", () => {
+    expect(installView(ev(), "OTHER")).toBeNull();
+  });
+
+  it("ignores a malformed payload", () => {
+    for (const bad of [null, "start", 7, ev({ phase: "x" }), ev({ file: 3 }), ev({ index: 1.5 }), ev({ total: "3" })]) {
+      expect(installView(bad, "RF8W3085JEW")).toBeNull();
     }
   });
 });

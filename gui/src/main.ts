@@ -21,7 +21,7 @@ import {
   winMinimizeEl,
 } from "./appDom";
 import { wireEvents } from "./appEvents";
-import { installApks, wireFlutterRun } from "./appFlutterRun";
+import { wireFlutterRun } from "./appFlutterRun";
 import { wireFocusReporting } from "./appFocusReporting";
 import { wireDragDropFiles } from "./dragDropFiles";
 import { applyCurrentTheme, currentThemeDef, rendererThemeFrom } from "./appLookups";
@@ -159,7 +159,7 @@ async function main(): Promise<void> {
     onDoubleShift: openFindFile,
   });
   wireFocusReporting();
-  wireDragDropFiles((paths) => void installApks(paths));
+  wireDragDropFiles();
   // Phase 1.6 spec §6.2 "No painting while minimized": WebView2 reports a
   // minimized window as `document.hidden` (Chromium's own Page Visibility
   // behavior), so this one listener covers both "minimized" and "hidden".
