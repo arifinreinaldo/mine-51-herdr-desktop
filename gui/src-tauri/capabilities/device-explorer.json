@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "device-explorer",
+  "description": "Device explorer windows (docs/device-explorer-phase3-spec.md): core:event:allow-listen for the webview drag-drop events (`onDragDropEvent`) that upload dropped PC files. All other calls are the app's own commands, which need no ACL entry.",
+  "windows": ["device-explorer-*"],
+  "permissions": ["core:event:allow-listen"]
+}

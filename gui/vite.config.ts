@@ -10,14 +10,15 @@ export default defineConfig(() => ({
   //
   // 1. Prevent Vite from obscuring Rust errors.
   clearScreen: false,
-  // 4. Three pages: the app, the mirror tools window (docs/mirror-toolbar-spec.md)
-  // and the SQLite inspector window (src/dbInspector.ts).
+  // 4. Four pages: the app, the mirror tools window (docs/mirror-toolbar-spec.md),
+  // the SQLite inspector window (src/dbInspector.ts) and the device explorer window (src/deviceExplorer.ts).
   build: {
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),
         mirrorTools: fileURLToPath(new URL("./mirror-tools.html", import.meta.url)),
         dbInspector: fileURLToPath(new URL("./db-inspector.html", import.meta.url)),
+        deviceExplorer: fileURLToPath(new URL("./device-explorer.html", import.meta.url)),
       },
     },
   },

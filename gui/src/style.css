@@ -1790,6 +1790,57 @@ body.mirror-tools {
   display: none;
 }
 
+/* APK install status (mirrorTools.ts). Rust makes the strip 76 px taller
+   while it shows (STATUS_HEIGHT). */
+.mt-install {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 0 3px;
+  font-size: 11px;
+  line-height: 13px;
+  text-align: center;
+  color: var(--menu-foreground);
+}
+
+.mt-install[hidden] {
+  display: none;
+}
+
+.mt-install > .codicon {
+  font-size: 18px;
+  color: var(--focusBorder);
+}
+
+.mt-install-text {
+  font-weight: 600;
+}
+
+/* Two lines, broken anywhere: a 52 px strip fits about 7 characters a line. */
+.mt-install-file {
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--descriptionForeground);
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.mt-install--ok > .codicon,
+.mt-install--ok > .mt-install-text {
+  color: var(--terminal-ansiGreen);
+}
+
+.mt-install--failed > .codicon,
+.mt-install--failed > .mt-install-text {
+  color: var(--herdr-danger);
+}
+
 .mt-panel {
   width: 320px;
   padding: 12px;
@@ -1882,6 +1933,12 @@ body.mirror-tools {
   color: var(--descriptionForeground);
 }
 
+.qo-group {
+  padding: 6px 6px 2px;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+}
+
 .qo-status,
 .qo-footer {
   padding: 4px 6px;
@@ -1889,7 +1946,7 @@ body.mirror-tools {
   color: var(--descriptionForeground);
 }
 
-/* SQLite inspector window (src/dbInspector.ts). */
+/* SQLite inspector window (src/dbInspector.ts). The device explorer (src/deviceExplorer.ts) uses these classes too. */
 body.db-inspector {
   display: flex;
   flex-direction: column;
@@ -2392,6 +2449,129 @@ body.db-inspector ::selection {
 
 .db-grid::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Device explorer: the current folder in the toolbar, and file rows (only folder rows are buttons). */
+.fx-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+}
+
+.fx-file {
+  cursor: default;
+}
+
+/* Device explorer phase 3: folder tree (left) beside the folder contents (right). */
+.fx-side {
+  width: 270px;
+}
+
+.fx-section {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.fx-section:focus-visible {
+  outline: 1px solid var(--focusBorder);
+  outline-offset: -1px;
+}
+
+.fx-node {
+  gap: 4px;
+  padding-left: calc(6px + var(--depth, 0) * 14px);
+}
+
+.fx-node .fx-chev {
+  opacity: 0.6;
+}
+
+.fx-note {
+  padding: 0 12px 6px;
+  font-size: var(--fs-xs);
+  color: var(--descriptionForeground);
+}
+
+.fx-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.fx-mode {
+  font-family: "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace;
+  color: var(--descriptionForeground);
+}
+
+/* "Read and write": the shape of .db-dirty ("Read-only" uses .db-dirty itself), in green. */
+.fx-rw {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--charts-green);
+  border-radius: 4px;
+  color: var(--charts-green);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/* A folder that Android refuses: the lock, a title and adb's reason, centred by .db-empty. */
+.fx-denied {
+  align-content: center;
+  gap: 6px;
+}
+
+.fx-denied .codicon-lock {
+  font-size: 26px;
+  color: var(--charts-orange);
+}
+
+.fx-denied strong {
+  color: var(--foreground);
+}
+
+/* Drop target over the folder contents while PC files are dragged in. */
+.fx-drop {
+  position: absolute;
+  inset: 6px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  border: 2px dashed var(--focusBorder);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--focusBorder) 12%, transparent);
+  font-weight: 600;
+  text-align: center;
+  pointer-events: none;
+}
+
+.fx-drop[hidden] {
+  display: none;
+}
+
+.fx-drop.is-refused {
+  border-color: var(--charts-orange);
+  background: color-mix(in srgb, var(--charts-orange) 12%, transparent);
+}
+
+/* The window's minimum width is 800 px, so the stacked layout needs a breakpoint above it. */
+@media (max-width: 900px) {
+  .fx-main {
+    flex-direction: column;
+  }
+
+  .fx-side {
+    width: auto;
+    max-height: 40%;
+    border-right: none;
+    border-bottom: 1px solid var(--sideBar-border, var(--menu-separatorBackground));
+  }
 }
 
 .shortcuts-modal-group:first-of-type {

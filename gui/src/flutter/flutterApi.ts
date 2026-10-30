@@ -53,11 +53,6 @@ export function mirrorToolsResize(expanded: boolean): Promise<"left" | "right"> 
   return invoke<"left" | "right">("mirror_tools_resize", { expanded });
 }
 
-/** `adb install -r` of an absolute `.apk` path. Resolves adb's output. */
-export function androidInstallApk(deviceId: string, path: string): Promise<string> {
-  return invoke<string>("android_install_apk", { deviceId, path });
-}
-
 /** Installs scrcpy with winget (Windows). */
 export function installScrcpy(): Promise<void> {
   return invoke<void>("install_scrcpy");
@@ -126,6 +121,76 @@ export interface PushedDatabase {
 /** Force-stops the app, backs up its database, copies the local copy over it and checks the SHA-1. */
 export function androidPushDatabase(deviceId: string, packageName: string, dbPath: string): Promise<PushedDatabase> {
   return invoke<PushedDatabase>("android_push_database", { deviceId, packageName, dbPath });
+}
+
+/** Opens the device explorer window for an adb device, or focuses the open one. */
+export function androidExplorerWindow(deviceId: string, deviceName?: string): Promise<void> {
+  return invoke<void>("android_explorer_window", { deviceId, deviceName });
+}
+
+export interface DeviceEntry {
+  name: string;
+  isDir: boolean;
+  /** Bytes. Files only: for a folder `ls` prints its block size. 0 when `ls` could not stat the item. */
+  size: number;
+  /** `YYYY-MM-DD HH:MM` in the device's local time. Empty when `ls` could not stat the item. */
+  modified: string;
+  /** The `ls -l` mode, such as `drwxrws---`. `d?????????`: `ls` could not stat it, so Android refuses it. */
+  mode: string;
+}
+
+export interface DirListing {
+  /** Folders first, then by name. */
+  entries: DeviceEntry[];
+  /** The folder holds more entries than the backend sends (5000). */
+  truncated: boolean;
+}
+
+/** `ls -lAL` of a device folder: any absolute path, or with `packageName` a folder in that app's data (through `run-as`). Rejects `bad_device_path`, `permission_denied` (Android refused the folder; the message is adb's reason) and `list_failed`. */
+export function androidListDir(deviceId: string, path: string, packageName?: string): Promise<DirListing> {
+  return invoke<DirListing>("android_list_dir", { deviceId, path, packageName });
+}
+
+export interface PulledPath {
+  /** The local file, or the local folder that adb made. */
+  path: string;
+  /** adb's summary line, for a tooltip. */
+  summary: string;
+}
+
+/** A save dialog (file) or folder picker (folder), then a copy to this PC: `adb pull`, or with `packageName` `run-as cat` file by file. Resolves `null` when cancelled. Rejects `dest_exists`, `bad_local_name`, `not_pullable`, `too_many_items`, `pull_failed`, `pull_timeout`, `adb_timeout`. */
+export function androidPullPath(deviceId: string, path: string, isDir: boolean, packageName?: string): Promise<PulledPath | null> {
+  return invoke<PulledPath | null>("android_pull_path", { deviceId, path, isDir, packageName });
+}
+
+/** What `androidPushPaths` picks: files, one folder, or one folder for `adb push --sync`. */
+export type PushKind = "files" | "folder" | "sync";
+
+export interface PushedPaths {
+  /** The pushed names. Each one is at `<dir>/<name>` on the device. */
+  names: string[];
+  /** adb's summary line, for a tooltip. */
+  summary: string;
+}
+
+/** A native picker, then `adb push` into the device folder `dir`. Resolves `null` when cancelled. Rejects `bad_local_name`, `dest_exists` (files and folder only), `list_failed`, `push_failed`, `adb_timeout`. */
+export function androidPushPaths(deviceId: string, dir: string, kind: PushKind): Promise<PushedPaths | null> {
+  return invoke<PushedPaths | null>("android_push_paths", { deviceId, dir, kind });
+}
+
+/** `rm -f` (file) or `rm -rf` (folder) on the device, then a check that the name is gone. Rejects `protected_path` and `delete_failed`. */
+export function androidDeletePath(deviceId: string, path: string, isDir: boolean): Promise<void> {
+  return invoke<void>("android_delete_path", { deviceId, path, isDir });
+}
+
+/** Third-party apps installed from a debug build (their data opens through `run-as`), sorted. One adb call, about 2.5 s. */
+export function androidDebuggableApps(deviceId: string): Promise<string[]> {
+  return invoke<string[]>("android_debuggable_apps", { deviceId });
+}
+
+/** `adb push --sync` of PC paths dropped on the window into the shared-storage folder `dir`. A dropped file whose name exists there is refused (`dest_exists`); a folder merges, and nothing on the device is deleted. Rejects `bad_local_name`, `bad_device_path`, `push_failed`. */
+export function androidPushDropped(deviceId: string, dir: string, paths: string[]): Promise<PushedPaths> {
+  return invoke<PushedPaths>("android_push_dropped", { deviceId, dir, paths });
 }
 
 export type StopCause = "user" | "mirror_closed" | "tools_closed" | "app_exit" | "device_lost" | "start_timeout";

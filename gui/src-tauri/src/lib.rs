@@ -6,6 +6,7 @@ pub mod android_db;
 pub mod clipboard;
 pub mod commands;
 pub mod conn;
+pub mod device_explorer;
 pub mod dispatch;
 pub mod engine;
 pub mod files;
@@ -112,7 +113,6 @@ pub fn run(start: Instant) {
             flutter::flutter_flavors,
             flutter::flutter_run_alive,
             android::android_mirror,
-            android::android_install_apk,
             android::install_scrcpy,
             android::android_screenshot,
             android::screenshot_copy,
@@ -123,6 +123,13 @@ pub fn run(start: Instant) {
             android_db::android_pull_database,
             android_db::android_db_query,
             android_db::android_push_database,
+            device_explorer::android_explorer_window,
+            device_explorer::android_list_dir,
+            device_explorer::android_pull_path,
+            device_explorer::android_push_paths,
+            device_explorer::android_delete_path,
+            device_explorer::android_debuggable_apps,
+            device_explorer::android_push_dropped,
             mirror_tools::mirror_tools_resize,
             record::mirror_record_start,
             record::mirror_record_stop,
@@ -140,6 +147,7 @@ pub fn run(start: Instant) {
             files::fs_open_paged,
             files::fs_read_lines,
             files::fs_search,
+            files::fs_grep,
             theme_import::import_vscode_theme,
             theme_import::list_imported_themes,
             notify::notify_agent_done,

@@ -12,7 +12,7 @@ import type { RawSnapshot } from "./appTypes";
 import {
   androidDbWindow,
   androidDevices,
-  androidInstallApk,
+  androidExplorerWindow,
   androidMirror,
   installScrcpy,
   flutterDevices,
@@ -69,6 +69,7 @@ const toolbar = createRunToolbar(runToolbarEl, {
   onFlavorClick: () => openFlavorMenu(),
   onMirror: () => void mirror(),
   onDatabase: () => void openDbInspector(),
+  onExplorer: () => void openExplorer(),
   onPlay: () => void play(),
   onReload: () => void sendRunKey("r"),
   onRestart: () => void sendRunKey("R"),
@@ -131,6 +132,7 @@ function render(): void {
       mirrorTitle: "",
       dbDisabled: true,
       dbTitle: "",
+      explorerTitle: "",
       playVisible: false,
     });
     return;
@@ -194,6 +196,7 @@ function render(): void {
     mirrorTitle: mirrorBusy ? "Starting scrcpy…" : `Mirror ${device?.name ?? "the device"} with scrcpy`,
     dbDisabled: !isAdbDevice(device),
     dbTitle: `Inspect SQLite databases on ${device?.name ?? "the device"}`,
+    explorerTitle: `Browse files on ${device?.name ?? "the device"}`,
     playVisible: project.kind === "flutter",
   });
 }
@@ -492,26 +495,19 @@ async function openDbInspector(): Promise<void> {
   }
 }
 
-/** Installs dropped APKs on the selected device, one after the other. */
-export async function installApks(paths: string[]): Promise<void> {
+/** Opens (or focuses) the device explorer window for the selected adb device. */
+async function openExplorer(): Promise<void> {
   const device = selectedDevice();
-  if (!device || device.state !== "device") {
-    showErrorNotice("No ready device. Connect one in a Flutter or Android workspace");
-    return;
-  }
+  if (!isAdbDevice(device)) return;
+  // Settings are editable on disk; the backend checks this id again.
   if (!isValidDeviceId(device.id)) {
     showErrorNotice(`Unsafe device id: ${device.id}`);
     return;
   }
-  for (const path of paths) {
-    const name = path.split(/[\\/]/).pop() ?? path;
-    showInfoNotice(`Installing ${name} on ${device.name}…`);
-    try {
-      await androidInstallApk(device.id, path);
-      showInfoNotice(`Installed ${name}`);
-    } catch (err) {
-      showErrorNotice(`${name}: ${errorMessage(err)}`);
-    }
+  try {
+    await androidExplorerWindow(device.id, device.name);
+  } catch (err) {
+    showErrorNotice(errorMessage(err));
   }
 }
 
