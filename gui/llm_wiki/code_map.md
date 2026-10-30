@@ -14,6 +14,7 @@
 | `src/git/`, `src/ui/sourceControl.ts`, `diffView.ts`, `src/appSourceControl.ts`, `src-tauri/src/git.rs` | Source Control | [[source-control]] |
 | `src/flutter/`, `src/appFlutterRun.ts`, `src/ui/runToolbar.ts`, `flavorPicker.ts`, `src/mirrorTools.ts`, `src/android/`, `src-tauri/src/flutter.rs`, `android.rs`, `mirror_tools*.rs`, `record*.rs` | run toolbar, scrcpy | [[flutter-android]] |
 | `src/dbInspector.ts`, `db-inspector.html`, `src-tauri/src/android_db.rs` | SQLite inspector | [[sqlite-inspector]] |
+| `src/deviceExplorer.ts`, `device-explorer.html`, `src/android/deviceFiles.ts`, `src-tauri/src/device_explorer.rs`, `src-tauri/capabilities/device-explorer.json` | device explorer | [[device-explorer]] |
 | `src/usage.ts`, `src/ui/statusbar.ts`, `src/appStatusBar.ts`, `src-tauri/src/usage.rs`, `statusline.rs`, `src-tauri/resources/statusline/` | usage bar | [[usage-statusline]] |
 | `src/settings.ts`, `src/appState.ts`, `src-tauri/src/settings.rs` | settings | [[settings]] |
 | `package.json`, `vite.config.ts`, `vitest.config.ts`, `src-tauri/tauri*.conf.json`, `scripts/` | build, test | [[build-test]] |

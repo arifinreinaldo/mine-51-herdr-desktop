@@ -9,4 +9,4 @@
 - [[shortcut-markers]] - every `// shortcut:` marker and its ceiling
 - [[build-test]] - build and test commands
 - [[settings]] - settings persistence
-- [[keyboard]], [[render-themes]], [[workspace-ui]], [[files]], [[source-control]], [[flutter-android]], [[sqlite-inspector]], [[usage-statusline]], [[macos-port]] - feature rooms (folder `areas/`)
+- [[keyboard]], [[render-themes]], [[workspace-ui]], [[files]], [[source-control]], [[flutter-android]], [[sqlite-inspector]], [[device-explorer]], [[usage-statusline]], [[macos-port]] - feature rooms (folder `areas/`)
