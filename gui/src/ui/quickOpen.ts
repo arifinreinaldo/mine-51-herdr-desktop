@@ -1,7 +1,7 @@
 // File viewer spec §7.2: the Find File dialog. An input, a status line and a ranked list.
 
 import { errorMessage } from "../appApi";
-import { fsListFiles } from "../files/filesApi";
+import { fsGrep, fsListFiles, type GrepHit } from "../files/filesApi";
 import { rankPaths } from "../files/fuzzy";
 import { openModal } from "./modal";
 
@@ -9,7 +9,13 @@ export interface QuickOpenOptions {
   root: string;
   openTabs: readonly string[];
   onOpen(rel: string): void;
+  /** A content hit; `line` is 1-based. */
+  onOpenAt(rel: string, line: number): void;
 }
+
+const GREP_MIN_CHARS = 3;
+const GREP_DEBOUNCE_MS = 200;
+const GREP_MAX_HITS = 50;
 
 interface Row {
   rel: string;
@@ -44,6 +50,10 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
   let selected = 0;
   let error: string | null = null;
   let rows: Row[] = [];
+  let hits: GrepHit[] = [];
+  let grepSeq = 0; // drops stale grep responses
+  let grepTimer: number | undefined;
+  let nodes: HTMLElement[] = [];
 
   const input = el("input", "shortcuts-modal-search");
   const status = el("div", "qo-status");
@@ -55,27 +65,68 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
     if (query.trim() === "") rows = options.openTabs.map((rel) => ({ rel, positions: [] }));
     else if (files === null) rows = [];
     else rows = rankPaths(query, files).map((r) => ({ rel: r.path, positions: r.positions }));
-    if (selected >= rows.length) selected = Math.max(0, rows.length - 1);
+    const total = rows.length + hits.length;
+    if (selected >= total) selected = Math.max(0, total - 1);
 
     status.textContent =
-      error ?? (files === null ? "Indexing…" : query.trim() !== "" && rows.length === 0 ? "No matching files" : "");
+      error ?? (files === null ? "Indexing…" : query.trim() !== "" && total === 0 ? "No matching files" : "");
     list.textContent = "";
-    rows.forEach((row, index) => {
+    nodes = [];
+    const addRow = (index: number, title: string, onClick: () => void, ...parts: HTMLElement[]): void => {
       const node = el("div", index === selected ? "qo-row is-selected" : "qo-row");
-      node.title = row.rel;
-      const slash = row.rel.lastIndexOf("/");
-      node.appendChild(nameWithHits(row.rel.slice(slash + 1), row.positions));
-      node.appendChild(el("span", "qo-dir", slash >= 0 ? row.rel.slice(0, slash) : ""));
+      node.title = title;
+      node.append(...parts);
       // Keep focus in the input.
       node.addEventListener("mousedown", (event) => event.preventDefault());
-      node.addEventListener("click", () => choose(row.rel));
+      node.addEventListener("click", onClick);
       list.appendChild(node);
+      nodes.push(node);
+    };
+    rows.forEach((row, index) => {
+      const slash = row.rel.lastIndexOf("/");
+      addRow(
+        index,
+        row.rel,
+        () => choose(index),
+        nameWithHits(row.rel.slice(slash + 1), row.positions),
+        el("span", "qo-dir", slash >= 0 ? row.rel.slice(0, slash) : ""),
+      );
+    });
+    if (hits.length > 0) list.appendChild(el("div", "qo-group", "In files"));
+    hits.forEach((hit, i) => {
+      const index = rows.length + i;
+      addRow(
+        index,
+        `${hit.rel}:${hit.line}`,
+        () => choose(index),
+        el("span", "qo-name", `${hit.rel.slice(hit.rel.lastIndexOf("/") + 1)}:${hit.line}`),
+        el("span", "qo-dir", hit.text),
+      );
     });
   }
 
-  function choose(rel: string): void {
+  /** `index` runs over the file rows, then the content rows. */
+  function choose(index: number): void {
     dispose(); // first: the modal gives the terminal focus on close (edge case 18)
-    options.onOpen(rel);
+    if (index < rows.length) options.onOpen(rows[index].rel);
+    else options.onOpenAt(hits[index - rows.length].rel, hits[index - rows.length].line);
+  }
+
+  function scheduleGrep(): void {
+    window.clearTimeout(grepTimer);
+    const seq = ++grepSeq;
+    hits = [];
+    const query = input.value.trim();
+    if (query.length < GREP_MIN_CHARS) return;
+    grepTimer = window.setTimeout(() => {
+      fsGrep(options.root, query, GREP_MAX_HITS)
+        .then((result) => {
+          if (closed || seq !== grepSeq) return;
+          hits = result.hits;
+          render();
+        })
+        .catch(() => {}); // silent: the file results still work
+    }, GREP_DEBOUNCE_MS);
   }
 
   const dispose = openModal(
@@ -91,17 +142,18 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
 
       input.addEventListener("input", () => {
         selected = 0;
+        scheduleGrep();
         render();
       });
       input.addEventListener("keydown", (event) => {
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
-          selected = Math.max(0, Math.min(rows.length - 1, selected + (event.key === "ArrowDown" ? 1 : -1)));
+          selected = Math.max(0, Math.min(rows.length + hits.length - 1, selected + (event.key === "ArrowDown" ? 1 : -1)));
           render();
-          list.children[selected]?.scrollIntoView?.({ block: "nearest" });
-        } else if (event.key === "Enter" && rows[selected]) {
+          nodes[selected]?.scrollIntoView?.({ block: "nearest" });
+        } else if (event.key === "Enter" && selected < rows.length + hits.length) {
           event.preventDefault();
-          choose(rows[selected].rel);
+          choose(selected);
         }
       });
       render();
@@ -110,6 +162,7 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
       className: "quick-open",
       onClose: () => {
         closed = true;
+        window.clearTimeout(grepTimer);
       },
     },
   );

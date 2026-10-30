@@ -475,6 +475,51 @@ fn parse_ls_files(stdout: &[u8], capped: bool, max: usize) -> FileList {
     FileList { files, truncated }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrepHit {
+    pub rel: String,
+    pub line: u32,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrepResult {
+    pub hits: Vec<GrepHit>,
+    pub truncated: bool,
+}
+
+const GREP_CAP_BYTES: usize = 256 * 1024;
+const GREP_QUERY_MAX_CHARS: usize = 200;
+const GREP_TEXT_MAX_CHARS: usize = 200;
+
+/// Parses `git grep -z -n` output: `path\0line\0text\n` per hit.
+fn parse_grep(stdout: &[u8], capped: bool, max: usize) -> GrepResult {
+    let mut records: Vec<&[u8]> = stdout.split(|b| *b == b'\n').collect();
+    // The last record is partial when the read stopped at the cap, and empty after a final newline.
+    let tail = records.pop();
+    if !capped {
+        if let Some(t) = tail.filter(|t| !t.is_empty()) {
+            records.push(t);
+        }
+    }
+    let mut hits: Vec<GrepHit> = records
+        .into_iter()
+        .filter_map(|rec| {
+            let mut parts = rec.splitn(3, |b| *b == 0);
+            let rel = String::from_utf8_lossy(parts.next()?).into_owned();
+            let line = std::str::from_utf8(parts.next()?).ok()?.parse().ok()?;
+            let text = String::from_utf8_lossy(parts.next()?);
+            let text = text.trim().chars().take(GREP_TEXT_MAX_CHARS).collect();
+            Some(GrepHit { rel, line, text })
+        })
+        .collect();
+    let truncated = capped || hits.len() > max;
+    hits.truncate(max);
+    GrepResult { hits, truncated }
+}
+
 fn walk(root: &Path, max: usize) -> FileList {
     let mut files = Vec::new();
     let mut stack = vec![(root.to_path_buf(), String::new())];
@@ -607,6 +652,69 @@ pub async fn fs_list_files(root: String) -> Result<FileList, ApiError> {
     tokio::task::spawn_blocking(move || walk(&base, MAX_FILES))
         .await
         .map_err(join_error)
+}
+
+/// Content search over the tracked files of a git work tree. Outside one it returns no hits.
+#[tauri::command]
+pub async fn fs_grep(
+    root: String,
+    query: String,
+    max_matches: usize,
+) -> Result<GrepResult, ApiError> {
+    if query.trim().is_empty()
+        || query.chars().count() > GREP_QUERY_MAX_CHARS
+        || query.contains(['\0', '\n', '\r'])
+    {
+        return Err(api_error("bad_query", "Invalid search query"));
+    }
+    let empty = || GrepResult {
+        hits: Vec::new(),
+        truncated: false,
+    };
+    // `git grep` outside a repo falls back to a plain directory search, so check first.
+    let inside = run_git(
+        &root,
+        &["rev-parse", "--is-inside-work-tree"],
+        None,
+        None,
+        GIT_TIMEOUT,
+    )
+    .await?;
+    if inside.code != Some(0) || !inside.stdout.starts_with(b"true") {
+        return Ok(empty());
+    }
+    let out = run_git(
+        &root,
+        &[
+            "grep",
+            "-n",
+            "-I",
+            "-i",
+            "-F",
+            "-z",
+            "--no-color",
+            "--max-count",
+            "3",
+            "-e",
+            &query,
+        ],
+        None,
+        Some(GREP_CAP_BYTES),
+        GIT_TIMEOUT,
+    )
+    .await?;
+    match out.code {
+        _ if out.capped => {}
+        Some(1) => return Ok(empty()),
+        Some(0) => {}
+        code => {
+            return Err(api_error(
+                "grep_failed",
+                format!("git grep failed (exit {code:?})"),
+            ))
+        }
+    }
+    Ok(parse_grep(&out.stdout, out.capped, max_matches))
 }
 
 #[cfg(test)]
@@ -931,6 +1039,106 @@ mod tests {
         list.files.sort();
         assert_eq!(list.files, [".gitignore", "a.txt", "b.txt", "sub/c.txt"]);
         assert!(!list.truncated);
+    }
+
+    #[test]
+    fn parse_grep_reads_path_line_text() {
+        let r = parse_grep(
+            b"a/b.rs\x0012\x00  let x = 1;\nc.txt\x003\x00hi\n",
+            false,
+            10,
+        );
+        assert_eq!(
+            r.hits,
+            [
+                GrepHit {
+                    rel: "a/b.rs".into(),
+                    line: 12,
+                    text: "let x = 1;".into()
+                },
+                GrepHit {
+                    rel: "c.txt".into(),
+                    line: 3,
+                    text: "hi".into()
+                }
+            ]
+        );
+        assert!(!r.truncated);
+    }
+
+    #[test]
+    fn parse_grep_drops_the_partial_tail_when_capped() {
+        let r = parse_grep(b"a\x001\x00one\nb\x002\x00tw", true, 10);
+        assert_eq!(r.hits.len(), 1);
+        assert_eq!(r.hits[0].rel, "a");
+        assert!(r.truncated);
+        // A cap that lands right after a newline drops nothing real.
+        assert_eq!(parse_grep(b"a\x001\x00one\n", true, 10).hits.len(), 1);
+    }
+
+    #[test]
+    fn parse_grep_keeps_colons_and_tabs_in_text() {
+        let r = parse_grep(b"a:b.rs\x005\x00\tk: v\t:w\t\n", false, 10);
+        assert_eq!(r.hits[0].rel, "a:b.rs");
+        assert_eq!(r.hits[0].text, "k: v\t:w");
+    }
+
+    #[test]
+    fn parse_grep_is_lossy_on_non_utf8_and_cuts_long_text() {
+        let r = parse_grep(b"a\x001\x00x\xff\xfey\n", false, 10);
+        assert_eq!(r.hits[0].text, "x\u{fffd}\u{fffd}y");
+        let long = format!("a\x001\x00{}\n", "é".repeat(500));
+        let r = parse_grep(long.as_bytes(), false, 10);
+        assert_eq!(r.hits[0].text.chars().count(), GREP_TEXT_MAX_CHARS);
+    }
+
+    #[test]
+    fn parse_grep_handles_empty_and_junk_records() {
+        assert_eq!(
+            parse_grep(b"", false, 10),
+            GrepResult {
+                hits: vec![],
+                truncated: false
+            }
+        );
+        assert!(parse_grep(b"nolines\nx\x00nan\x00t\n", false, 10)
+            .hits
+            .is_empty());
+    }
+
+    #[test]
+    fn parse_grep_caps_at_max_matches() {
+        let r = parse_grep(b"a\x001\x00x\na\x002\x00y\na\x003\x00z\n", false, 2);
+        assert_eq!(r.hits.len(), 2);
+        assert!(r.truncated);
+    }
+
+    #[tokio::test]
+    async fn fs_grep_finds_tracked_lines_and_rejects_bad_queries() {
+        if !git_available() {
+            eprintln!("skipping: git is not installed");
+            return;
+        }
+        let root = temp_dir("grep");
+        git(&root, &["init"]);
+        std::fs::write(root.join("a.txt"), "one\nNeedle here\n").unwrap();
+        git(&root, &["add", "a.txt"]);
+        let r = fs_grep(s(&root), "needle".into(), 10).await.unwrap();
+        assert_eq!(r.hits.len(), 1);
+        assert_eq!((r.hits[0].rel.as_str(), r.hits[0].line), ("a.txt", 2));
+        assert!(fs_grep(s(&root), "zzz".into(), 10)
+            .await
+            .unwrap()
+            .hits
+            .is_empty());
+        assert!(fs_grep(s(&root), "a\nb".into(), 10).await.is_err());
+        let plain = temp_dir("grep-plain");
+        std::fs::write(plain.join("a.txt"), "needle").unwrap();
+        assert!(fs_grep(s(&plain), "needle".into(), 10)
+            .await
+            .unwrap()
+            .hits
+            .is_empty());
     }
 
     fn paged_file(name: &str, bytes: &[u8]) -> PathBuf {

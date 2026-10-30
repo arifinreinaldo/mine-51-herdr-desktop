@@ -1,7 +1,7 @@
 // File viewer spec §3: the TypeScript side of `src-tauri/src/files.rs`. Each
 // wrapper is one `invoke` and rejects with the backend's `{ code, message }`
 // `ApiError`. Error codes: `invalid_root`, `outside_root`, `not_found`,
-// `not_a_file`, `io_error`, `fs_failed`, `cancelled` (`fs_search` only).
+// `not_a_file`, `io_error`, `fs_failed`, `cancelled` (`fs_search` only), `grep_failed`, `bad_query` (`fs_grep` only).
 
 import { invoke } from "@tauri-apps/api/core";
 
@@ -41,6 +41,18 @@ export interface FileListing {
   truncated: boolean;
 }
 
+export interface GrepHit {
+  rel: string;
+  /** 1-based. */
+  line: number;
+  text: string;
+}
+
+export interface GrepResult {
+  hits: GrepHit[];
+  truncated: boolean;
+}
+
 export function fsListDir(root: string, rel: string): Promise<DirEntry[]> {
   return invoke<DirEntry[]>("fs_list_dir", { root, rel });
 }
@@ -70,4 +82,9 @@ export function fsSearch(root: string, rel: string, query: string, maxMatches: n
 
 export function fsListFiles(root: string): Promise<FileListing> {
   return invoke<FileListing>("fs_list_files", { root });
+}
+
+/** Content search in a git work tree; no hits outside one. */
+export function fsGrep(root: string, query: string, maxMatches: number): Promise<GrepResult> {
+  return invoke<GrepResult>("fs_grep", { root, query, maxMatches });
 }
