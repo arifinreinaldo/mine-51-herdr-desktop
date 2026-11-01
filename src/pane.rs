@@ -45,7 +45,8 @@ pub use self::terminal::InputState;
 use self::terminal::{GhosttyPaneTerminal, PaneTerminal};
 pub(crate) use self::terminal::{
     TerminalCompressionStep, TerminalDirtyPatch, TerminalDirtyPatchOutcome, TerminalReadSnapshot,
-    TerminalSearchDirection, TerminalSearchWindow, TerminalTextPoint, TerminalWordMotion,
+    TerminalSearchDirection, TerminalSearchWindow, TerminalSurfaceFacts, TerminalTextPoint,
+    TerminalWordMotion,
 };
 pub use self::{
     state::PaneState,
@@ -3199,6 +3200,10 @@ impl PaneRuntime {
         self.terminal.scroll_metrics()
     }
 
+    pub(crate) fn surface_facts(&self) -> TerminalSurfaceFacts {
+        self.terminal.surface_facts()
+    }
+
     pub(crate) fn search_text_window(
         &self,
         query: &str,
@@ -3881,6 +3886,43 @@ mod tests {
         runtime.test_process_pty_bytes(b"\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\");
         assert!(runtime.collect_dirty_patch_snapshot(20, 4).is_none());
         assert!(runtime.content_write_lock.try_lock().is_ok());
+    }
+
+    #[tokio::test]
+    async fn surface_facts_match_the_individual_accessors() {
+        let runtime = PaneRuntime::test_with_scrollback_bytes(
+            20,
+            4,
+            100_000,
+            b"one\r\ntwo\r\nthree\r\nfour\r\nfive\r\nsix",
+        );
+        let assert_matches = |runtime: &PaneRuntime| {
+            let facts = runtime.surface_facts();
+            assert_eq!(facts.mouse_reporting, runtime.mouse_reporting_enabled());
+            assert_eq!(facts.sgr_pixel_mouse, runtime.sgr_pixel_mouse_enabled());
+            assert_eq!(facts.scroll, runtime.scroll_metrics());
+            assert_eq!(
+                facts.alternate_screen_active,
+                runtime.alternate_screen_active()
+            );
+            facts
+        };
+        let plain = assert_matches(&runtime);
+        assert!(!plain.mouse_reporting && !plain.sgr_pixel_mouse && !plain.alternate_screen_active);
+        assert!(plain
+            .scroll
+            .is_some_and(|scroll| scroll.max_offset_from_bottom > 0));
+
+        runtime.scroll_up(1);
+        let scrolled = assert_matches(&runtime);
+        assert_eq!(
+            scrolled.scroll.map(|scroll| scroll.offset_from_bottom),
+            Some(1)
+        );
+
+        runtime.test_process_pty_bytes(b"\x1b[?1003h\x1b[?1016h\x1b[?1049h");
+        let modes = assert_matches(&runtime);
+        assert!(modes.mouse_reporting && modes.sgr_pixel_mouse && modes.alternate_screen_active);
     }
 
     #[tokio::test]

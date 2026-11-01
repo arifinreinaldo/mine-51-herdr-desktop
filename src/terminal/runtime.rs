@@ -282,6 +282,11 @@ impl TerminalRuntime {
         self.0.scroll_metrics()
     }
 
+    /// Mouse, scroll and alternate-screen facts under one terminal lock.
+    pub(crate) fn surface_facts(&self) -> crate::pane::TerminalSurfaceFacts {
+        self.0.surface_facts()
+    }
+
     pub(crate) fn search_text_window(
         &self,
         query: &str,

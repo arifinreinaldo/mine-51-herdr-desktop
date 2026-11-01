@@ -55,6 +55,15 @@ pub struct ScrollMetrics {
     pub viewport_rows: usize,
 }
 
+/// Per-pane facts the client shell surface publishes, read under one lock.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TerminalSurfaceFacts {
+    pub mouse_reporting: bool,
+    pub sgr_pixel_mouse: bool,
+    pub scroll: Option<ScrollMetrics>,
+    pub alternate_screen_active: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct TerminalTextPoint {
     pub row: u32,
@@ -269,6 +278,10 @@ impl PaneTerminal {
 
     pub fn scroll_metrics(&self) -> Option<ScrollMetrics> {
         self.ghostty.scroll_metrics()
+    }
+
+    pub(crate) fn surface_facts(&self) -> TerminalSurfaceFacts {
+        self.ghostty.surface_facts()
     }
 
     pub(crate) fn search_text_window(
@@ -1816,6 +1829,34 @@ impl GhosttyPaneTerminal {
             max_offset_from_bottom: scrollbar.total.saturating_sub(scrollbar.len),
             viewport_rows: scrollbar.len,
         })
+    }
+
+    /// Same values as `mouse_reporting_enabled`, `sgr_pixel_mouse_enabled`,
+    /// `scroll_metrics` and `alternate_screen_active`, under one lock.
+    pub(crate) fn surface_facts(&self) -> TerminalSurfaceFacts {
+        let Ok(core) = self.core.lock() else {
+            return TerminalSurfaceFacts::default();
+        };
+        TerminalSurfaceFacts {
+            mouse_reporting: core.terminal.mouse_tracking_enabled().unwrap_or(false),
+            sgr_pixel_mouse: core
+                .terminal
+                .mode_get(crate::ghostty::MODE_MOUSE_SGR_PIXELS)
+                .unwrap_or(false),
+            scroll: core
+                .terminal
+                .scrollbar()
+                .ok()
+                .map(|scrollbar| ScrollMetrics {
+                    offset_from_bottom: scrollbar
+                        .total
+                        .saturating_sub(scrollbar.offset + scrollbar.len),
+                    max_offset_from_bottom: scrollbar.total.saturating_sub(scrollbar.len),
+                    viewport_rows: scrollbar.len,
+                }),
+            alternate_screen_active: core.terminal.active_screen().ok()
+                == Some(crate::ghostty::ActiveScreen::Alternate),
+        }
     }
 
     pub fn keyboard_protocol(&self) -> Option<crate::input::KeyboardProtocol> {

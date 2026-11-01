@@ -354,10 +354,9 @@ pub(super) fn render_pane_surface(
                             workspace_index,
                             pane.id,
                         );
-                        let mouse_reporting =
-                            runtime.is_some_and(|runtime| runtime.mouse_reporting_enabled());
-                        let sgr_pixel_mouse =
-                            runtime.is_some_and(|runtime| runtime.sgr_pixel_mouse_enabled());
+                        let facts = runtime
+                            .map(|runtime| runtime.surface_facts())
+                            .unwrap_or_default();
                         let (pixel_width, pixel_height) = if cell_size.is_known() {
                             (
                                 u32::from(pane.inner_rect.width) * cell_size.width_px,
@@ -384,18 +383,17 @@ pub(super) fn render_pane_surface(
                             rect: pane.rect.into(),
                             inner_rect: pane.inner_rect.into(),
                             scrollbar_rect: pane.scrollbar_rect.map(Into::into),
-                            scroll: runtime.and_then(|runtime| runtime.scroll_metrics()).map(
-                                |metrics| protocol::PaneSurfaceScrollMetrics {
+                            scroll: facts.scroll.map(|metrics| {
+                                protocol::PaneSurfaceScrollMetrics {
                                     offset_from_bottom: metrics.offset_from_bottom as u64,
                                     max_offset_from_bottom: metrics.max_offset_from_bottom as u64,
                                     viewport_rows: metrics.viewport_rows as u64,
-                                },
-                            ),
+                                }
+                            }),
                             focused: pane.is_focused,
-                            mouse_reporting,
-                            sgr_pixel_mouse,
-                            alternate_screen_active: runtime
-                                .is_some_and(|runtime| runtime.alternate_screen_active()),
+                            mouse_reporting: facts.mouse_reporting,
+                            sgr_pixel_mouse: facts.sgr_pixel_mouse,
+                            alternate_screen_active: facts.alternate_screen_active,
                             pixel_width,
                             pixel_height,
                         }
