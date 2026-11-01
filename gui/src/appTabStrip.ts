@@ -3,19 +3,19 @@ import { requestClosePane } from "./paneClose";
 // Tab strip rendering, drag/move, and the overflow chevron's "All Tabs"
 // modal (finding #16 extraction from `main.ts`).
 
-import { listen } from "@tauri-apps/api/event";
 import { api, showErrorNotice } from "./appApi";
 import { requireConnected } from "./appConnectionGuard";
 import { overlayRoot, tabListEl, tabOverflowEl, tabPlusEl } from "./appDom";
 import { focusedWorkspaceTabs, tabLabel } from "./appLookups";
 import { appState, seenDoneTabs, statusAge } from "./appState";
-import type { RawSnapshot, RawTab } from "./appTypes";
+import type { RawTab } from "./appTypes";
 import { shortcutDisplay } from "./shortcuts";
 import { seenTrackingInput } from "./notifications/seenDoneTabs";
 import { formatAge, oldestAgeMs } from "./notifications/statusAge";
 import { isRenderGuarded } from "./ui/renderGuard";
 import { renderTabStrip, TAB_RENDER_GUARD_REGION, type TabRow } from "./ui/tabs";
 import { openMenu, type MenuItemSpec } from "./ui/menu";
+import { subscribeSnapshot } from "./snapshotBus";
 import { waitForTabFocusedPane } from "./workspace/tabFocusWait";
 import { optimisticTabOrderAfterMove } from "./workspace/tabMove";
 
@@ -36,7 +36,7 @@ export async function focusedPaneIdForTabAction(tabId: string): Promise<string |
   const paneId = await waitForTabFocusedPane(
     {
       getSnapshot: () => appState.snapshot,
-      subscribeSnapshot: (handler) => listen<RawSnapshot>("snapshot", (event) => handler(event.payload)),
+      subscribeSnapshot: (handler) => Promise.resolve(subscribeSnapshot(handler)),
       setTimeout: (fn, ms) => window.setTimeout(fn, ms),
       clearTimeout: (id) => window.clearTimeout(id),
     },
@@ -70,7 +70,10 @@ export function updateSeenDoneTabs(): void {
   seenDoneTabs.update(seenTrackingInput(snapshot.tabs, snapshot.focused_workspace_id, appState.windowFocused));
 }
 
-export function renderTabsNow(): void {
+let lastTabsKey: string | null = null;
+
+/** `force` skips the unchanged-key check: the render guard release needs a rebuild after a rename or drag that left the DOM edited. */
+export function renderTabsNow(force = false): void {
   // Finding #5: a snapshot mid-rename or mid-drag must not rebuild the tab
   // strip -- that destroys the rename `<input>` (and its focus/typed text)
   // or the in-progress drag's own local state. `onRenderGuardReleased`
@@ -85,6 +88,10 @@ export function renderTabsNow(): void {
     blockedAgeLabel: blockedAgeLabelFor(t.tab_id),
     paneCount: appState.snapshot?.panes.filter((p) => p.tab_id === t.tab_id).length ?? 1,
   }));
+  // Skip the rebuild when nothing the strip draws has changed (ages, labels, order and seen-done dots are all in the key).
+  const key = JSON.stringify([rows, rows.map((r) => seenDoneTabs.isSeen(r.tab_id))]);
+  if (!force && key === lastTabsKey) return;
+  lastTabsKey = key;
   renderTabStrip(tabListEl, overlayRoot, rows, seenDoneTabs, {
     onFocusTab: (id) => {
       // UX pass 1 spec §4: "not interactive (no API calls). A click shows

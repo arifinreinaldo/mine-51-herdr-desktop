@@ -1,6 +1,5 @@
 // File viewer spec §5: the file tree, the viewer and Find File for the focused workspace. UI state lives here, in memory only (D8). Must not import appMenuBar.ts: that module imports this one.
 
-import { listen } from "@tauri-apps/api/event";
 import { api, errorMessage } from "./appApi";
 import { requireConnected } from "./appConnectionGuard";
 import { fileTabsEl, fileViewerEl, keyboardCapture, sidebarEl, tabListEl } from "./appDom";
@@ -12,6 +11,7 @@ import { focusKeyboardCapture } from "./keyboard/focusCapture";
 import { renderFileTree } from "./ui/fileTree";
 import { closeTab, cycleTab, openTab, renderFileTabs, renderFileViewer, viewerText, viewOf, type TabView, type ViewerContent } from "./ui/fileViewer";
 import { closeFindBar } from "./ui/findBar";
+import { subscribeSnapshot } from "./snapshotBus";
 import { openQuickOpen } from "./ui/quickOpen";
 import { closeViewerFind, openViewerFind } from "./ui/viewerFind";
 
@@ -227,7 +227,7 @@ export async function initFiles(): Promise<void> {
   window.setInterval(() => {
     if (!fileViewerEl.hidden && !document.hidden) void pollActive();
   }, POLL_MS);
-  await listen<RawSnapshot>("snapshot", (e) => onSnapshot(e.payload));
+  subscribeSnapshot(onSnapshot);
 }
 
 /** The bottom strip of open files: visible whenever the workspace has one, even while a terminal tab shows. */

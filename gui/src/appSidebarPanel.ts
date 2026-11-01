@@ -113,7 +113,10 @@ async function closeWorkspace(workspaceId: string, closeGroup: boolean): Promise
   return { groupCloseRequired: false };
 }
 
-export function renderSidebarNow(): void {
+let lastSidebarKey: string | null = null;
+
+/** `force` skips the unchanged-key check: the render guard release needs a rebuild after a rename or drag that left the DOM edited. */
+export function renderSidebarNow(force = false): void {
   // Finding #5/#14: a snapshot mid-rename must not rebuild the sidebar --
   // same reasoning as `renderTabsNow`'s own guard.
   if (isRenderGuarded(SIDEBAR_RENDER_GUARD_REGION)) return;
@@ -135,13 +138,19 @@ export function renderSidebarNow(): void {
     attention: attentionByWorkspace.get(w.workspace_id),
     filesExpanded: isFilesExpanded(w.workspace_id),
   }));
+  const agentLines = computeWorkspaceAgentLines();
+  const theme = currentThemeDef().colors;
+  // Skip the rebuild when nothing the sidebar draws has changed (ages are in `attention`, files toggle in `filesExpanded`).
+  const key = JSON.stringify([workspaces, [...agentLines], appState.settings.workspaceColors, theme]);
+  if (!force && key === lastSidebarKey) return;
+  lastSidebarKey = key;
   renderSidebar(
     sidebarEl,
     overlayRoot,
     workspaces,
-    computeWorkspaceAgentLines(),
+    agentLines,
     appState.settings.workspaceColors,
-    currentThemeDef().colors,
+    theme,
     {
       onFocusWorkspace: (id) => {
         // UX pass 1 spec §4: "not interactive (no API calls). A click

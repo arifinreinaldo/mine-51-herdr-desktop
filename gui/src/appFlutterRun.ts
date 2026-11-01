@@ -3,7 +3,6 @@
 // merged in), and Play / Hot Reload / Hot Restart / Stop through the
 // endpoint API. The pure logic lives in `flutter/runState.ts`.
 
-import { listen } from "@tauri-apps/api/event";
 import { api, errorMessage, invokeSafe, showErrorNotice, showInfoNotice } from "./appApi";
 import { keyEvent } from "./appTerminalInput";
 import { overlayRoot, runToolbarEl } from "./appDom";
@@ -26,6 +25,7 @@ import { isValidDeviceId, isValidFlavor, mergeDevices, onPlay, onStop, reconcile
 import { keyboardCaptureReturnTarget } from "./keyboard/focusCapture";
 import { openFlavorPicker } from "./ui/flavorPicker";
 import { openMenu, type MenuItemSpec } from "./ui/menu";
+import { subscribeSnapshot } from "./snapshotBus";
 import { closeActiveOverlay } from "./ui/overlay";
 import { createRunToolbar } from "./ui/runToolbar";
 
@@ -612,6 +612,6 @@ function pollRunsAlive(): void {
 }
 
 export async function wireFlutterRun(): Promise<void> {
-  await listen<RawSnapshot>("snapshot", (event) => onSnapshot(event.payload));
+  subscribeSnapshot(onSnapshot);
   window.setInterval(pollRunsAlive, ALIVE_POLL_MS);
 }

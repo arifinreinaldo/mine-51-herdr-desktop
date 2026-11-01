@@ -3,7 +3,6 @@
 // rules are pure logic in `git/statusRefresh.ts`; the DOM is `ui/sourceControl.ts`.
 // Must not import `appMenuBar.ts`: that module imports this one.
 
-import { listen } from "@tauri-apps/api/event";
 import { errorMessage, invokeSafe, showErrorNotice, showInfoNotice } from "./appApi";
 import {
   diffViewEl,
@@ -24,6 +23,7 @@ import { gitCommit, gitDiff, gitStage, gitStatus, gitUnstage, type FileChange, t
 import { createStatusRefresher, followOpenDiff, type OpenDiffRef } from "./git/statusRefresh";
 import { focusKeyboardCapture } from "./keyboard/focusCapture";
 import { IS_MAC } from "./shortcuts";
+import { subscribeSnapshot } from "./snapshotBus";
 import { renderDiffView } from "./ui/diffView";
 import { renderSourceControl, type SourceControlView } from "./ui/sourceControl";
 
@@ -228,5 +228,5 @@ export async function initSourceControl(): Promise<void> {
   window.setInterval(() => {
     if (isActive() && !document.hidden) refresher.request();
   }, POLL_MS);
-  await listen<RawSnapshot>("snapshot", (event) => onSnapshot(event.payload));
+  subscribeSnapshot(onSnapshot);
 }

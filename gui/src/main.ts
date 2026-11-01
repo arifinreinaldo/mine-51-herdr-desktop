@@ -137,8 +137,8 @@ async function main(): Promise<void> {
   appState.renderer.setFontSize(appState.settings.fontSize);
   applyCurrentTheme();
 
-  onRenderGuardReleased(TAB_RENDER_GUARD_REGION, () => renderTabsNow());
-  onRenderGuardReleased(SIDEBAR_RENDER_GUARD_REGION, () => renderSidebarNow());
+  onRenderGuardReleased(TAB_RENDER_GUARD_REGION, () => renderTabsNow(true));
+  onRenderGuardReleased(SIDEBAR_RENDER_GUARD_REGION, () => renderSidebarNow(true));
   wireInputHandlers();
   wireTerminalMouse();
   wireResizeObserver();

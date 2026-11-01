@@ -15,6 +15,7 @@ import { handleDoneTransitions, handleSemanticNotification, toDetectionAgents, t
 import { showCopiedNotice } from "./copyNotice";
 import { flashFocusedTab } from "./notifications/bellFlash";
 import { refreshPaneChrome } from "./paneChrome/paneChrome";
+import { publishSnapshot } from "./snapshotBus";
 import { formatTitlebarCenter } from "./ui/titlebar";
 
 export async function wireEvents(): Promise<void> {
@@ -23,6 +24,7 @@ export async function wireEvents(): Promise<void> {
     const isFirstSnapshot = appState.snapshot === null;
     appState.snapshot = event.payload;
     appState.lastSnapshotAt = Date.now();
+    publishSnapshot(event.payload);
     // Keyboard shortcut Alt+`: feed the MRU tracker from every snapshot's
     // focused tab, across all workspaces (not just the current one).
     tabMru.record(appState.snapshot.focused_tab_id);
