@@ -789,3 +789,19 @@ contains = ["active"]
 "#;
     assert!(parse_manifest(manifest).is_err());
 }
+
+#[test]
+fn load_manifest_shares_one_arc_until_reload() {
+    with_manifest_dirs("arc-share", || {
+        write_remote_codex(&remote_manifest("9999.01.01.1", "blocked", "cached-ready"));
+
+        let first = load_manifest(Agent::Codex).expect("codex manifest");
+        let second = load_manifest(Agent::Codex).expect("codex manifest");
+        assert!(Arc::ptr_eq(&first, &second));
+
+        reload_manifests();
+
+        let reloaded = load_manifest(Agent::Codex).expect("codex manifest");
+        assert!(!Arc::ptr_eq(&first, &reloaded));
+    });
+}
