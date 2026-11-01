@@ -201,6 +201,8 @@ struct ManifestGate {
 #[derive(Debug, Clone)]
 struct CompiledRule {
     gate: CompiledGate,
+    // False when no gate in the tree has a `contains` needle, so the region need not be lowercased.
+    needs_lower: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -445,17 +447,20 @@ fn evaluate_loaded_manifest(
     {
         let region_text = region(input, &rule.region);
         let matched_rule = compiled_rule_matches(compiled_rule, region_text);
-        evaluated_rules.push(EvaluatedRule {
-            id: rule.id.clone(),
-            priority: rule.priority,
-            region: rule.region.clone(),
-            evidence: rule_evidence(rule, region_text),
-            state: rule
-                .state
-                .map(AgentState::from)
-                .unwrap_or(AgentState::Unknown),
-            matched: matched_rule,
-        });
+        // `include_update_status` is true only on the explain path; detection skips the evidence.
+        if include_update_status {
+            evaluated_rules.push(EvaluatedRule {
+                id: rule.id.clone(),
+                priority: rule.priority,
+                region: rule.region.clone(),
+                evidence: rule_evidence(rule, region_text),
+                state: rule
+                    .state
+                    .map(AgentState::from)
+                    .unwrap_or(AgentState::Unknown),
+                matched: matched_rule,
+            });
+        }
 
         if !matched_rule {
             continue;
@@ -1160,10 +1165,25 @@ fn compile_manifest(manifest: &AgentManifest) -> Result<Vec<CompiledRule>, Strin
         .iter()
         .map(|rule| {
             compile_gate(&manifest_gate_from_rule(rule))
-                .map(|gate| CompiledRule { gate })
+                .map(|gate| CompiledRule {
+                    needs_lower: gate.needs_lower(),
+                    gate,
+                })
                 .map_err(|err| format!("rule {} could not be compiled: {err}", rule.id))
         })
         .collect()
+}
+
+impl CompiledGate {
+    fn needs_lower(&self) -> bool {
+        !self.contains.is_empty()
+            || self
+                .all
+                .iter()
+                .chain(&self.any)
+                .chain(&self.not_gate)
+                .any(CompiledGate::needs_lower)
+    }
 }
 
 fn compile_gate(gate: &ManifestGate) -> Result<CompiledGate, String> {
@@ -1202,7 +1222,11 @@ fn compile_gate(gate: &ManifestGate) -> Result<CompiledGate, String> {
 }
 
 fn compiled_rule_matches(rule: &CompiledRule, text: &str) -> bool {
-    let lower_text = text.to_lowercase();
+    let lower_text = if rule.needs_lower {
+        text.to_lowercase()
+    } else {
+        String::new()
+    };
     compiled_gate_matches(&rule.gate, text, &lower_text)
 }
 

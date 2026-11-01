@@ -805,3 +805,75 @@ fn load_manifest_shares_one_arc_until_reload() {
         assert!(!Arc::ptr_eq(&first, &reloaded));
     });
 }
+
+const NEEDS_LOWER_RULES: &str = r#"
+[[rules]]
+id = "only_in_any"
+state = "idle"
+priority = 1
+any = [{ regex = ["zzz"] }, { contains = ["Any-Marker"] }]
+
+[[rules]]
+id = "only_in_all"
+state = "working"
+priority = 2
+all = [{ contains = ["All-Marker"] }]
+
+[[rules]]
+id = "only_in_not"
+state = "blocked"
+priority = 3
+regex = ["not-case"]
+not = [{ contains = ["Not-Marker"] }]
+
+[[rules]]
+id = "no_contains"
+state = "idle"
+priority = 4
+regex = ["plain-regex"]
+"#;
+
+#[test]
+fn needs_lower_recurses_through_all_any_and_not_gates() {
+    let manifest = parse_manifest(&rules_manifest(NEEDS_LOWER_RULES)).unwrap();
+    let flags: Vec<bool> = compile_manifest(&manifest)
+        .unwrap()
+        .iter()
+        .map(|rule| rule.needs_lower)
+        .collect();
+    assert_eq!(flags, [true, true, true, false]);
+}
+
+#[test]
+fn contains_stays_case_insensitive_inside_nested_gates() {
+    with_manifest_dirs("needs-lower-match", || {
+        write_local_codex(&rules_manifest(NEEDS_LOWER_RULES));
+        let state = |screen: &str| explain(Agent::Codex, screen).matched_rule.map(|r| r.id);
+
+        assert_eq!(state("ANY-MARKER").as_deref(), Some("only_in_any"));
+        assert_eq!(state("all-marker").as_deref(), Some("only_in_all"));
+        assert_eq!(state("not-case").as_deref(), Some("only_in_not"));
+        assert_eq!(state("not-case NOT-MARKER"), None);
+        assert_eq!(state("plain-regex").as_deref(), Some("no_contains"));
+    });
+}
+
+#[test]
+fn detection_path_skips_evaluated_rule_evidence() {
+    with_manifest_dirs("skip-evidence", || {
+        write_local_codex(&rules_manifest(NEEDS_LOWER_RULES));
+        let loaded = load_manifest(Agent::Codex).expect("codex manifest");
+        let input = || DetectionInput {
+            screen: "all-marker",
+            osc_title: "",
+            osc_progress: "",
+        };
+
+        let detect = evaluate_loaded_manifest(Agent::Codex, input(), &loaded, false);
+        let explain = evaluate_loaded_manifest(Agent::Codex, input(), &loaded, true);
+        assert!(detect.evaluated_rules.is_empty());
+        assert_eq!(explain.evaluated_rules.len(), 4);
+        assert_eq!(detect.state, explain.state);
+        assert_eq!(detect.matched_rule, explain.matched_rule);
+    });
+}
