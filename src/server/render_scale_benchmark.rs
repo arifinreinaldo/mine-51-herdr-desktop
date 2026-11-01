@@ -246,18 +246,15 @@ fn profile_snapshot_encoding(
     }
     let run = || {
         let started = Instant::now();
-        let (template, completions) = super::client_shell::snapshot_with_completions(
-            &pipeline.app,
-            "bench-boot",
-            1,
-            None,
-            None,
-        );
         for client_index in 0..client_count {
-            let mut snapshot = template.clone();
-            snapshot.revision = client_index as u64 + 1;
-            let mut completions = completions.clone();
-            completions.revision = snapshot.revision;
+            // Production builds one snapshot per attached client; do not share one.
+            let (snapshot, completions) = super::client_shell::snapshot_with_completions(
+                &pipeline.app,
+                "bench-boot",
+                client_index as u64 + 1,
+                None,
+                None,
+            );
             let companion = crate::protocol::endpoint::agent_completions_message(&completions)
                 .expect("benchmark completion projection should serialize");
             black_box(
