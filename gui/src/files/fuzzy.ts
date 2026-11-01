@@ -69,10 +69,46 @@ export function fuzzyMatch(query: string, path: string): FuzzyResult | null {
   }
   return nameHit ? { path, score, positions: [...positions].sort((a, b) => a - b) } : null;
 }
-// shortcut: ranks every path on each keystroke; debounce if typing lags at 50,000 files.
+function byRank(a: FuzzyResult, b: FuzzyResult): number {
+  return b.score - a.score || a.path.length - b.path.length || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+}
+// shortcut: the first keystroke and any edit that is not an append still rank every path; a worker or index if 50,000 files lag.
 export function rankPaths(query: string, paths: readonly string[], limit = MAX_RESULTS): FuzzyResult[] {
   const results: FuzzyResult[] = [];
   for (const path of paths) { const m = fuzzyMatch(query, path); if (m) results.push(m); }
-  results.sort((a, b) => b.score - a.score || a.path.length - b.path.length || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  results.sort(byRank);
   return results.slice(0, limit);
+}
+const tokenCount = (q: string): number => q.split(/[\s_\-./\\]+/).filter(Boolean).length;
+/**
+ * Same results as `rankPaths(query, paths, limit)`. When the new query extends the last one and has
+ * the same token count, every match of the new query is a match of the old one, so only the old
+ * matches are tried. Keeps only the top `limit` results sorted.
+ */
+export function makeRanker(paths: readonly string[], limit = MAX_RESULTS): (query: string) => FuzzyResult[] {
+  let lastQ = "";
+  let lastTokens = 0;
+  let matched: readonly string[] = paths;
+  return (query) => {
+    const q = query.trim().toLowerCase();
+    const tokens = tokenCount(q);
+    const reuse = lastQ !== "" && q.startsWith(lastQ) && tokens === lastTokens;
+    const pool = reuse ? matched : paths;
+    const survivors: string[] = [];
+    const top: FuzzyResult[] = [];
+    for (const path of pool) {
+      const m = fuzzyMatch(q, path);
+      if (!m) continue;
+      survivors.push(path);
+      if (top.length >= limit && (limit < 1 || byRank(m, top[limit - 1]) >= 0)) continue;
+      let at = top.length;
+      while (at > 0 && byRank(top[at - 1], m) > 0) at--;
+      top.splice(at, 0, m);
+      if (top.length > limit) top.pop();
+    }
+    lastQ = q;
+    lastTokens = tokens;
+    matched = survivors;
+    return top;
+  };
 }

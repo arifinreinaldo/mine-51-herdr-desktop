@@ -2,7 +2,7 @@
 
 import { errorMessage } from "../appApi";
 import { fsGrep, fsListFiles, type GrepHit } from "../files/filesApi";
-import { rankPaths } from "../files/fuzzy";
+import { makeRanker } from "../files/fuzzy";
 import { openModal } from "./modal";
 
 export interface QuickOpenOptions {
@@ -16,6 +16,7 @@ export interface QuickOpenOptions {
 const GREP_MIN_CHARS = 3;
 const GREP_DEBOUNCE_MS = 200;
 const GREP_MAX_HITS = 50;
+const RANK_DEBOUNCE_MS = 30;
 
 interface Row {
   rel: string;
@@ -54,17 +55,32 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
   let grepSeq = 0; // drops stale grep responses
   let grepTimer: number | undefined;
   let nodes: HTMLElement[] = [];
+  let rank: ReturnType<typeof makeRanker> | null = null;
+  let rankTimer: number | undefined;
 
   const input = el("input", "shortcuts-modal-search");
   const status = el("div", "qo-status");
   const list = el("div", "qo-list");
   const footer = el("div", "qo-footer", "Showing first 50,000 files");
 
-  function render(): void {
+  function rankRows(): void {
     const query = input.value;
     if (query.trim() === "") rows = options.openTabs.map((rel) => ({ rel, positions: [] }));
-    else if (files === null) rows = [];
-    else rows = rankPaths(query, files).map((r) => ({ rel: r.path, positions: r.positions }));
+    else if (rank === null) rows = [];
+    else rows = rank(query).map((r) => ({ rel: r.path, positions: r.positions }));
+  }
+
+  /** Ranks now if a debounced rank is waiting, so Enter and the arrows act on the current query. */
+  function flushRank(): void {
+    if (rankTimer === undefined) return;
+    window.clearTimeout(rankTimer);
+    rankTimer = undefined;
+    rankRows();
+    render();
+  }
+
+  function render(): void {
+    const query = input.value;
     const total = rows.length + hits.length;
     if (selected >= total) selected = Math.max(0, total - 1);
 
@@ -143,9 +159,15 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
       input.addEventListener("input", () => {
         selected = 0;
         scheduleGrep();
-        render();
+        window.clearTimeout(rankTimer);
+        rankTimer = window.setTimeout(() => {
+          rankTimer = undefined;
+          rankRows();
+          render();
+        }, RANK_DEBOUNCE_MS);
       });
       input.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter") flushRank();
         if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
           selected = Math.max(0, Math.min(rows.length + hits.length - 1, selected + (event.key === "ArrowDown" ? 1 : -1)));
@@ -156,6 +178,7 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
           choose(selected);
         }
       });
+      rankRows();
       render();
     },
     {
@@ -163,6 +186,7 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
       onClose: () => {
         closed = true;
         window.clearTimeout(grepTimer);
+        window.clearTimeout(rankTimer);
       },
     },
   );
@@ -172,7 +196,9 @@ export function openQuickOpen(options: QuickOpenOptions): () => void {
     .then((listing) => {
       if (closed) return;
       files = listing.files;
+      rank = makeRanker(listing.files);
       footer.hidden = !listing.truncated;
+      rankRows();
       render();
     })
     .catch((err) => {

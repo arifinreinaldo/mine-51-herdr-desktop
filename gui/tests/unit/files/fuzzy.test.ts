@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fuzzyMatch, rankPaths } from "../../../src/files/fuzzy";
+import { fuzzyMatch, makeRanker, rankPaths } from "../../../src/files/fuzzy";
 
 describe("fuzzyMatch", () => {
   it("matches BaCo against the file name with boundary positions", () => {
@@ -78,5 +78,46 @@ describe("rankPaths", () => {
       "gui/src/appSourceControl.ts",
     ]);
     expect(out[0].path).toBe("gui/src/appSourceControl.ts");
+  });
+});
+
+describe("makeRanker", () => {
+  const paths = [
+    "gui/src/appSourceControl.ts", "gui/src/appStatusBar.ts", "gui/src/ui/sourceControl.ts",
+    "model/rad_pagefield.dart", "rad/page_x.dart", "rad/page_y.dart", "a/b/c/util.ts", "util.ts",
+    "src/main.ts", "src/domain.ts", "main.rs", "docs/Main Notes.md",
+  ];
+  const many = Array.from({ length: 120 }, (_, i) => `d${i % 7}/file${i}.ts`);
+  // Typing, deleting, replacing and token-count changes, each checked against a fresh rankPaths.
+  const sessions = [
+    ["a", "ap", "apS", "apSo", "apSoCo"],
+    ["m", "ma", "mai", "main", "mai", "ma", "x", "xy"],
+    ["rad", "rad ", "rad p", "rad pa", "rad page", "rad pag", "rad_page", "rad page x"],
+    ["page", "page rad", "page ra", "page", "pag"],
+    ["u", "ut", "util", "util.", "util.t", "util.ts"],
+    ["f", "fi", "file", "file1", "file12", "file1", "", "file"],
+    ["rad_", "rad_p", "rad", "rad-page", "rad/page"],
+  ];
+  for (const [i, queries] of sessions.entries()) {
+    for (const [name, list] of [["small", paths], ["many", many]] as const) {
+      for (const limit of [50, 5, 1, 0]) {
+        it(`matches rankPaths: session ${i}, ${name}, limit ${limit}`, () => {
+          const rank = makeRanker(list, limit);
+          for (const q of queries) expect(rank(q)).toEqual(rankPaths(q, list, limit));
+        });
+      }
+    }
+  }
+
+  it("does not reuse survivors when the token count changes", () => {
+    const rank = makeRanker(["rad/page_x.dart", "model/rad_pagefield.dart"]);
+    rank("rad");
+    expect(rank("rad page")).toEqual(rankPaths("rad page", ["rad/page_x.dart", "model/rad_pagefield.dart"]));
+    expect(rank("rad page").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the input order for fully tied duplicates", () => {
+    const dup = ["a/x.ts", "a/x.ts", "b/x.ts"];
+    expect(makeRanker(dup, 2)("x")).toEqual(rankPaths("x", dup, 2));
   });
 });
