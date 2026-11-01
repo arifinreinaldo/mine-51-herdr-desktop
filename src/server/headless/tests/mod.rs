@@ -1686,6 +1686,60 @@ async fn late_retained_fallback_leaves_all_client_baselines_unchanged() {
 }
 
 #[tokio::test]
+async fn retained_patch_resolves_distinct_public_ids_for_one_pane() {
+    let mut server = test_headless_server();
+    let pane_id = install_shared_view_test_runtime(&mut server);
+    let (_first_control, first_render) = connect_matching_test_shell(&mut server, 7);
+    let (_second_control, second_render) = connect_matching_test_shell(&mut server, 8);
+    server.render_and_stream();
+    let _ = recv_pane_surface(&first_render, "first baseline");
+    let _ = recv_pane_surface(&second_render, "second baseline");
+
+    // Client 8 knows the pane under an alias that parses to the same PaneId.
+    server
+        .app
+        .state
+        .public_pane_id_aliases
+        .insert("alias_of_pane".into(), pane_id);
+    let crate::server::render_stream::ClientRenderState::Semantic { last_surface, .. } =
+        &mut server.clients.get_mut(&8).unwrap().render_state
+    else {
+        panic!("semantic client");
+    };
+    let aliased = last_surface.as_mut().unwrap();
+    assert_eq!(aliased.panes.len(), 1);
+    aliased.panes[0].pane_id = "alias_of_pane".into();
+
+    write_shared_test_pane(&mut server, pane_id, b"\rALIASED");
+    assert!(server.render_retained_pane_surface_and_stream(&HashSet::from([pane_id])));
+    let patches = [&first_render, &second_render]
+        .into_iter()
+        .filter_map(|rx| rx.try_recv().ok())
+        .map(|message| match read_server_message(message) {
+            ServerMessage::PaneSurfacePatch(patch) => patch,
+            other => panic!("expected a pane surface patch, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    // Rows and the pane entry go only to the recipient whose public id was
+    // resolved first; the other recipient gets at most a cursor update.
+    assert_eq!(
+        patches
+            .iter()
+            .filter(|patch| !patch.panes.is_empty())
+            .count(),
+        1
+    );
+    assert_eq!(
+        patches
+            .iter()
+            .filter(|patch| !patch.rows.is_empty())
+            .count(),
+        1
+    );
+    shutdown_test_runtimes(&mut server);
+}
+
+#[tokio::test]
 async fn backpressured_shell_does_not_disable_retained_patches_for_responsive_peer() {
     let mut server = test_headless_server();
     let pane_id = install_shared_view_test_runtime(&mut server);

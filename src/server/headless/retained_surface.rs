@@ -207,18 +207,55 @@ struct RetainedRecipientUpdate {
     )>,
 }
 
-fn has_synchronized_pane(app: &app::App, surface: &protocol::PaneSurfaceFrame) -> bool {
-    surface.panes.iter().any(|pane| {
-        app.parse_pane_id(&pane.pane_id)
-            .and_then(|(workspace_index, pane_id)| {
-                app.state.runtime_for_pane_in_workspace(
-                    &app.terminal_runtimes,
-                    workspace_index,
-                    pane_id,
-                )
+/// Public pane ids parsed once per render pass. Ids do not change while the
+/// pass holds `&App`; synchronized-output state does, so it is memoized per
+/// `SyncProbe`, never across the collection step.
+struct PaneIdIndex<'a> {
+    app: &'a app::App,
+    parsed: HashMap<&'a str, Option<(usize, crate::layout::PaneId)>>,
+}
+
+impl<'a> PaneIdIndex<'a> {
+    fn new(app: &'a app::App) -> Self {
+        Self {
+            app,
+            parsed: HashMap::new(),
+        }
+    }
+
+    fn resolve(&mut self, id: &'a str) -> Option<(usize, crate::layout::PaneId)> {
+        let app = self.app;
+        *self
+            .parsed
+            .entry(id)
+            .or_insert_with(|| app.parse_pane_id(id))
+    }
+}
+
+/// One synchronized-output query per runtime within one probe.
+#[derive(Default)]
+struct SyncProbe {
+    seen: HashMap<(usize, crate::layout::PaneId), bool>,
+}
+
+impl SyncProbe {
+    fn has_synchronized_pane<'a>(
+        &mut self,
+        ids: &mut PaneIdIndex<'a>,
+        surface: &'a protocol::PaneSurfaceFrame,
+    ) -> bool {
+        let app = ids.app;
+        surface.panes.iter().any(|pane| {
+            let Some(key) = ids.resolve(&pane.pane_id) else {
+                return false;
+            };
+            *self.seen.entry(key).or_insert_with(|| {
+                app.state
+                    .runtime_for_pane_in_workspace(&app.terminal_runtimes, key.0, key.1)
+                    .is_some_and(|runtime| runtime.synchronized_output_active())
             })
-            .is_some_and(|runtime| runtime.synchronized_output_active())
-    })
+        })
+    }
 }
 
 impl HeadlessServer {
@@ -271,6 +308,8 @@ impl HeadlessServer {
             fallback!("non_shell_target");
         }
 
+        let mut ids = PaneIdIndex::new(&self.app);
+        let mut sync_probe = SyncProbe::default();
         let mut recipients = Vec::with_capacity(targets.len());
         for (client_id, (cols, rows), _, _, _) in &targets {
             let Some(client) = self.clients.get(client_id) else {
@@ -296,7 +335,7 @@ impl HeadlessServer {
             {
                 fallback!("baseline_mismatch");
             }
-            if has_synchronized_pane(&self.app, surface) {
+            if sync_probe.has_synchronized_pane(&mut ids, surface) {
                 fallback!("synchronized_visible");
             }
             recipients.push(RetainedRecipient {
@@ -314,9 +353,9 @@ impl HeadlessServer {
             let mut width = 0u16;
             let mut height = 0u16;
             for recipient in &recipients {
+                // First pane per recipient that resolves to `source`, as before.
                 let Some(pane) = recipient.surface.panes.iter().find(|pane| {
-                    self.app
-                        .parse_pane_id(&pane.pane_id)
+                    ids.resolve(&pane.pane_id)
                         .is_some_and(|(_, pane_id)| pane_id == *source)
                 }) else {
                     continue;
@@ -367,7 +406,6 @@ impl HeadlessServer {
         for recipient in &recipients {
             let client_id = recipient.client_id;
             let surface = recipient.surface;
-            let mut panes = surface.panes.clone();
             let projection_revision = surface.projection_revision;
             let base_surface_revision = surface.surface_revision;
             let mut changed_panes = Vec::with_capacity(collected.len());
@@ -376,12 +414,15 @@ impl HeadlessServer {
             let mut refresh_graphics = !surface.graphics.placements.is_empty()
                 || !surface.graphics.retained_assets.is_empty();
             for collected_pane in &collected {
-                let Some(pane) = panes
-                    .iter_mut()
+                let Some(original) = surface
+                    .panes
+                    .iter()
                     .find(|pane| pane.pane_id == collected_pane.pane_id)
                 else {
                     continue;
                 };
+                // Clone only panes that receive a patch; the rest stay borrowed.
+                let mut pane = original.clone();
                 // Alternate-screen transitions change whether the pane reserves
                 // a scrollbar gutter. Recompute layout and resize the runtime
                 // through the complete renderer before retaining further rows.
@@ -396,7 +437,6 @@ impl HeadlessServer {
                     fallback!("hyperlink");
                 }
                 refresh_graphics |= collected_pane.graphics_may_have_placements;
-                let previous_pane = pane.clone();
                 let Some(rows) =
                     changed_rows(&surface.frame, pane.inner_rect, &collected_pane.patch)
                 else {
@@ -406,7 +446,7 @@ impl HeadlessServer {
                 let Some(scrollbar_rows) = retained_scrollbar_patch(
                     &self.app,
                     &surface.frame,
-                    pane,
+                    &mut pane,
                     collected_pane.alternate_screen_active,
                     collected_pane.scroll_metrics,
                 ) else {
@@ -424,11 +464,13 @@ impl HeadlessServer {
                         viewport_rows: metrics.viewport_rows as u64,
                     }
                 });
-                metadata_changed |= *pane != previous_pane;
-                changed_panes.push(pane.clone());
+                metadata_changed |= pane != *original;
+                changed_panes.push(pane);
             }
 
-            let cursor = retained_cursor(&self.app, &panes);
+            // The loop never changes `focused` or `inner_rect`, so the baseline
+            // panes give the same focused pane as the patched copies.
+            let cursor = retained_cursor(&self.app, &surface.panes);
             let cursor_changed = cursor != surface.frame.cursor;
             let patch = protocol::PaneSurfacePatch {
                 boot_id: self.client_shell_boot_id.clone(),
@@ -477,9 +519,11 @@ impl HeadlessServer {
         if updates.is_empty() {
             success!("unchanged");
         }
+        // Re-query: collection above can start synchronized output.
+        let mut sync_probe = SyncProbe::default();
         if recipients
             .iter()
-            .any(|recipient| has_synchronized_pane(&self.app, recipient.surface))
+            .any(|recipient| sync_probe.has_synchronized_pane(&mut ids, recipient.surface))
         {
             fallback!("synchronized_during_patch");
         }
