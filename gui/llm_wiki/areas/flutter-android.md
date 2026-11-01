@@ -10,6 +10,7 @@ In a Flutter or native Android workspace, a toolbar lets the user pick a device 
 - `src/appFlutterRun.ts` - `wireFlutterRun` (line 614). `src/ui/runToolbar.ts` - `createRunToolbar` (line 63). The Explorer button (`run-btn--explorer`, "Browse device files") opens [[device-explorer]]. `src/ui/flavorPicker.ts` - flavor menu.
 - `src-tauri/src/android.rs` - `android_mirror` (line 125, starts scrcpy), `start_scrcpy` (81, takes an `on_spawn` callback), `install_scrcpy` (144), `android_screenshot` (315), `screenshot_copy` (339), `screenshot_save` (352).
 - `src-tauri/src/mirror_tools.rs` - docked tools window; `mirror_tools_resize` (line 690), `InstallEvent` (276), `send_install_status` (286), `follow_scrcpy_log` (435), `install_log_event` (347), `drain_scrcpy_log` (392), `should_show` (374). Win32 calls: `mirror_tools_win32.rs`. Page: `mirror-tools.html`, `src/mirrorTools.ts` (`mirror-install` listener, line 410).
+- `src-tauri/src/mirror_tools_macos.rs` - the macOS strip: `find_scrcpy` (match by owner pid, layer 0), `front_pid`, `classify_foreground`, `work_area_points`, `on_screen_windows` (`CGWindowListCopyWindowInfo`), `run`, `resize`. It works in points, scale 1.0. No Screen Recording or Accessibility permission: the window title is not read.
 - `src-tauri/src/record.rs` - scrcpy screen recording (`mirror_record_start`, `mirror_record_stop`). Win32 calls: `record_win32.rs`. `reveal_in_folder` also lives here.
 - `src-tauri/capabilities/mirror-tools.json` - window ACL for `mirror-tools-*`.
 - APK install: Cowbell does not install an APK. scrcpy installs an APK that the user drops on the scrcpy window.
@@ -28,7 +29,8 @@ In a Flutter or native Android workspace, a toolbar lets the user pick a device 
 
 ## Edges
 - The user installs adb, flutter and scrcpy. The app does not bundle them (`PRODUCT.md:30`).
-- The mirror tools and record modules have Windows-only parts under `#[cfg(windows)]` (`src-tauri/src/lib.rs:19-24`).
+- The mirror tools and record modules have Windows-only parts under `#[cfg(windows)]` (`src-tauri/src/lib.rs`). The strip has a macOS twin; Record has none.
+- On macOS `resolve_scrcpy` also checks `/opt/homebrew/bin` and `/usr/local/bin` (`MAC_TOOL_DIRS`, `android.rs`), because a Dock-launched app has a bare `PATH`.
 - Markers: [[shortcut-markers]] (`flutter.rs:359`, `mirror_tools.rs:298`, `mirror_tools.rs:434`).
 - Known limit: the log text of scrcpy is not a contract. A scrcpy update can change the lines that `install_log_event` parses.
 - Tests: `tests/unit/flutterRunState.test.ts`, `mirrorToolsParams.test.ts`, `screenshotFormat.test.ts`, `recordFormat.test.ts`.

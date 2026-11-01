@@ -2,6 +2,16 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-01 - merge git-source-control into gui-phase1; mac open-path gate
+- Merged `feat/git-source-control` (open-path gate, install status, device explorer, smart search) into `feat/gui-phase1`, which holds the macOS work. No conflicts.
+- `is_safe_local_file` (`commands.rs`): the `C:\` drive-letter rule is now `#[cfg(windows)]`. On unix the gate needs an absolute path; the extension allowlist and the symlink check still apply. New test `local_file_gate_unix`.
+- Mirror tools strip on macOS: new `mirror_tools_macos.rs` docks the strip beside scrcpy via `CGWindowListCopyWindowInfo` (owner pid + layer 0; title only when visible), in points with scale 1.0; the work area is divided by the monitor's own scale. No Screen Recording or Accessibility prompt. Spec: `docs/mirror-tools-macos-spec.md`. Windows code unchanged. Record stays Windows only.
+- `android.rs`: `find_tool` takes several dirs; `resolve_scrcpy` also checks `/opt/homebrew/bin` and `/usr/local/bin` on macOS (`resolve_scrcpy_in` is the test seam).
+- `POSIX_PATH` also matches after a backtick, `=` and `<`; a backtick ends the path. Gate test: a `.txt` symlink to a `.sh` is rejected.
+- `areas/macos-port.md`, `areas/flutter-android.md`, `code_map.md`, `docs/mirror-toolbar-spec.md` updated.
+- `links.ts`, `appTerminalMouse.ts`: Cmd+click and Cmd+hover on macOS (`isLinkModifier`); `pathAtColumn` and `pathAtWrappedRows` also match absolute `/` paths (`POSIX_PATH`). Restored from a stash that the merge had left behind. Added the `install:mac` script to `package.json`.
+- `code_map.md`: the terminal-links row now says `C:\...` or `/...` file paths.
+
 ## 2026-10-30 - device explorer: tree, app data, device root, drop
 - `areas/device-explorer.md`: rewritten for the tree with three roots; new commands `android_debuggable_apps`, `android_push_dropped`; new Limits (two path rules, `permission_denied`, app-data pull, `not_pullable`, drop); fresh line refs.
 - `map.md` and `code_map.md`: new route text; added `capabilities/device-explorer.json`.

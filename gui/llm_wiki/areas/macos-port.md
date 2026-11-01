@@ -1,16 +1,12 @@
 # macOS port
 
-## Known state (2026-10-24)
-- Windows is the primary platform. The macOS port is in progress.
-- Four files are untracked and not wired: `src-tauri/src/macos.rs`, `src/macShell.ts`, `src/nativeMenu.ts`, `src/wizard/usageSetup.ts`. A test is also untracked: `tests/unit/nativeMenu.test.ts`.
-- The wiring sits in `git stash@{0}`. It is not in the working tree. The stash base is `cb8cfa4b` on branch `feat/gui-phase1`. The current branch is `feat/git-source-control`.
-- The stash changes 15 files, among them `lib.rs`, `statusline.rs`, `tauri.macos.conf.json`, `main.ts`, `ui/menus.ts`, `ui/statusbar.ts`, `wizard/stepUsage.ts`.
-- Check with `git stash show --stat stash@{0}` before you trust this list.
-
-## What is in the working tree
-- `src-tauri/src/lib.rs:4-31` has no `mod macos`. So `dock_badge`, `dock_bounce` and `set_native_menu` are not registered commands (`src-tauri/src/macos.rs:39,56,75`).
-- No file imports `src/macShell.ts`, and only `macShell.ts` and the test import `src/nativeMenu.ts`. No file imports `src/wizard/usageSetup.ts`.
-- Committed macOS work: the shortcut map (`src/shortcuts.ts:474`, `IS_MAC` at 495), `tauri.macos.conf.json`, and `app_data_base` for macOS (`src-tauri/src/settings.rs:120-125`).
+## Known state (2026-11-01)
+- Windows is the primary platform. The macOS port runs on branch `feat/gui-phase1`.
+- Wired on macOS: native menu, Dock badge and usage wizard (`src-tauri/src/macos.rs`, `src/macShell.ts`, `src/nativeMenu.ts`, `src/wizard/usageSetup.ts`; `pub mod macos` in `lib.rs`), the shortcut map, `tauri.macos.conf.json`, `app_data_base`.
+- File paths in the terminal open on Cmd+click (`isLinkModifier` in `src/links.ts`). The Rust gate `is_safe_local_file` (`commands.rs`) requires an absolute path on unix.
+- The mirror tools strip works on macOS: `src-tauri/src/mirror_tools_macos.rs` finds the scrcpy window by pid with `CGWindowListCopyWindowInfo` and needs no permission. Live check pending (needs a device). Record is still Windows only.
+- Build and install: `npm run install:mac` (`scripts/install-mac.sh`). The script does not stop a running Cowbell reliably; quit it first (single instance).
+- `git stash@{0}` and `stash@{1}` hold old copies of this work. They can be dropped after you check them.
 
 ## Config
 - `src-tauri/tauri.macos.conf.json:12,15-16` - native decorations, Overlay title bar, hidden title.
