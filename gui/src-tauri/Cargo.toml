@@ -109,6 +109,10 @@ windows = { version = "0.61", features = [
 # macOS only: restores the main window's size and position between launches.
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-window-state = "2.4.1"
+# `mirror_tools_macos.rs`: read the on-screen window list to find the scrcpy
+# window. Both are already in the tree through tao.
+core-graphics = "0.25"
+core-foundation = "0.10"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "fs", "test-util"] }

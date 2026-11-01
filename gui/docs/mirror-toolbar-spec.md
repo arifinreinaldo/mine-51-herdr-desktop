@@ -11,7 +11,7 @@ When Cowbell starts a scrcpy mirror (`android_mirror`), Cowbell also opens a sma
 - **Screenshot** opens the same preview experience as the main modal (preview, **Copy**, **Save as…**, **Close**) inside the mirror tools window. The window grows away from scrcpy to hold the panel, and shrinks back to the strip on Close.
 - **Record** is a placeholder. A click shows a short "coming soon" note for 2 s and does nothing else.
 - The main run-toolbar Screenshot button and its modal stay as they are.
-- Windows only. On other targets the feature compiles as a no-op (`cfg(windows)` module plus `cfg(not(windows))` stubs).
+- Windows and macOS. The macOS twin is `mirror_tools_macos.rs` (see `docs/mirror-tools-macos-spec.md`). On other targets the feature compiles as a no-op (stubs).
 - Do not bundle scrcpy. The main toolbar stays Flutter-workspace only. The mirror tools window follows every scrcpy that `android_mirror` starts.
 
 Success criterion: the offline commands in §7.1 pass, and the owner confirms the live checklist in §7.2.

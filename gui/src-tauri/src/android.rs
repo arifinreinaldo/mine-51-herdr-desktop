@@ -33,23 +33,47 @@ pub(crate) fn local_app_data() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
 }
 
-/// The first `PATH` entry, then `extra_dir`, that holds the tool.
-fn find_tool(tool: &str, path_var: Option<&OsStr>, extra_dir: Option<PathBuf>) -> Option<PathBuf> {
+/// The first `PATH` entry, then each of `extra_dirs` in order, that holds the
+/// tool.
+fn find_tool(
+    tool: &str,
+    path_var: Option<&OsStr>,
+    extra_dirs: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
     let name = tool_file_name(tool);
     let mut dirs: Vec<PathBuf> = path_var
         .map(|p| std::env::split_paths(p).collect())
         .unwrap_or_default();
-    dirs.extend(extra_dir);
+    dirs.extend(extra_dirs);
     dirs.into_iter()
         .map(|d| d.join(&name))
         .find(|p| p.is_file())
 }
 
-/// `PATH`, then winget's link folder. A `winget install` of scrcpy adds
-/// that folder to the user `PATH`, but this process keeps its old `PATH`.
+/// Homebrew's bin folders. A Finder-launched app gets a minimal `PATH` that
+/// leaves them out.
+const MAC_TOOL_DIRS: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
+
+/// `PATH`, then winget's link folder, then (macOS) the Homebrew folders. A
+/// `winget install` of scrcpy adds that folder to the user `PATH`, but this
+/// process keeps its old `PATH`.
 pub fn resolve_scrcpy(path_var: Option<&OsStr>, local: Option<&Path>) -> Option<PathBuf> {
+    let mac: &[&str] = if cfg!(target_os = "macos") {
+        &MAC_TOOL_DIRS
+    } else {
+        &[]
+    };
+    resolve_scrcpy_in(path_var, local, mac)
+}
+
+fn resolve_scrcpy_in(
+    path_var: Option<&OsStr>,
+    local: Option<&Path>,
+    mac_dirs: &[&str],
+) -> Option<PathBuf> {
     let links = local.map(|l| l.join("Microsoft").join("WinGet").join("Links"));
-    find_tool("scrcpy", path_var, links)
+    let mac = mac_dirs.iter().map(PathBuf::from);
+    find_tool("scrcpy", path_var, links.into_iter().chain(mac))
 }
 
 pub(crate) fn resolve_adb_from_env() -> Option<PathBuf> {
@@ -428,10 +452,22 @@ mod tests {
     }
 
     #[test]
+    fn find_tool_checks_every_extra_dir_in_order() {
+        let (a, b) = (scratch("extra-a"), scratch("extra-b"));
+        let name = tool_file_name("scrcpy");
+        std::fs::write(b.join(&name), b"").unwrap();
+        let dirs = || vec![a.clone(), b.clone()];
+        assert_eq!(find_tool("scrcpy", None, dirs()), Some(b.join(&name)));
+        std::fs::write(a.join(&name), b"").unwrap();
+        assert_eq!(find_tool("scrcpy", None, dirs()), Some(a.join(&name)));
+    }
+
+    #[test]
     fn scrcpy_missing_gives_none() {
         let empty = scratch("empty");
         let path_var = std::env::join_paths([&empty]).unwrap();
-        assert_eq!(resolve_scrcpy(Some(&path_var), Some(&empty)), None);
+        // No Homebrew dirs: a dev machine may have a real scrcpy there.
+        assert_eq!(resolve_scrcpy_in(Some(&path_var), Some(&empty), &[]), None);
     }
 
     #[tokio::test]

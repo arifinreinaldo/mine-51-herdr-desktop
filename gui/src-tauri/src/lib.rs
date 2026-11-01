@@ -17,6 +17,8 @@ pub mod macos;
 pub mod memory;
 pub mod mirror;
 pub mod mirror_tools;
+#[cfg(target_os = "macos")]
+pub mod mirror_tools_macos;
 #[cfg(windows)]
 pub mod mirror_tools_win32;
 pub mod notify;

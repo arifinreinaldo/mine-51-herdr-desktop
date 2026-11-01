@@ -671,9 +671,12 @@ pub async fn run(
     state.release(&label);
 }
 
-/// Not Windows: no tools window. Dropping `child` does not kill scrcpy
-/// (`kill_on_drop` is off by default).
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub use crate::mirror_tools_macos::run;
+
+/// Not Windows or macOS: no tools window. Dropping `child` does not kill
+/// scrcpy (`kill_on_drop` is off by default).
+#[cfg(not(any(windows, target_os = "macos")))]
 pub async fn run(
     app: tauri::AppHandle,
     child: tokio::process::Child,
@@ -699,7 +702,12 @@ pub async fn mirror_tools_resize(
             "This window is not a mirror tools window",
         )
     })?;
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = entry;
+        crate::mirror_tools_macos::resize(&window, &state, expanded)
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = (entry, expanded);
         Err(api_error("unsupported", "Mirror tools are Windows only"))
