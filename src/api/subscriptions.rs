@@ -253,7 +253,11 @@ impl ActiveSubscription {
         event_hub: &EventHub,
     ) -> Option<serde_json::Value> {
         match self {
+            #[cfg(test)]
             Self::Event(subscription) => subscription.poll(event_hub),
+            // Production reads Event subscriptions through `poll_batch`.
+            #[cfg(not(test))]
+            Self::Event(_) => None,
             Self::OutputMatched(subscription) => {
                 serde_json::to_value(subscription.poll(api_tx)?).ok()
             }
@@ -347,6 +351,7 @@ fn event_encoding_error(error: serde_json::Error) -> ErrorBody {
 }
 
 impl ActiveEventSubscription {
+    #[cfg(test)]
     fn poll(&mut self, event_hub: &EventHub) -> Option<serde_json::Value> {
         for (sequence, event) in event_hub.events_after(self.last_sequence) {
             self.last_sequence = sequence;
@@ -408,7 +413,15 @@ impl ActiveAgentStatusChangedSubscription {
         api_tx: &ApiRequestSender,
         event_hub: &EventHub,
     ) -> Result<Option<SubscriptionEventEnvelope>, ErrorResponse> {
-        for (sequence, event) in event_hub.events_after(self.last_sequence) {
+        let events = event_hub
+            .events_after_checked(self.last_sequence)
+            .unwrap_or_else(|_| {
+                // Lost or unavailable history: never fail the poll. Skip to the current
+                // sequence and let `poll_snapshot` compare the live pane state.
+                self.last_sequence = event_hub.current_sequence();
+                Vec::new()
+            });
+        for (sequence, event) in events {
             self.last_sequence = sequence;
             if let Some(event) = self.event_from_history(event) {
                 return Ok(Some(event));
@@ -1010,5 +1023,41 @@ mod tests {
         };
         assert_eq!(data.title.as_deref(), Some("short lived"));
         assert!(subscription.initial_event.is_none());
+    }
+
+    #[test]
+    fn agent_status_poll_for_wait_resyncs_instead_of_failing_when_events_are_lost() {
+        let event_hub = EventHub::default();
+        let mut subscription = ActiveSubscription::AgentStatusChanged(Box::new(
+            ActiveAgentStatusChangedSubscription {
+                pane_id: "pane_1".into(),
+                status_filter: None,
+                last_status: Some(AgentStatus::Working),
+                last_presentation: None,
+                last_sequence: event_hub.current_sequence(),
+                initial_event: Some(PaneAgentStatusChangedEvent {
+                    pane_id: "pane_1".into(),
+                    workspace_id: "workspace_1".into(),
+                    agent_status: AgentStatus::Working,
+                    agent: None,
+                    title: None,
+                    display_agent: None,
+                    state_labels: HashMap::new(),
+                }),
+                request_prefix: "test".into(),
+            },
+        ));
+        for _ in 0..600 {
+            event_hub.push(presentation_event(None));
+        }
+
+        let polled = subscription
+            .poll_for_wait(&tokio::sync::mpsc::unbounded_channel().0, &event_hub)
+            .expect("lost history must not surface as an error");
+        assert!(polled.is_some());
+        let ActiveSubscription::AgentStatusChanged(inner) = &subscription else {
+            panic!("wrong subscription");
+        };
+        assert_eq!(inner.last_sequence, event_hub.current_sequence());
     }
 }

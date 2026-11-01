@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use regex::Regex;
 
+use crate::api::event_hub::EventHistoryError;
 use crate::api::schema::{
     ErrorBody, ErrorResponse, EventData, EventEnvelope, EventKind, EventMatch, EventsWaitParams,
     Method, Request, ResponseResult, Subscription, SubscriptionEventData,
@@ -379,7 +380,22 @@ fn wait_for_resolved_agent(
 
         let mut should_probe = false;
         let mut matched_event_status = None;
-        for (sequence, event) in event_hub.events_after(last_event_sequence) {
+        let events = match event_hub.events_after_checked(last_event_sequence) {
+            Ok(events) => events,
+            Err(EventHistoryError::Lost) => {
+                // Events fell out of retention: probe the agent, then resume from the oldest retained event.
+                should_probe = true;
+                last_event_sequence = event_hub.oldest_resume_sequence();
+                event_hub
+                    .events_after_checked(last_event_sequence)
+                    .unwrap_or_default()
+            }
+            Err(EventHistoryError::Unavailable) => {
+                should_probe = true;
+                Vec::new()
+            }
+        };
+        for (sequence, event) in events {
             last_event_sequence = sequence;
             match event.data {
                 EventData::PaneAgentDetected {

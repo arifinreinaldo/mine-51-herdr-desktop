@@ -6,7 +6,7 @@ pub struct EventHub {
 #[derive(Default)]
 struct EventHubState {
     next_sequence: u64,
-    events: Vec<(u64, crate::api::schema::EventEnvelope)>,
+    events: std::collections::VecDeque<(u64, crate::api::schema::EventEnvelope)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,23 +24,30 @@ impl EventHub {
         };
         state.next_sequence += 1;
         let sequence = state.next_sequence;
-        state.events.push((sequence, event));
-        let overflow = state.events.len().saturating_sub(Self::MAX_EVENTS);
-        if overflow > 0 {
-            state.events.drain(0..overflow);
+        state.events.push_back((sequence, event));
+        if state.events.len() > Self::MAX_EVENTS {
+            state.events.pop_front();
         }
     }
 
+    /// Unchecked history for tests; production callers use `events_after_checked`.
+    #[cfg(test)]
     pub fn events_after(&self, sequence: u64) -> Vec<(u64, crate::api::schema::EventEnvelope)> {
         let Ok(state) = self.inner.lock() else {
             return Vec::new();
         };
-        state
+        Self::retained_after(&state, sequence)
+    }
+
+    // Sequences are strictly increasing, so the retained tail is found by binary search.
+    fn retained_after(
+        state: &EventHubState,
+        sequence: u64,
+    ) -> Vec<(u64, crate::api::schema::EventEnvelope)> {
+        let start = state
             .events
-            .iter()
-            .filter(|(event_sequence, _)| *event_sequence > sequence)
-            .cloned()
-            .collect()
+            .partition_point(|(event_sequence, _)| *event_sequence <= sequence);
+        state.events.iter().skip(start).cloned().collect()
     }
 
     pub(super) fn events_after_checked(
@@ -53,17 +60,23 @@ impl EventHub {
             .map_err(|_| EventHistoryError::Unavailable)?;
         if state
             .events
-            .first()
+            .front()
             .is_some_and(|(first, _)| sequence < first.saturating_sub(1))
         {
             return Err(EventHistoryError::Lost);
         }
-        Ok(state
+        Ok(Self::retained_after(&state, sequence))
+    }
+
+    /// Sequence to resume from after `Lost`: just before the oldest retained event.
+    pub(super) fn oldest_resume_sequence(&self) -> u64 {
+        let Ok(state) = self.inner.lock() else {
+            return 0;
+        };
+        state
             .events
-            .iter()
-            .filter(|(event_sequence, _)| *event_sequence > sequence)
-            .cloned()
-            .collect())
+            .front()
+            .map_or(state.next_sequence, |(first, _)| first.saturating_sub(1))
     }
 
     pub fn current_sequence(&self) -> u64 {
@@ -109,6 +122,25 @@ mod tests {
             .events_after_checked(hub.current_sequence())
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn overflow_keeps_newest_events_and_resume_sequence_precedes_oldest() {
+        let hub = EventHub::default();
+        assert_eq!(hub.oldest_resume_sequence(), 0);
+        for _ in 0..EventHub::MAX_EVENTS + 10 {
+            hub.push(event());
+        }
+        assert_eq!(hub.oldest_resume_sequence(), 10);
+        let retained = hub.events_after_checked(10).unwrap();
+        assert_eq!(retained.len(), EventHub::MAX_EVENTS);
+        assert_eq!(retained.first().unwrap().0, 11);
+        assert_eq!(retained.last().unwrap().0, hub.current_sequence());
+        assert_eq!(
+            hub.events_after_checked(11).unwrap().len(),
+            EventHub::MAX_EVENTS - 1
+        );
+        assert_eq!(hub.events_after_checked(9), Err(EventHistoryError::Lost));
     }
 
     #[test]
