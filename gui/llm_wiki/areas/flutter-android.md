@@ -31,6 +31,7 @@ In a Flutter or native Android workspace, a toolbar lets the user pick a device 
 - The user installs adb, flutter and scrcpy. The app does not bundle them (`PRODUCT.md:30`).
 - The mirror tools and record modules have Windows-only parts under `#[cfg(windows)]` (`src-tauri/src/lib.rs`). The strip has a macOS twin; Record has none.
 - On macOS `resolve_scrcpy` also checks `/opt/homebrew/bin` and `/usr/local/bin` (`MAC_TOOL_DIRS`, `android.rs`), because a Dock-launched app has a bare `PATH`.
+- `resolve_adb` (`flutter.rs`) also tries `MAC_TOOL_DIRS` last on macOS (`resolve_adb_in` is the test seam). `resolve_flutter` checks `PATH`, then `flutter_extra_dirs`: the Homebrew folders, `~/flutter/bin`, `~/development/flutter/bin`, `~/fvm/default/bin` (`resolve_flutter_in` is the test seam). Both extras are macOS only.
 - Markers: [[shortcut-markers]] (`flutter.rs:359`, `mirror_tools.rs:298`, `mirror_tools.rs:434`).
 - Known limit: the log text of scrcpy is not a contract. A scrcpy update can change the lines that `install_log_event` parses.
 - Tests: `tests/unit/flutterRunState.test.ts`, `mirrorToolsParams.test.ts`, `screenshotFormat.test.ts`, `recordFormat.test.ts`.

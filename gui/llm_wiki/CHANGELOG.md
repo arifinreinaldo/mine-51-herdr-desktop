@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-01 - flutter and adb fallbacks on macOS
+- `flutter.rs`: `resolve_adb` adds the Homebrew folders after the default SDK; `resolve_flutter` adds `flutter_extra_dirs` after `PATH`. New seams `resolve_adb_in`, `resolve_flutter_in`. `areas/flutter-android.md` updated.
+
 ## 2026-11-01 - gui CI workflow
 - `build-test.md`: new CI section for `.github/workflows/gui.yml`; notes the fmt and clippy baseline failures.
 
