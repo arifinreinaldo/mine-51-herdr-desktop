@@ -48,6 +48,18 @@ describe("pathAtColumn", () => {
     expect(m?.region.end_col).toBe(m!.region.start_col + m!.path.length - 1);
   });
 
+  it("finds an absolute posix path but not a url", () => {
+    const row = "wrote /Users/rei/out/report.xlsx, see https://example.com/a/b.pdf";
+    expect(pathAtColumn(row, 12)?.path).toBe("/Users/rei/out/report.xlsx");
+    expect(pathAtColumn(row, 45)).toBeNull();
+  });
+
+  it("finds a posix path after a backtick, = or <", () => {
+    for (const row of ["see `/tmp/a.pdf` now", "--out=/tmp/a.pdf", "open </tmp/a.pdf>"]) {
+      expect(pathAtColumn(row, row.indexOf("/") + 2)?.path, row).toBe("/tmp/a.pdf");
+    }
+  });
+
   it("returns null outside the path or on a row without one", () => {
     expect(pathAtColumn(ROW, 2)).toBeNull();
     expect(pathAtColumn("no path here", 3)).toBeNull();
@@ -103,6 +115,14 @@ describe("pathAtWrappedRows", () => {
       { row: 10, start_col: PROMPT.length, end_col: 134 },
       { row: 11, start_col: 2, end_col: rows[1].text.length - 1 },
     ]);
+  });
+
+  it("finds an absolute posix path that wrapped", () => {
+    const posix = "/Users/rei/" + "deeper-folder/".repeat(12) + "glass-draft.png";
+    const rows = wrap(PROMPT + posix);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    expect(pathAtWrappedRows(rows, 10, 40)?.path).toBe(posix);
+    expect(pathAtWrappedRows(rows, 11, 10)?.path).toBe(posix);
   });
 
   it("works over 3+ rows and trims a trailing dot", () => {

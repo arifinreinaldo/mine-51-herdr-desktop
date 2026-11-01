@@ -663,8 +663,16 @@ fn is_safe_local_file(p: &std::path::Path) -> bool {
     // `canonicalize` connect to a remote host. A `:` past the drive letter is
     // an NTFS alternate data stream (`evil.bat:s.txt`). A mapped drive or a
     // symlink to a UNC path can still reach the network; accepted.
-    let b = p.to_str().unwrap_or("").as_bytes();
-    if !(b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\') || b[2..].contains(&b':') {
+    #[cfg(windows)]
+    {
+        let b = p.to_str().unwrap_or("").as_bytes();
+        if !(b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\') || b[2..].contains(&b':') {
+            return false;
+        }
+    }
+    // Unix: absolute paths only; the symlink and extension checks below still apply.
+    #[cfg(unix)]
+    if !p.is_absolute() {
         return false;
     }
     // Canonicalize resolves symlinks/junctions and drops a trailing dot or
@@ -767,6 +775,34 @@ pub async fn sync_state(state: tauri::State<'_, AppState>, app: AppHandle) -> Re
 #[cfg(test)]
 mod safe_web_url_tests {
     use super::{is_safe_local_file, is_safe_web_url};
+
+    #[cfg(unix)]
+    #[test]
+    fn local_file_gate_unix() {
+        let dir = std::env::temp_dir();
+        let ok = dir.join("herdr_open_path_ok.txt");
+        let bad = dir.join("herdr_open_path_bad.sh");
+        let target = dir.join("herdr_open_path_target.txt");
+        let link = dir.join("herdr_open_path_link.sh");
+        let rlink = dir.join("herdr_open_path_rlink.txt");
+        for f in [&ok, &bad, &target] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let _ = std::fs::remove_file(&rlink);
+        std::os::unix::fs::symlink(&bad, &rlink).unwrap();
+        assert!(is_safe_local_file(&ok));
+        assert!(!is_safe_local_file(&bad)); // not on the allowlist
+        assert!(!is_safe_local_file(&link)); // .sh symlink to a .txt
+        assert!(!is_safe_local_file(&rlink)); // .txt symlink to a .sh
+        assert!(!is_safe_local_file(&dir)); // a directory
+        assert!(!is_safe_local_file(&dir.join("herdr_missing_file.xlsx")));
+        assert!(!is_safe_local_file(std::path::Path::new("relative.txt")));
+        for f in [&ok, &bad, &target, &link, &rlink] {
+            let _ = std::fs::remove_file(f);
+        }
+    }
 
     #[cfg(windows)] // the gate accepts only drive-letter paths
     #[test]

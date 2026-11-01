@@ -50,6 +50,7 @@ import { focusKeyboardCapture } from "./keyboard/focusCapture";
 import {
   activateLink,
   hoverCallAllowed,
+  isLinkModifier,
   isStaleError,
   MAX_WRAP_ROWS,
   openLocalPath,
@@ -353,7 +354,7 @@ async function onPointerDown(event: PointerEvent): Promise<void> {
   // TUI client checks this only once its mouse-reporting forward path has
   // already returned, `mouse.rs:830-925`), and never for the Shift+drag
   // override (that's specifically a *drag* selection request).
-  if (!shiftSelectOverride && event.ctrlKey) {
+  if (!shiftSelectOverride && isLinkModifier(event)) {
     const local = clampToPaneLocal(cell.col, cell.row, hit.inner_rect);
     void (async () => {
       // A path wrapped over several rows goes first: the server sees only one
@@ -420,7 +421,7 @@ async function onPointerDown(event: PointerEvent): Promise<void> {
 function onPointerMove(event: PointerEvent): void {
   const active = gesture;
   if (!active) {
-    if (event.ctrlKey) void onCtrlHover(event);
+    if (isLinkModifier(event)) void onCtrlHover(event);
     else clearLinkHover();
     return;
   }

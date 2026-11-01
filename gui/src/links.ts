@@ -8,6 +8,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { api, errorMessage, invokeSafe, showErrorNotice } from "./appApi";
+import { IS_MAC } from "./shortcuts";
 
 export interface PaneLinkParams {
   pane_id: string;
@@ -43,9 +44,21 @@ export interface PathMatch {
   region: PaneLinkRegion;
 }
 
-// shortcut: Windows drive paths without spaces, col == string index (ASCII);
-// upgrade to quoted/spaced paths when one is missed.
+// shortcut: drive paths (Windows) and absolute `/` paths (macOS) without spaces,
+// col == string index (ASCII); upgrade to quoted/spaced paths when one is missed.
 const WIN_PATH = /(?<![A-Za-z0-9])[A-Za-z]:\\[^\s"'<>|*?]+/g;
+// A `/` path starts the row or follows a space, quote or bracket, so `https://x/y` never matches.
+const POSIX_PATH = /(?<=^|[\s"'`(\[<=])\/[^\s"'`<>|*?]+/g;
+
+/** Every path match in `text`, drive paths first. */
+function pathMatches(text: string): RegExpMatchArray[] {
+  return [...text.matchAll(WIN_PATH), ...text.matchAll(POSIX_PATH)];
+}
+
+/** The link click modifier: Cmd on macOS (Ctrl+click is a right click there), Ctrl elsewhere. */
+export function isLinkModifier(event: { ctrlKey: boolean; metaKey: boolean }): boolean {
+  return IS_MAC ? event.metaKey : event.ctrlKey;
+}
 
 /** The path in `m`, without trailing punctuation. */
 function trimmedPath(m: RegExpMatchArray): { path: string; start: number; end: number } {
@@ -54,9 +67,9 @@ function trimmedPath(m: RegExpMatchArray): { path: string; start: number; end: n
   return { path, start, end: start + path.length - 1 };
 }
 
-/** Finds the `C:\...\file.ext` path under `col` in a row of terminal text. */
+/** Finds the `C:\...\file.ext` or `/abs/file.ext` path under `col` in a row of terminal text. */
 export function pathAtColumn(rowText: string, col: number, row = 0): PathMatch | null {
-  for (const m of rowText.matchAll(WIN_PATH)) {
+  for (const m of pathMatches(rowText)) {
     const { path, start, end } = trimmedPath(m);
     if (col >= start && col <= end) return { path, region: { row, start_col: start, end_col: end } };
   }
@@ -102,7 +115,7 @@ export function pathAtWrappedRows(rows: { row: number; text: string }[], row: nu
   });
   if (col < skips[at]) return null;
   const pos = starts[at] + col - skips[at];
-  for (const m of joined.matchAll(WIN_PATH)) {
+  for (const m of pathMatches(joined)) {
     const { path, start, end } = trimmedPath(m);
     if (pos < start || pos > end) continue;
     const regions: PaneLinkRegion[] = [];

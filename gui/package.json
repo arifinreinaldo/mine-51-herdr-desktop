@@ -9,6 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "install:mac": "bash scripts/install-mac.sh",
     "check": "cargo fmt --check && cargo clippy --workspace -- -D warnings && cargo test --workspace && tsc --noEmit && vitest run",
     "test:rust": "cargo test --workspace",
     "test:ts": "vitest run",
