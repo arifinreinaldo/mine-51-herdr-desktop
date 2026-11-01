@@ -6,8 +6,8 @@ The sidebar shows a file tree per workspace. A viewer shows files over the termi
 ## Key files
 - `src-tauri/src/files.rs` - commands: `fs_list_dir` (line 566), `fs_read_text` (573), `fs_stat` (580), `fs_open_paged` (587), `fs_read_lines` (599), `fs_search` (613), `fs_list_files` (630), `fs_grep` (659; `git grep` for the content hits, `parse_grep` line 498).
 - `src-tauri/src/files.rs:127` - `confine` keeps every path inside the workspace root.
-- `src/files/filesApi.ts` - typed wrappers (line 44 onward). `fuzzy.ts` - `rankPaths` (line 73), `MAX_RESULTS` = 50 (line 3). `highlight.ts` - lexical tokenizer.
-- `src/ui/fileTree.ts` - `renderFileTree` (line 108). `src/ui/fileViewer.ts` - virtual-row viewer. `src/ui/quickOpen.ts` - `openQuickOpen` (line 47). `src/ui/viewerFind.ts` - find bar in the viewer.
+- `src/files/filesApi.ts` - typed wrappers (line 44 onward). `fuzzy.ts` - `rankPaths` (line 76), `makeRanker` (line 88), `MAX_RESULTS` = 50 (line 3). `highlight.ts` - lexical tokenizer.
+- `src/ui/fileTree.ts` - `renderFileTree` (line 108). `src/ui/fileViewer.ts` - virtual-row viewer. `src/ui/quickOpen.ts` - `openQuickOpen` (line 48). `src/ui/viewerFind.ts` - find bar in the viewer.
 - `src/appFiles.ts` - state and wiring: `initFiles` (line 183), `openFindFile` (line 388), `findInFileViewer` (line 382), `fileTabAction` (line 401).
 
 ## Limits (Rust)
@@ -15,6 +15,10 @@ The sidebar shows a file tree per workspace. A viewer shows files over the termi
 - Page reads return at most 1000 lines (line 22). A line is cut at 64 KiB (line 24).
 - The file list stops at 50,000 files (line 26). `fs_list_files` uses `git ls-files` (line 636) and falls back to a walk (`walk`, line 523).
 - A line index keeps up to 8 files (line 19), one entry per 256 lines (line 17).
+
+## Ranking (Find File)
+- `quickOpen.ts` builds one `makeRanker(files)` per open. It ranks 30 ms after the last keystroke; Enter and the arrow keys rank at once. The close handler clears the timer.
+- `makeRanker` tries only the last matches when the new query extends the last one and has the same token count (split on space, `_`, `-`, `.`, `/`, `\`). It keeps the top 50 with the same tie order as `rankPaths`. Tests compare it with `rankPaths`.
 
 ## Content search (Find File)
 - With 3 or more characters, `quickOpen.ts` asks `fs_grep` after 200 ms. The list shows at most 50 hits under "In files".
@@ -28,6 +32,6 @@ The sidebar shows a file tree per workspace. A viewer shows files over the termi
 
 ## Edges
 - Open tabs are viewer state in `appFiles.ts`. herdr does not know them.
-- Markers: [[shortcut-markers]] (`fuzzy.ts:72`, `highlight.ts:3`, `fileViewer.ts:219`).
+- Markers: [[shortcut-markers]] (`fuzzy.ts:75`, `highlight.ts:3`, `fileViewer.ts:219`).
 - Tests: `tests/unit/files/`, Rust tests in `src-tauri/src/files.rs:618` onward.
 - Specs: `docs/file-viewer-spec.md`, `docs/file-viewer-paged-spec.md`.

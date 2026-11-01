@@ -12,7 +12,7 @@ A `// shortcut:` comment marks a deliberate simplification. The text states the 
 | `src/ui/sourceControl.ts:148` | no virtual list; over 500 changes per group | add a virtual list |
 | `src/ui/fileViewer.ts:219` | each page tokenizes from a null state; block comments across pages get wrong colors | carry state across pages |
 | `src/files/highlight.ts:3` | lexical only; PHP heredoc and regex literals can mis-color | none stated (spec section 8.4) |
-| `src/files/fuzzy.ts:72` | ranks every path on each keystroke | debounce at 50,000 files |
+| `src/files/fuzzy.ts:75` | first keystroke and non-append edits rank every path (appends reuse survivors; `quickOpen.ts` debounces 30 ms) | worker or index if 50,000 files lag |
 | `src/git/diffParse.ts:9` | combined conflict diffs (`@@@`) render as meta rows | parse them |
 | `src/links.ts:46` | file-path links: `C:\` paths without spaces, one row, ASCII columns; `open_local_path` opens only allowlisted document and media types | quoted and spaced paths, wrapped rows |
 | `src/keyboard/doubleShift.ts:3` | fixed 400 ms window | make it a setting |

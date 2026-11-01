@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-01 - incremental Find File ranking
+- `fuzzy.ts`: new `makeRanker`; `rankPaths` shares `byRank`. `quickOpen.ts`: 30 ms rank debounce, flush on Enter and arrows. Marker moved to `fuzzy.ts:75`. `areas/files.md` and `shortcut-markers.md` updated.
+
 ## 2026-11-01 - flutter and adb fallbacks on macOS
 - `flutter.rs`: `resolve_adb` adds the Homebrew folders after the default SDK; `resolve_flutter` adds `flutter_extra_dirs` after `PATH`. New seams `resolve_adb_in`, `resolve_flutter_in`. `areas/flutter-android.md` updated.
 
