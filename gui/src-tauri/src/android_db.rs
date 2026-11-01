@@ -307,7 +307,7 @@ fn check_target(device_id: &str, package: &str, rel: Option<&str>) -> Result<(),
     Ok(())
 }
 
-fn adb_path() -> Result<PathBuf, ApiError> {
+pub(crate) fn adb_path() -> Result<PathBuf, ApiError> {
     resolve_adb_from_env().ok_or_else(|| {
         api_error(
             "adb_not_found",
@@ -328,7 +328,10 @@ fn remove_if_present(path: &Path) -> Result<(), ApiError> {
 /// Runs an adb command and returns all its output, whatever the exit code.
 /// Unlike `flutter::run_capture`, stdout stays raw bytes and survives a
 /// non-zero exit (`ls` exits 1 when one fd closes during the listing).
-async fn adb_output(mut cmd: AsyncCommand, timeout: Duration) -> Result<Output, ApiError> {
+pub(crate) async fn adb_output(
+    mut cmd: AsyncCommand,
+    timeout: Duration,
+) -> Result<Output, ApiError> {
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -346,13 +349,13 @@ async fn adb_output(mut cmd: AsyncCommand, timeout: Duration) -> Result<Output, 
     }
 }
 
-fn adb_command(adb: &Path, device_id: &str) -> AsyncCommand {
+pub(crate) fn adb_command(adb: &Path, device_id: &str) -> AsyncCommand {
     let mut cmd = AsyncCommand::new(adb);
     cmd.args(["-s", device_id]);
     cmd
 }
 
-fn trimmed_stderr(output: &Output) -> String {
+pub(crate) fn trimmed_stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr)
         .trim()
         .chars()
@@ -473,7 +476,7 @@ pub async fn android_app_databases(
 /// Copies one device file to `dest` and returns its first `HEAD_BYTES` bytes.
 /// `exec-out` has no stderr channel and exits 0, so a `run-as` or `cat` error
 /// lands in `dest` as text; the caller checks the content.
-async fn pull_file(
+pub(crate) async fn pull_file(
     adb: &Path,
     device_id: &str,
     package: &str,
@@ -904,7 +907,7 @@ pub async fn android_push_database(
     Ok(PushedDatabase { backup_path: saved })
 }
 
-fn focus_window(app: &tauri::AppHandle, label: &str) -> bool {
+pub(crate) fn focus_window(app: &tauri::AppHandle, label: &str) -> bool {
     let Some(window) = app.get_webview_window(label) else {
         return false;
     };

@@ -15,8 +15,9 @@
 | Sidebar, tabs, workspaces, menu bar, title bar | [[workspace-ui]] |
 | File tree, file viewer, Find File, big-file paging | [[files]] |
 | Source Control panel, diff view, stage and commit | [[source-control]] |
-| Flutter run toolbar, scrcpy mirror, APK drop, screenshot, record | [[flutter-android]] |
+| Flutter run toolbar, scrcpy mirror, APK install status from scrcpy's log, screenshot, record | [[flutter-android]] |
 | SQLite inspector on an Android device | [[sqlite-inspector]] |
+| Device explorer: browse an Android device (shared storage, app data of debug builds, device root), save files to the PC, upload, sync, drop and delete | [[device-explorer]] |
 | Claude usage bar and statusLine tap | [[usage-statusline]] |
 | Settings file, defaults, persistence | [[settings]] |
 | Build, package, test commands | [[build-test]] |

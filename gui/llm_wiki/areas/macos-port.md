@@ -8,7 +8,7 @@
 - Check with `git stash show --stat stash@{0}` before you trust this list.
 
 ## What is in the working tree
-- `src-tauri/src/lib.rs:3-26` has no `mod macos`. So `dock_badge`, `dock_bounce` and `set_native_menu` are not registered commands (`src-tauri/src/macos.rs:39,56,75`).
+- `src-tauri/src/lib.rs:4-31` has no `mod macos`. So `dock_badge`, `dock_bounce` and `set_native_menu` are not registered commands (`src-tauri/src/macos.rs:39,56,75`).
 - No file imports `src/macShell.ts`, and only `macShell.ts` and the test import `src/nativeMenu.ts`. No file imports `src/wizard/usageSetup.ts`.
 - Committed macOS work: the shortcut map (`src/shortcuts.ts:474`, `IS_MAC` at 495), `tauri.macos.conf.json`, and `app_data_base` for macOS (`src-tauri/src/settings.rs:120-125`).
 
@@ -18,5 +18,5 @@
 
 ## Edges
 - Unit tests always run the Windows shortcut table (`src/shortcuts.ts:493-494`).
-- Several Rust modules have Windows-only parts (`src-tauri/src/lib.rs:18-22`). Check `#[cfg]` gates before you add a macOS path.
+- Several Rust modules have Windows-only parts (`src-tauri/src/lib.rs:19-24`). Check `#[cfg]` gates before you add a macOS path.
 - Plan: `docs/phase1_7-plan.md` (old; see [[doc-mismatches]]).

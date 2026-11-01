@@ -3,9 +3,9 @@
 > Cowbell is a Tauri desktop app. It is a GUI over herdr, the agent-aware terminal multiplexer. Stack: Rust (Tauri 2), TypeScript (Vite), Vitest.
 
 ## Entry points
-- Rust: `src-tauri/src/main.rs` starts `lib.rs::run` (`src-tauri/src/lib.rs:46`). It registers the Tauri commands (`src-tauri/src/lib.rs:83`).
+- Rust: `src-tauri/src/main.rs` starts `lib.rs::run` (`src-tauri/src/lib.rs:47`). It registers the Tauri commands (`src-tauri/src/lib.rs:84`).
 - Frontend: `src/main.ts` runs `main()`. It wires input, menus and events (`src/main.ts:106-190`).
-- Extra pages: `mirror-tools.html` and `db-inspector.html` build as separate windows (`vite.config.ts:14-21`).
+- Extra pages: `mirror-tools.html`, `db-inspector.html` and `device-explorer.html` build as separate windows (`vite.config.ts:13-24`).
 
 ## Shape
 - `src-tauri/src/` - Rust backend. One module per feature ([[code_map]]).

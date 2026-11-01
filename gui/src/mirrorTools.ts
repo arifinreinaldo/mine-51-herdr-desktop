@@ -9,7 +9,7 @@
 
 import "./style.css";
 import { listen } from "@tauri-apps/api/event";
-import { dockSideFrom, parseMirrorToolsParams } from "./android/mirrorToolsParams";
+import { dockSideFrom, installView, parseMirrorToolsParams } from "./android/mirrorToolsParams";
 import { errorMessage } from "./appApi";
 import { COUNTDOWN_SECONDS, formatElapsed, recordButtonView, recordFailureText, type RecState } from "./android/recordFormat";
 import { mirrorRecordStart, mirrorRecordStop, mirrorToolsResize, type RecordResult } from "./flutter/flutterApi";
@@ -21,6 +21,11 @@ const NOTE_MS = 2000;
 const TIMER_MS = 500;
 const ENDED_EVENT = "mirror-record-ended";
 const FAILED_EVENT = "mirror-record-failed";
+const INSTALL_EVENT = "mirror-install";
+/** Rust pins the strip on screen as long (`INSTALL_RESULT_PIN`). */
+const INSTALL_RESULT_MS = 4000;
+/** A little over Rust's 300 s start pin (`SCRCPY_INSTALL_PIN`). */
+const INSTALL_BUSY_MS = 305_000;
 
 interface PanelHandle {
   dispose(): void;
@@ -30,6 +35,12 @@ interface PanelHandle {
 function errorCode(err: unknown): unknown {
   return err && typeof err === "object" ? (err as { code?: unknown }).code : undefined;
 }
+
+const INSTALL_ICON = {
+  busy: "codicon-loading codicon-modifier-spin",
+  ok: "codicon-pass-filled",
+  failed: "codicon-error",
+} as const;
 
 function codicon(name: string): HTMLElement {
   const i = document.createElement("i");
@@ -72,7 +83,17 @@ async function main(): Promise<void> {
   const live = document.createElement("div");
   live.className = "shot-sr";
   live.setAttribute("aria-live", "polite");
-  strip.append(shotBtn, recordBtn, timer, note, live);
+  // APK install status. Rust makes the strip taller while it shows.
+  const install = document.createElement("div");
+  install.className = "mt-install";
+  install.hidden = true;
+  const installIcon = document.createElement("i");
+  const installText = document.createElement("p");
+  installText.className = "mt-install-text";
+  const installFile = document.createElement("p");
+  installFile.className = "mt-install-file";
+  install.append(installIcon, installText, installFile);
+  strip.append(shotBtn, recordBtn, timer, install, note, live);
 
   const panelEl = document.createElement("div");
   panelEl.className = "mt-panel";
@@ -94,6 +115,7 @@ async function main(): Promise<void> {
   let countTimerId: number | undefined;
   /** The start call has returned: the recorder has written its header. */
   let headerReady = false;
+  let installTimer: number | undefined;
 
   const setSide = (side: "left" | "right") => root.classList.toggle("mt-root--left", side === "left");
 
@@ -384,6 +406,26 @@ async function main(): Promise<void> {
     render();
     showNote("Failed", message);
     announce(`Recording failed. ${message}`);
+  });
+  await listen<unknown>(INSTALL_EVENT, (event) => {
+    const view = installView(event.payload, params.deviceId);
+    if (!view) return;
+    install.className = `mt-install mt-install--${view.tone}`;
+    installText.textContent = view.text;
+    installFile.textContent = view.file;
+    installFile.title = view.file;
+    installIcon.className = `codicon ${INSTALL_ICON[view.tone]}`;
+    install.hidden = false;
+    window.clearTimeout(installTimer);
+    // A busy status also times out: scrcpy has no install timeout, so an end
+    // line may never come (a phone that waits for a prompt, a changed log text).
+    installTimer = window.setTimeout(
+      () => {
+        install.hidden = true;
+      },
+      view.busy ? INSTALL_BUSY_MS : INSTALL_RESULT_MS,
+    );
+    announce(`${view.text} ${view.file}`);
   });
   // The first call is the ready signal: Rust shows the window only after it.
   try {

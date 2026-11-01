@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::commands::ApiError;
 use crate::flutter::api_error;
@@ -27,6 +27,8 @@ pub const EXPANDED_WIDTH: f64 = STRIP_WIDTH + PANEL_WIDTH;
 pub const EXPANDED_HEIGHT: f64 = 820.0;
 pub const DEVICE_NAME_MAX_CHARS: usize = 80;
 pub const LABEL_PREFIX: &str = "mirror-tools-";
+/// Logical px the strip grows by while it shows the APK install status.
+pub const STATUS_HEIGHT: f64 = 76.0;
 
 /// Screen rectangle in physical px, same layout as Win32 `RECT`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +80,8 @@ pub struct VisibilityInput {
     /// `dock_position` returned `Some`.
     pub fits: bool,
     pub foreground: Foreground,
+    /// The APK install status is on screen (`ToolsEntry::pinned`).
+    pub pinned: bool,
 }
 
 /// Where the tools window goes: right of scrcpy, else left, else `None`.
@@ -112,6 +116,11 @@ pub fn tools_visible(input: VisibilityInput, was_visible: bool) -> bool {
     if !input.scrcpy_exists || input.scrcpy_minimized || !input.ready || !input.fits {
         return false;
     }
+    // The APK drop happens in another app, so the install status does not
+    // wait for scrcpy to come to the front.
+    if input.pinned {
+        return true;
+    }
     match input.foreground {
         Foreground::Scrcpy | Foreground::Tools | Foreground::ToolsOwned => true,
         Foreground::Other => false,
@@ -120,9 +129,12 @@ pub fn tools_visible(input: VisibilityInput, was_visible: bool) -> bool {
 }
 
 /// Strip or expanded size in physical px, the height capped at the work area.
-pub fn tools_size(expanded: bool, scale: f64, work_area: Rect) -> Size {
+/// `status`: the strip grows by `STATUS_HEIGHT` for the install status.
+pub fn tools_size(expanded: bool, status: bool, scale: f64, work_area: Rect) -> Size {
     let (w, h) = if expanded {
         (EXPANDED_WIDTH, EXPANDED_HEIGHT)
+    } else if status {
+        (STRIP_WIDTH, STRIP_HEIGHT + STATUS_HEIGHT)
     } else {
         (STRIP_WIDTH, STRIP_HEIGHT)
     };
@@ -189,6 +201,14 @@ pub struct ToolsEntry {
     pub expanded: bool,
     pub ready: bool,
     pub side: DockSide,
+    /// Until when the install status keeps the strip shown and taller.
+    pub pin_until: Option<Instant>,
+}
+
+impl ToolsEntry {
+    pub fn pinned(&self, now: Instant) -> bool {
+        self.pin_until.is_some_and(|until| now < until)
+    }
 }
 
 /// One entry per tools window, keyed by window label. Rust owns it; the page
@@ -214,6 +234,7 @@ impl MirrorToolsState {
                 expanded: false,
                 ready: false,
                 side: DockSide::Right,
+                pin_until: None,
             },
         );
         true
@@ -233,6 +254,205 @@ impl MirrorToolsState {
         let entry = map.get_mut(label)?;
         f(entry);
         Some(*entry)
+    }
+}
+
+/// How long the strip shows the install result. The page uses the same
+/// 4 s (`INSTALL_RESULT_MS` in `src/mirrorTools.ts`).
+pub const INSTALL_RESULT_PIN: Duration = Duration::from_secs(4);
+pub const INSTALL_EVENT: &str = "mirror-install";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum InstallPhase {
+    Start,
+    Ok,
+    Failed,
+}
+
+/// The `INSTALL_EVENT` payload. `device` lets the page drop events meant for
+/// another tools window: a page-wide `listen` receives those too.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct InstallEvent {
+    pub device: String,
+    pub phase: InstallPhase,
+    pub index: u32,
+    pub total: u32,
+    pub file: String,
+}
+
+/// Pins the device's tools strip on screen for `pin` and sends `event` to it.
+/// Without a tools window (no mirror, or not Windows) it does nothing.
+pub fn send_install_status(app: &tauri::AppHandle, event: &InstallEvent, pin: Duration) {
+    use tauri::{Emitter, Manager};
+
+    let label = tools_label(&event.device);
+    let until = Instant::now() + pin;
+    app.state::<MirrorToolsState>()
+        .update(&label, |e| e.pin_until = Some(until));
+    let _ = app.emit_to(label.as_str(), INSTALL_EVENT, event);
+}
+
+/// The strip pin for an install that scrcpy runs. scrcpy has no install
+/// timeout, so this is only a bound; the end event replaces it.
+// shortcut: an install longer than 5 min loses the pin (the strip shrinks and hides behind other apps until the end event); renew the pin while the install runs if users hit it.
+const SCRCPY_INSTALL_PIN: Duration = Duration::from_secs(300);
+/// The longest scrcpy log line that the reader keeps. A longer one is dropped.
+const MAX_LOG_LINE: usize = 8192;
+
+/// Cuts the output of scrcpy into lines. The bytes arrive in any chunking.
+#[derive(Default)]
+struct LineSplitter {
+    partial: Vec<u8>,
+    /// The current line is over `MAX_LOG_LINE`: skip it up to its newline.
+    skipping: bool,
+}
+
+impl LineSplitter {
+    fn push(&mut self, bytes: &[u8]) -> Vec<String> {
+        let mut lines = Vec::new();
+        for &byte in bytes {
+            if byte == b'\n' {
+                if !self.skipping {
+                    let text = String::from_utf8_lossy(&self.partial);
+                    lines.push(text.trim_end_matches('\r').to_string());
+                }
+                self.partial.clear();
+                self.skipping = false;
+            } else if !self.skipping {
+                if self.partial.len() >= MAX_LOG_LINE {
+                    self.partial.clear();
+                    self.skipping = true;
+                } else {
+                    self.partial.push(byte);
+                }
+            }
+        }
+        lines
+    }
+}
+
+/// The text of a scrcpy log line without its level (`INFO: `, `ERROR: `, ...).
+fn log_message(line: &str) -> &str {
+    match line.split_once(": ") {
+        Some(("INFO" | "WARN" | "ERROR" | "DEBUG" | "VERBOSE", message)) => message,
+        _ => line,
+    }
+}
+
+/// The install event in one line of scrcpy's output. scrcpy logs
+/// `Installing <path>...` when an install starts (the file of a drop),
+/// `<path> successfully installed` when it works and `Failed to install <path>`
+/// when it does not. scrcpy gives no queue size, so it is always file 1 of 1.
+fn install_log_event(line: &str, device: &str) -> Option<InstallEvent> {
+    let message = log_message(line.trim());
+    let (phase, path) = if let Some(path) = message
+        .strip_prefix("Installing ")
+        .and_then(|rest| rest.strip_suffix("..."))
+    {
+        (InstallPhase::Start, path)
+    } else if let Some(path) = message.strip_suffix(" successfully installed") {
+        (InstallPhase::Ok, path)
+    } else if let Some(path) = message.strip_prefix("Failed to install ") {
+        (InstallPhase::Failed, path)
+    } else {
+        return None;
+    };
+    let file = path.rsplit(['\\', '/']).next().filter(|f| !f.is_empty())?;
+    Some(InstallEvent {
+        device: device.to_string(),
+        phase,
+        index: 1,
+        total: 1,
+        file: file.to_string(),
+    })
+}
+
+/// Whether the strip shows `event`. One task reads stdout and another reads
+/// stderr, so the end of file A can arrive after the start of file B. That end
+/// is dropped: the strip already shows B. `current` is the file that started.
+fn should_show(current: &mut Option<String>, event: &InstallEvent) -> bool {
+    match (event.phase, current.as_deref()) {
+        (InstallPhase::Start, _) => {
+            *current = Some(event.file.clone());
+            true
+        }
+        (_, Some(file)) if file != event.file => false,
+        _ => {
+            *current = None;
+            true
+        }
+    }
+}
+
+/// Reads one output stream of scrcpy until it ends and shows each install on
+/// the strip. It stops only when the stream ends or fails: a pipe that nobody
+/// reads fills up, and scrcpy then blocks on its next log line. A failed read
+/// means the pipe is broken, and then there is nothing left to read.
+async fn drain_scrcpy_log<R: tokio::io::AsyncRead + Unpin>(
+    mut reader: R,
+    app: tauri::AppHandle,
+    device: String,
+    current: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+) {
+    use tokio::io::AsyncReadExt;
+
+    let mut lines = LineSplitter::default();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let read = match reader.read(&mut chunk).await {
+            Ok(0) | Err(_) => break,
+            Ok(read) => read,
+        };
+        for line in lines.push(&chunk[..read]) {
+            if let Some(event) = install_log_event(&line, &device) {
+                let show = should_show(
+                    &mut current
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()),
+                    &event,
+                );
+                if !show {
+                    continue;
+                }
+                let pin = if event.phase == InstallPhase::Start {
+                    SCRCPY_INSTALL_PIN
+                } else {
+                    INSTALL_RESULT_PIN
+                };
+                send_install_status(&app, &event, pin);
+            }
+        }
+    }
+}
+
+/// Starts reading the stdout and stderr of a scrcpy that was spawned with both
+/// piped. An APK that the user drops on the scrcpy window is installed by
+/// scrcpy itself, with no visual feedback: its log lines are the only sign. The
+/// strip shows them like an install that Cowbell starts. Call it right after
+/// the spawn, on every platform, so the pipes are always read.
+// shortcut: the log text of scrcpy 4.1 is not a contract; read scrcpy's adb child process instead (parent pid + `-s <id> install -r <apk>` command line) if a scrcpy update changes it.
+pub fn follow_scrcpy_log(
+    app: &tauri::AppHandle,
+    child: &mut tokio::process::Child,
+    device_id: &str,
+) {
+    let current = std::sync::Arc::new(std::sync::Mutex::new(None));
+    if let Some(stdout) = child.stdout.take() {
+        tauri::async_runtime::spawn(drain_scrcpy_log(
+            stdout,
+            app.clone(),
+            device_id.to_string(),
+            current.clone(),
+        ));
+    }
+    if let Some(stderr) = child.stderr.take() {
+        tauri::async_runtime::spawn(drain_scrcpy_log(
+            stderr,
+            app.clone(),
+            device_id.to_string(),
+            current,
+        ));
     }
 }
 
@@ -306,8 +526,10 @@ fn apply(
     let Some(snap) = mirror_tools_win32::snapshot(entry.scrcpy_hwnd) else {
         return Tick::Stop;
     };
+    // An open Screenshot or Record panel is never forced on top of another app.
+    let pinned = !entry.expanded && entry.pinned(Instant::now());
     let size = fit_height_to(
-        tools_size(entry.expanded, snap.scale, snap.work_area),
+        tools_size(entry.expanded, pinned, snap.scale, snap.work_area),
         snap.frame,
         entry.expanded,
         snap.scale,
@@ -321,6 +543,7 @@ fn apply(
             ready: entry.ready,
             fits: dock.is_some(),
             foreground: mirror_tools_win32::foreground(entry.scrcpy_hwnd, tools_hwnd),
+            pinned,
         },
         last.is_some_and(|p| p.visible),
     );
@@ -487,8 +710,9 @@ pub async fn mirror_tools_resize(
 
         let snap = mirror_tools_win32::snapshot(entry.scrcpy_hwnd)
             .ok_or_else(|| api_error("mirror_closed", "The mirror window is closed"))?;
+        let pinned = !expanded && entry.pinned(Instant::now());
         let size = fit_height_to(
-            tools_size(expanded, snap.scale, snap.work_area),
+            tools_size(expanded, pinned, snap.scale, snap.work_area),
             snap.frame,
             expanded,
             snap.scale,
@@ -527,6 +751,181 @@ pub async fn mirror_tools_resize(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const APK: &str = r"C:\Users\Reinaldo\FlutterProjects\flutter_rad_pvmi\build\app\outputs\flutter-apk\app-demosales-release.apk";
+
+    /// What the install event of a log line says, as `(phase, file)`.
+    fn log_event(line: &str) -> Option<(InstallPhase, String)> {
+        install_log_event(line, "RF8W3085JEW").map(|e| (e.phase, e.file))
+    }
+
+    #[test]
+    fn the_scrcpy_log_of_a_good_install_gives_start_then_ok() {
+        // Captured from scrcpy 4.1: a good APK dropped on its window.
+        let lines = [
+            format!("INFO: Request to install {APK}"),
+            format!("INFO: Installing {APK}..."),
+            "Performing Streamed Install".to_string(),
+            "Success".to_string(),
+            format!("INFO: {APK} successfully installed"),
+        ];
+        let events: Vec<_> = lines.iter().filter_map(|l| log_event(l)).collect();
+        let file = "app-demosales-release.apk".to_string();
+        assert_eq!(
+            events,
+            [
+                (InstallPhase::Start, file.clone()),
+                (InstallPhase::Ok, file)
+            ]
+        );
+    }
+
+    #[test]
+    fn the_scrcpy_log_of_a_bad_install_gives_failed() {
+        // Captured from scrcpy 4.1 (stderr): a text file renamed to .apk.
+        let bad = r"C:\Users\Reinaldo\AppData\Local\Temp\cowbell-spike\bad.apk";
+        let lines = [
+            format!("adb.exe: failed to install {bad}: Failure [INSTALL_PARSE_FAILED_NOT_APK]"),
+            r#"ERROR: "adb install" returned with value 1"#.to_string(),
+            format!("ERROR: Failed to install {bad}"),
+        ];
+        let events: Vec<_> = lines.iter().filter_map(|l| log_event(l)).collect();
+        assert_eq!(events, [(InstallPhase::Failed, "bad.apk".to_string())]);
+    }
+
+    #[test]
+    fn the_install_event_is_file_1_of_1_for_this_device() {
+        let event =
+            install_log_event(&format!("INFO: Installing {APK}..."), "RF8W3085JEW").unwrap();
+        assert_eq!(event.device, "RF8W3085JEW");
+        assert_eq!((event.index, event.total), (1, 1));
+    }
+
+    #[test]
+    fn other_scrcpy_log_lines_are_not_installs() {
+        let lines = [
+            "",
+            "scrcpy 4.1 <https://github.com/Genymobile/scrcpy>",
+            "INFO: Renderer: direct3d11",
+            r"INFO: Pushing C:\notes.txt...",
+            r"INFO: C:\notes.txt successfully pushed to /sdcard/Download/",
+            r"INFO: Request to install C:\a.apk",
+            "INFO: Installing ...",
+            "ERROR: Failed to install ",
+            "Performing Incremental Install",
+        ];
+        for line in lines {
+            assert_eq!(log_event(line), None, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn the_log_level_is_optional_and_slashes_and_spaces_work() {
+        assert_eq!(
+            log_event("Installing /sdcard/My Apps/b app.apk..."),
+            Some((InstallPhase::Start, "b app.apk".to_string()))
+        );
+        assert_eq!(
+            log_event(r"WARN: C:\x\c.apk successfully installed"),
+            Some((InstallPhase::Ok, "c.apk".to_string()))
+        );
+    }
+
+    #[test]
+    fn the_line_splitter_joins_chunks_and_drops_carriage_returns() {
+        let mut lines = LineSplitter::default();
+        assert!(lines.push(b"INFO: Inst").is_empty());
+        assert_eq!(
+            lines.push(b"alling a.apk...\r\nsecond\nthi"),
+            ["INFO: Installing a.apk...", "second"]
+        );
+        assert_eq!(lines.push(b"rd\n"), ["third"]);
+    }
+
+    #[test]
+    fn the_line_splitter_drops_a_line_over_the_limit_and_keeps_going() {
+        let mut lines = LineSplitter::default();
+        let long = vec![b'x'; MAX_LOG_LINE + 10];
+        assert!(lines.push(&long).is_empty());
+        assert_eq!(lines.push(b"more\nnext\n"), ["next"]);
+        // A line of exactly the limit is kept.
+        let mut exact = vec![b'y'; MAX_LOG_LINE];
+        exact.push(b'\n');
+        assert_eq!(lines.push(&exact).len(), 1);
+    }
+
+    #[test]
+    fn a_late_end_of_an_earlier_file_does_not_replace_the_running_one() {
+        let event = |phase, file: &str| install_log_event_for(phase, file);
+        let mut current = None;
+        // The normal order: A starts, A fails, B starts, B works.
+        assert!(should_show(
+            &mut current,
+            &event(InstallPhase::Start, "a.apk")
+        ));
+        assert!(should_show(
+            &mut current,
+            &event(InstallPhase::Failed, "a.apk")
+        ));
+        assert!(should_show(
+            &mut current,
+            &event(InstallPhase::Start, "b.apk")
+        ));
+        assert!(should_show(&mut current, &event(InstallPhase::Ok, "b.apk")));
+        // The streams race: B starts before the failure of A arrives.
+        assert!(should_show(
+            &mut current,
+            &event(InstallPhase::Start, "a.apk")
+        ));
+        assert!(should_show(
+            &mut current,
+            &event(InstallPhase::Start, "b.apk")
+        ));
+        assert!(!should_show(
+            &mut current,
+            &event(InstallPhase::Failed, "a.apk")
+        ));
+        assert_eq!(current.as_deref(), Some("b.apk"));
+        assert!(should_show(&mut current, &event(InstallPhase::Ok, "b.apk")));
+        // An end with nothing running still shows.
+        assert!(should_show(
+            &mut current,
+            &event(InstallPhase::Failed, "c.apk")
+        ));
+    }
+
+    fn install_log_event_for(phase: InstallPhase, file: &str) -> InstallEvent {
+        InstallEvent {
+            device: "RF8W3085JEW".into(),
+            phase,
+            index: 1,
+            total: 1,
+            file: file.into(),
+        }
+    }
+
+    #[test]
+    fn the_parser_handles_server_lines_and_tricky_file_names() {
+        // A `[server]` line from the phone is not an install.
+        assert_eq!(log_event("[server] INFO: Installing x.apk..."), None);
+        // Dots and the end phrase inside the name stay part of the file name.
+        assert_eq!(
+            log_event(r"INFO: Installing C:\a\v1...2.apk..."),
+            Some((InstallPhase::Start, "v1...2.apk".to_string()))
+        );
+        assert_eq!(
+            log_event(r"INFO: C:\a\x successfully installed.apk successfully installed"),
+            Some((InstallPhase::Ok, "x successfully installed.apk".to_string()))
+        );
+        // A path that ends in a separator has no file name.
+        assert_eq!(log_event(r"ERROR: Failed to install C:\a\"), None);
+    }
+
+    #[test]
+    fn the_line_splitter_reads_invalid_utf8_lossily() {
+        let mut lines = LineSplitter::default();
+        assert_eq!(lines.push(b"a\xFFb\n"), ["a\u{FFFD}b"]);
+    }
 
     const WORK: Rect = Rect {
         left: 0,
@@ -636,6 +1035,7 @@ mod tests {
             ready: true,
             fits: true,
             foreground,
+            pinned: false,
         }
     }
 
@@ -658,9 +1058,12 @@ mod tests {
         for breaker in breakers {
             for fg in ALL_FOREGROUNDS {
                 for was in [false, true] {
-                    let mut i = input(fg);
-                    breaker(&mut i);
-                    assert!(!tools_visible(i, was), "{i:?} was={was}");
+                    for pinned in [false, true] {
+                        let mut i = input(fg);
+                        i.pinned = pinned;
+                        breaker(&mut i);
+                        assert!(!tools_visible(i, was), "{i:?} was={was}");
+                    }
                 }
             }
         }
@@ -683,23 +1086,72 @@ mod tests {
     }
 
     #[test]
+    fn a_pinned_strip_shows_whatever_is_in_front() {
+        for fg in ALL_FOREGROUNDS {
+            for was in [false, true] {
+                let mut i = input(fg);
+                i.pinned = true;
+                assert!(tools_visible(i, was), "{fg:?} was={was}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_pin_holds_until_its_deadline() {
+        let now = Instant::now();
+        let mut entry = ToolsEntry {
+            scrcpy_hwnd: 0,
+            expanded: false,
+            ready: true,
+            side: DockSide::Right,
+            pin_until: None,
+        };
+        assert!(!entry.pinned(now));
+        entry.pin_until = Some(now + Duration::from_secs(1));
+        assert!(entry.pinned(now));
+        assert!(!entry.pinned(now + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn the_status_makes_only_the_strip_taller() {
+        assert_eq!(
+            tools_size(false, true, 1.0, WORK),
+            Size {
+                width: 52,
+                height: 208
+            }
+        );
+        assert_eq!(
+            tools_size(false, true, 1.5, WORK),
+            Size {
+                width: 78,
+                height: 312
+            }
+        );
+        assert_eq!(
+            tools_size(true, true, 1.0, WORK),
+            tools_size(true, false, 1.0, WORK)
+        );
+    }
+
+    #[test]
     fn size_scales_and_rounds() {
         assert_eq!(
-            tools_size(false, 1.0, WORK),
+            tools_size(false, false, 1.0, WORK),
             Size {
                 width: 52,
                 height: 132
             }
         );
         assert_eq!(
-            tools_size(false, 1.5, WORK),
+            tools_size(false, false, 1.5, WORK),
             Size {
                 width: 78,
                 height: 198
             }
         );
         assert_eq!(
-            tools_size(true, 1.0, WORK),
+            tools_size(true, false, 1.0, WORK),
             Size {
                 width: 372,
                 height: 820
@@ -710,12 +1162,12 @@ mod tests {
     #[test]
     fn expanded_height_is_capped_by_the_work_area() {
         let short = rect(0, 0, 1920, 700);
-        assert_eq!(tools_size(true, 1.0, short).height, 700);
+        assert_eq!(tools_size(true, false, 1.0, short).height, 700);
     }
 
     #[test]
     fn expanded_height_follows_a_shorter_scrcpy_window() {
-        let size = tools_size(true, 1.0, WORK);
+        let size = tools_size(true, false, 1.0, WORK);
         let frame = rect(100, 50, 500, 650); // 600 tall
         assert_eq!(fit_height_to(size, frame, true, 1.0).height, 600);
         assert_eq!(fit_height_to(size, frame, true, 1.0).width, size.width);
@@ -723,14 +1175,14 @@ mod tests {
 
     #[test]
     fn expanded_height_is_kept_when_scrcpy_is_taller() {
-        let size = tools_size(true, 1.0, WORK);
+        let size = tools_size(true, false, 1.0, WORK);
         let frame = rect(100, 0, 500, 1000);
         assert_eq!(fit_height_to(size, frame, true, 1.0), size);
     }
 
     #[test]
     fn expanded_height_never_drops_below_one_strip() {
-        let size = tools_size(true, 1.0, WORK);
+        let size = tools_size(true, false, 1.0, WORK);
         let tiny = rect(100, 0, 500, 60);
         assert_eq!(fit_height_to(size, tiny, true, 1.0).height, 132);
         assert_eq!(fit_height_to(size, tiny, true, 2.0).height, 264);
@@ -738,7 +1190,7 @@ mod tests {
 
     #[test]
     fn the_strip_is_not_resized_to_scrcpy() {
-        let strip = tools_size(false, 1.0, WORK);
+        let strip = tools_size(false, false, 1.0, WORK);
         let frame = rect(100, 0, 500, 60);
         assert_eq!(fit_height_to(strip, frame, false, 1.0), strip);
     }
@@ -819,5 +1271,31 @@ mod tests {
             .unwrap();
         assert!(updated.ready);
         assert_eq!(state.get("a"), Some(updated));
+    }
+
+    #[test]
+    fn install_event_json_is_what_the_page_reads() {
+        let event = InstallEvent {
+            device: "RF8W3085JEW".into(),
+            phase: InstallPhase::Start,
+            index: 2,
+            total: 3,
+            file: "app.apk".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            serde_json::json!({
+                "device": "RF8W3085JEW",
+                "phase": "start",
+                "index": 2,
+                "total": 3,
+                "file": "app.apk"
+            })
+        );
+        assert_eq!(serde_json::to_value(InstallPhase::Ok).unwrap(), "ok");
+        assert_eq!(
+            serde_json::to_value(InstallPhase::Failed).unwrap(),
+            "failed"
+        );
     }
 }

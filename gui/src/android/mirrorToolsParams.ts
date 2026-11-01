@@ -25,3 +25,24 @@ export function parseMirrorToolsParams(search: string): MirrorToolsParams | null
 export function dockSideFrom(payload: unknown): "left" | "right" | null {
   return payload === "left" || payload === "right" ? payload : null;
 }
+
+export interface InstallView {
+  /** adb is running: show the bar. */
+  busy: boolean;
+  tone: "busy" | "ok" | "failed";
+  text: string;
+  file: string;
+}
+
+/** The strip's install status for a `mirror-install` payload. `null` when the payload is malformed or names another
+ * device: a page-wide `listen` also receives events Rust sends to other tools windows. */
+export function installView(payload: unknown, deviceId: string): InstallView | null {
+  if (!payload || typeof payload !== "object") return null;
+  const { device, phase, index, total, file } = payload as Record<string, unknown>;
+  if (device !== deviceId || typeof file !== "string") return null;
+  if (phase === "ok") return { busy: false, tone: "ok", text: "Installed", file };
+  if (phase === "failed") return { busy: false, tone: "failed", text: "Failed", file };
+  if (phase !== "start" || typeof index !== "number" || typeof total !== "number") return null;
+  if (!Number.isInteger(index) || !Number.isInteger(total)) return null;
+  return { busy: true, tone: "busy", text: total > 1 ? `Installing ${index} of ${total}` : "Installing", file };
+}

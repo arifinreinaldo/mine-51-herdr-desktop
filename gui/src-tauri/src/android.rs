@@ -1,7 +1,8 @@
-//! Android mirror and APK install: `scrcpy` for the mirror window, `adb
-//! install` for dropped APKs, and a `winget` install of scrcpy when it is
-//! missing. scrcpy is not bundled; it runs as its own native window. Also
-//! the screenshot capture (`adb exec-out screencap`) with copy and save.
+//! Android mirror: `scrcpy` for the mirror window (it installs an APK that is
+//! dropped on its window; `mirror_tools::follow_scrcpy_log` shows that on the
+//! tools strip), and a `winget` install of scrcpy when it is missing. scrcpy
+//! is not bundled; it runs as its own native window. Also the screenshot
+//! capture (`adb exec-out screencap`) with copy and save.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -22,7 +23,6 @@ use crate::mirror_tools;
 /// scrcpy that dies inside this window (no device, unauthorized) is a
 /// failure to report; one still alive after it is the mirror window.
 const SCRCPY_EARLY_EXIT: Duration = Duration::from_millis(1500);
-const INSTALL_APK_TIMEOUT: Duration = Duration::from_secs(120);
 const INSTALL_SCRCPY_TIMEOUT: Duration = Duration::from_secs(300);
 const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(15);
 const SCREENSHOT_MAX_BYTES: usize = 32 * 1024 * 1024;
@@ -63,16 +63,6 @@ pub(crate) fn resolve_adb_from_env() -> Option<PathBuf> {
     )
 }
 
-/// An absolute path to an existing `.apk` file. `adb install` receives it
-/// as an argument (no shell), so absolute-only also rules out a leading `-`.
-pub fn is_apk_path(path: &Path) -> bool {
-    path.is_absolute()
-        && path.is_file()
-        && path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("apk"))
-}
-
 pub(crate) fn check_device_id(id: &str) -> Result<(), ApiError> {
     if is_valid_device_id(id) {
         Ok(())
@@ -85,8 +75,13 @@ pub(crate) fn check_device_id(id: &str) -> Result<(), ApiError> {
 }
 
 /// Spawns scrcpy and waits out the early-exit window. `Ok(None)`: scrcpy
-/// exited cleanly inside it (the user closed it at once).
-async fn start_scrcpy(device_id: &str) -> Result<Option<tokio::process::Child>, ApiError> {
+/// exited cleanly inside it (the user closed it at once). stdout and stderr
+/// are piped for the install log: `on_spawn` must start reading them at once,
+/// because scrcpy blocks when a pipe fills.
+async fn start_scrcpy(
+    device_id: &str,
+    on_spawn: impl FnOnce(&mut tokio::process::Child),
+) -> Result<Option<tokio::process::Child>, ApiError> {
     check_device_id(device_id)?;
     let scrcpy = resolve_scrcpy(
         std::env::var_os("PATH").as_deref(),
@@ -106,12 +101,13 @@ async fn start_scrcpy(device_id: &str) -> Result<Option<tokio::process::Child>, 
         cmd.env("ADB", adb);
     }
     cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     apply_no_window(&mut cmd);
     let mut child = cmd
         .spawn()
         .map_err(|err| api_error("scrcpy_failed", err.to_string()))?;
+    on_spawn(&mut child);
     match tokio::time::timeout(SCRCPY_EARLY_EXIT, child.wait()).await {
         Err(_) => Ok(Some(child)),
         Ok(Ok(status)) if status.success() => Ok(None),
@@ -131,37 +127,15 @@ pub async fn android_mirror(
     device_id: String,
     device_name: Option<String>,
 ) -> Result<(), ApiError> {
-    if let Some(child) = start_scrcpy(&device_id).await? {
+    let follow_log = |child: &mut tokio::process::Child| {
+        mirror_tools::follow_scrcpy_log(&app, child, &device_id);
+    };
+    if let Some(child) = start_scrcpy(&device_id, follow_log).await? {
         let name =
             mirror_tools::sanitize_device_name(device_name.as_deref().unwrap_or(""), &device_id);
         tauri::async_runtime::spawn(mirror_tools::run(app, child, device_id, name));
     }
     Ok(())
-}
-
-/// `adb -s <id> install -r <apk>`. Returns adb's output.
-#[tauri::command]
-pub async fn android_install_apk(device_id: String, path: String) -> Result<String, ApiError> {
-    check_device_id(&device_id)?;
-    if !is_apk_path(Path::new(&path)) {
-        return Err(api_error("not_an_apk", format!("Not an .apk file: {path}")));
-    }
-    let adb = resolve_adb_from_env().ok_or_else(|| {
-        api_error(
-            "adb_not_found",
-            "adb was not found; install Android SDK platform-tools",
-        )
-    })?;
-    let mut cmd = AsyncCommand::new(&adb);
-    cmd.args(["-s", &device_id, "install", "-r", &path]);
-    let stdout = run_capture(
-        cmd,
-        INSTALL_APK_TIMEOUT,
-        "install_timeout",
-        "install_failed",
-    )
-    .await?;
-    Ok(stdout.trim().to_string())
 }
 
 /// Installs scrcpy with winget. Windows only; elsewhere the message names
@@ -460,31 +434,10 @@ mod tests {
         assert_eq!(resolve_scrcpy(Some(&path_var), Some(&empty)), None);
     }
 
-    #[test]
-    fn apk_path_needs_an_existing_absolute_apk_file() {
-        let dir = scratch("apk");
-        let apk = dir.join("App.APK");
-        std::fs::write(&apk, b"").unwrap();
-        let txt = dir.join("notes.txt");
-        std::fs::write(&txt, b"").unwrap();
-        assert!(is_apk_path(&apk));
-        assert!(!is_apk_path(&txt));
-        assert!(!is_apk_path(&dir.join("missing.apk")));
-        assert!(!is_apk_path(Path::new("relative.apk")));
-    }
-
     #[tokio::test]
     async fn mirror_rejects_an_unsafe_device_id() {
-        let err = start_scrcpy("x; rm -rf").await.unwrap_err();
+        let err = start_scrcpy("x; rm -rf", |_| {}).await.unwrap_err();
         assert_eq!(err.code, "bad_device_id");
-    }
-
-    #[tokio::test]
-    async fn install_rejects_a_non_apk_path() {
-        let err = android_install_apk("RF8W3085JEW".into(), "C:\\nope.txt".into())
-            .await
-            .unwrap_err();
-        assert_eq!(err.code, "not_an_apk");
     }
 
     #[test]

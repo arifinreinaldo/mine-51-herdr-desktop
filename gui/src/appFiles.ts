@@ -10,7 +10,7 @@ import type { RawSnapshot } from "./appTypes";
 import { fsListDir, fsOpenPaged, fsReadLines, fsReadText, fsSearch, fsStat, type DirEntry } from "./files/filesApi";
 import { focusKeyboardCapture } from "./keyboard/focusCapture";
 import { renderFileTree } from "./ui/fileTree";
-import { closeTab, cycleTab, openTab, renderFileTabs, renderFileViewer, viewOf, type TabView, type ViewerContent } from "./ui/fileViewer";
+import { closeTab, cycleTab, openTab, renderFileTabs, renderFileViewer, viewerText, viewOf, type TabView, type ViewerContent } from "./ui/fileViewer";
 import { closeFindBar } from "./ui/findBar";
 import { openQuickOpen } from "./ui/quickOpen";
 import { closeViewerFind, openViewerFind } from "./ui/viewerFind";
@@ -33,6 +33,7 @@ let content: ViewerContent = { kind: "loading" };
 let readSeq = 0; // drops stale reads (spec §5)
 let reading = false; // a read is in flight: the poll waits, so a read slower than POLL_MS still finishes
 let stamp: string | null = null; // "mtimeMs:size" of the shown file at its last read; null when it could not be read
+let pendingScroll: { rel: string; line: number } | null = null; // 0-based; applied after the next render of that file
 const POLL_MS = 2000;
 const MAX_SEARCH_MATCHES = 10_000; // paged find: the count shows "+" past this
 
@@ -327,10 +328,15 @@ async function readActive(refresh = false): Promise<void> {
   if (same || fileViewerEl.hidden) return; // hidden: the diff view hid the viewer during the read (appSourceControl.ts openFile)
   content = next;
   renderViewer(refresh);
+  if (pendingScroll?.rel === rel) {
+    viewerText()?.scrollToLine(pendingScroll.line);
+    pendingScroll = null;
+  }
 }
 
 function openFileInViewer(rel: string): void {
   if (!current) return;
+  pendingScroll = null;
   openTab(current, rel);
   closeDiff(false);
   closeFindBar(); // the find bar sits under the viewer (z-index), so it must not stay open behind it
@@ -394,6 +400,13 @@ export function openFindFile(): void {
     // The workspace can change while the finder is open.
     onOpen: (rel) => {
       if (ws === current) openFileInViewer(rel);
+    },
+    // `line` is 1-based (git); the viewer counts from 0.
+    onOpenAt: (rel, line) => {
+      if (ws !== current) return;
+      openFileInViewer(rel);
+      viewOf(ws, rel).currentLine = line - 1;
+      pendingScroll = { rel, line: line - 1 };
     },
   });
 }
