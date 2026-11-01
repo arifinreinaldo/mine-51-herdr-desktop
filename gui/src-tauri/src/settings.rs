@@ -260,9 +260,11 @@ mod tests {
     #[test]
     fn save_then_load_round_trips() {
         let path = temp_path("roundtrip");
-        let mut settings = Settings::default();
-        settings.theme = "herdr".to_string();
-        settings.sidebar_width = 300;
+        let mut settings = Settings {
+            theme: "herdr".to_string(),
+            sidebar_width: 300,
+            ..Settings::default()
+        };
         settings.workspace_colors.insert("ws-1".to_string(), 3);
         save_settings_to(&path, &settings).unwrap();
         let response = load_settings_from(&path);
@@ -304,8 +306,10 @@ mod tests {
             .map(|i| {
                 let path = path.clone();
                 std::thread::spawn(move || {
-                    let mut settings = Settings::default();
-                    settings.sidebar_width = 200 + i;
+                    let settings = Settings {
+                        sidebar_width: 200 + i,
+                        ..Settings::default()
+                    };
                     save_settings_to(&path, &settings).unwrap();
                 })
             })

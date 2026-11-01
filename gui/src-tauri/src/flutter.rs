@@ -554,8 +554,7 @@ pub fn parse_flavors(gradle: &str) -> Vec<String> {
                         .unwrap_or("");
                     let name = quoted_strings(line).into_iter().next().or_else(|| {
                         line.split(|c: char| !c.is_ascii_alphanumeric())
-                            .filter(|w| !w.is_empty())
-                            .last()
+                            .rfind(|w| !w.is_empty())
                             .map(str::to_string)
                     });
                     let dimension = body.find("dimension").and_then(|i| {
@@ -628,7 +627,11 @@ pub fn read_flavors(dir: &Path) -> Vec<String> {
             continue;
         };
         let mut bytes = Vec::new();
-        if handle.take(GRADLE_MAX_BYTES).read_to_end(&mut bytes).is_ok() {
+        if handle
+            .take(GRADLE_MAX_BYTES)
+            .read_to_end(&mut bytes)
+            .is_ok()
+        {
             return parse_flavors(&String::from_utf8_lossy(&bytes));
         }
     }
@@ -658,7 +661,13 @@ pub async fn flutter_run_alive(device_id: String) -> Result<bool, ApiError> {
         );
         let mut cmd = AsyncCommand::new("powershell.exe");
         cmd.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
-        let out = run_capture(cmd, ADB_TIMEOUT, "flutter_alive_timeout", "flutter_alive_failed").await;
+        let out = run_capture(
+            cmd,
+            ADB_TIMEOUT,
+            "flutter_alive_timeout",
+            "flutter_alive_failed",
+        )
+        .await;
         Ok(out
             .ok()
             .and_then(|s| s.trim().parse::<u32>().ok())

@@ -132,6 +132,8 @@ fn digest_client_clipboard_image_roundtrip() {
 /// skip, and a multi-byte / wide grapheme). Decoded by the GUI on every
 /// full surface.
 #[test]
+// The colour literals group as tag byte, then RGB, mirroring wire.rs packing.
+#[allow(clippy::unusual_byte_groupings)]
 fn digest_server_frame_roundtrip_nontrivial() {
     // Colour packing from wire.rs:1522-1546 (no ratatui dependency here --
     // see spec §1 "Colour packing" / "No ratatui type is on the wire").

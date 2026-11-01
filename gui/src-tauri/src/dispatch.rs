@@ -186,35 +186,6 @@ fn should_attempt_auto_start(status: &crate::engine::EngineStatus) -> bool {
     matches!(status, crate::engine::EngineStatus::Found { .. })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn missing_and_broken_never_attempt_auto_start() {
-        assert!(!should_attempt_auto_start(
-            &crate::engine::EngineStatus::Missing
-        ));
-        assert!(!should_attempt_auto_start(
-            &crate::engine::EngineStatus::Broken {
-                path: PathBuf::from("herdr.exe"),
-                error: "boom".to_string(),
-            }
-        ));
-    }
-
-    #[test]
-    fn found_attempts_auto_start() {
-        assert!(should_attempt_auto_start(
-            &crate::engine::EngineStatus::Found {
-                path: PathBuf::from("herdr.exe"),
-                version: "0.9.1".to_string(),
-            }
-        ));
-    }
-}
-
 /// Reads and dispatches messages until the connection ends (`ServerShutdown`
 /// or EOF/error), per spec §4 `conn.rs`.
 async fn run_dispatch_loop(app: &AppHandle, inner: &Arc<Inner>, conn: &Arc<Connection>) {
@@ -435,5 +406,34 @@ pub(crate) fn push_surface_bytes(inner: &Inner, bytes: Vec<u8>) {
         .as_ref()
     {
         let _ = channel.send(tauri::ipc::InvokeResponseBody::Raw(bytes));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn missing_and_broken_never_attempt_auto_start() {
+        assert!(!should_attempt_auto_start(
+            &crate::engine::EngineStatus::Missing
+        ));
+        assert!(!should_attempt_auto_start(
+            &crate::engine::EngineStatus::Broken {
+                path: PathBuf::from("herdr.exe"),
+                error: "boom".to_string(),
+            }
+        ));
+    }
+
+    #[test]
+    fn found_attempts_auto_start() {
+        assert!(should_attempt_auto_start(
+            &crate::engine::EngineStatus::Found {
+                path: PathBuf::from("herdr.exe"),
+                version: "0.9.1".to_string(),
+            }
+        ));
     }
 }

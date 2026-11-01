@@ -652,11 +652,15 @@ fn is_safe_local_file(p: &std::path::Path) -> bool {
     // (pif, msc, ...) to enumerate. Macro-capable formats (docm, xlsm, pptm,
     // and the legacy binary doc/xls) are left out on purpose.
     const ALLOWED: &[&str] = &[
-        "xlsx", "csv", "tsv", "docx", "pptx", "pdf", "txt", "md", "log", "json", "yml", "yaml", "png", "jpg", "jpeg", "gif",
-        "svg", "webp", "mp4", "mov", "mp3", "wav",
+        "xlsx", "csv", "tsv", "docx", "pptx", "pdf", "txt", "md", "log", "json", "yml", "yaml",
+        "png", "jpg", "jpeg", "gif", "svg", "webp", "mp4", "mov", "mp3", "wav",
     ];
     let allowed_ext = |path: &std::path::Path| {
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
         ALLOWED.contains(&ext.as_str())
     };
     // Drive-letter paths only: a UNC path (`\\host\share`) would make
@@ -666,7 +670,9 @@ fn is_safe_local_file(p: &std::path::Path) -> bool {
     #[cfg(windows)]
     {
         let b = p.to_str().unwrap_or("").as_bytes();
-        if !(b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\') || b[2..].contains(&b':') {
+        if !(b.len() > 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\')
+            || b[2..].contains(&b':')
+        {
             return false;
         }
     }
@@ -817,13 +823,22 @@ mod safe_web_url_tests {
         assert!(is_safe_local_file(&ok));
         assert!(!is_safe_local_file(&bad));
         assert!(!is_safe_local_file(&pif)); // not on the allowlist
-        // Each case uses a file that exists with an allowlisted extension, so
-        // only the prefix/stream check can reject it.
+                                            // Each case uses a file that exists with an allowlisted extension, so
+                                            // only the prefix/stream check can reject it.
         let name = ok.to_str().unwrap();
-        assert!(!is_safe_local_file(std::path::Path::new(&format!(r"\\?\{name}")))); // verbatim prefix
-        assert!(!is_safe_local_file(std::path::Path::new(&format!(r"\\localhost\{}", name.replacen(':', "$", 1))))); // UNC
-        assert!(!is_safe_local_file(std::path::Path::new(&name.replace('\\', "/")))); // forward slashes
-        assert!(!is_safe_local_file(std::path::Path::new(&format!("{name}:s.txt")))); // alternate data stream
+        assert!(!is_safe_local_file(std::path::Path::new(&format!(
+            r"\\?\{name}"
+        )))); // verbatim prefix
+        assert!(!is_safe_local_file(std::path::Path::new(&format!(
+            r"\\localhost\{}",
+            name.replacen(':', "$", 1)
+        )))); // UNC
+        assert!(!is_safe_local_file(std::path::Path::new(
+            &name.replace('\\', "/")
+        ))); // forward slashes
+        assert!(!is_safe_local_file(std::path::Path::new(&format!(
+            "{name}:s.txt"
+        )))); // alternate data stream
         let xls = dir.join("herdr_open_path_legacy.xls");
         std::fs::write(&xls, b"x").unwrap();
         assert!(!is_safe_local_file(&xls)); // macro-capable legacy format

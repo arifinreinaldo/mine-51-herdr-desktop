@@ -46,13 +46,13 @@ fn read_frame_round_trips_a_client_message() {
     let payload = read_frame(&mut buf.as_slice(), herdr_wire::MAX_FRAME_SIZE).expect("read frame");
     // `Detach` is a unit variant at tag 4: bincode encodes it as a single
     // varint byte with no further payload.
-    let expected = bincode::serde::encode_to_vec(&detach(), bincode::config::standard()).unwrap();
+    let expected = bincode::serde::encode_to_vec(detach(), bincode::config::standard()).unwrap();
     assert_eq!(payload, expected);
 }
 
 #[test]
 fn decode_server_round_trips_a_welcome() {
-    let payload = bincode::serde::encode_to_vec(&welcome(), bincode::config::standard()).unwrap();
+    let payload = bincode::serde::encode_to_vec(welcome(), bincode::config::standard()).unwrap();
     let decoded = decode_server(&payload).expect("decode welcome");
     assert_eq!(decoded, welcome());
 }
@@ -60,7 +60,7 @@ fn decode_server_round_trips_a_welcome() {
 #[test]
 fn decode_server_rejects_trailing_bytes() {
     let mut payload =
-        bincode::serde::encode_to_vec(&welcome(), bincode::config::standard()).unwrap();
+        bincode::serde::encode_to_vec(welcome(), bincode::config::standard()).unwrap();
     payload.push(0xDE);
     assert!(decode_server(&payload).is_err());
 }
@@ -93,7 +93,7 @@ fn bad_payload_between_two_good_frames_leaves_the_stream_readable() {
 
     let first = read_frame(&mut cursor, herdr_wire::MAX_FRAME_SIZE).expect("first good frame");
     let expected_detach =
-        bincode::serde::encode_to_vec(&detach(), bincode::config::standard()).unwrap();
+        bincode::serde::encode_to_vec(detach(), bincode::config::standard()).unwrap();
     assert_eq!(first, expected_detach);
 
     let bad = read_frame(&mut cursor, herdr_wire::MAX_FRAME_SIZE)
@@ -126,7 +126,7 @@ fn oversize_frame_between_two_good_frames_leaves_the_stream_readable() {
 
     let mut cursor = stream.as_slice();
     let expected_detach =
-        bincode::serde::encode_to_vec(&detach(), bincode::config::standard()).unwrap();
+        bincode::serde::encode_to_vec(detach(), bincode::config::standard()).unwrap();
 
     let first = read_frame(&mut cursor, max).expect("first good frame");
     assert_eq!(first, expected_detach);
