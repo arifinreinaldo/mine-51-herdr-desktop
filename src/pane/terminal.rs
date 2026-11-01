@@ -1,6 +1,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LockResult, Mutex, MutexGuard, TryLockError, TryLockResult};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -195,12 +195,57 @@ pub(crate) enum TerminalCompressionStep {
 }
 
 pub(crate) struct GhosttyPaneTerminal {
-    pub core: Mutex<GhosttyPaneCore>,
+    pub core: PaneCoreMutex,
     key_encoder: Mutex<crate::ghostty::KeyEncoder>,
     pending_pty_responses: Arc<Mutex<Vec<Bytes>>>,
 }
 
+/// Mutex for `GhosttyPaneCore` that survives a panic while the lock was held.
+/// A poisoned pane would otherwise read as permanently synchronized and freeze
+/// its tab surface. `lock` and `try_lock` clear the poison, log it once, and
+/// flag the core so the next dirty-patch collection forces a full repaint.
+pub(crate) struct PaneCoreMutex(Mutex<GhosttyPaneCore>);
+
+impl PaneCoreMutex {
+    fn new(core: GhosttyPaneCore) -> Self {
+        Self(Mutex::new(core))
+    }
+
+    fn recover<'a>(
+        &self,
+        mut guard: MutexGuard<'a, GhosttyPaneCore>,
+    ) -> MutexGuard<'a, GhosttyPaneCore> {
+        self.0.clear_poison();
+        guard.repaint_after_poison = true;
+        tracing::error!("pane terminal lock was poisoned by a panic; recovered and repainting");
+        guard
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_poisoned(&self) -> bool {
+        self.0.is_poisoned()
+    }
+
+    pub(crate) fn lock(&self) -> LockResult<MutexGuard<'_, GhosttyPaneCore>> {
+        match self.0.lock() {
+            Ok(guard) => Ok(guard),
+            Err(poisoned) => Ok(self.recover(poisoned.into_inner())),
+        }
+    }
+
+    pub(crate) fn try_lock(&self) -> TryLockResult<MutexGuard<'_, GhosttyPaneCore>> {
+        match self.0.try_lock() {
+            Ok(guard) => Ok(guard),
+            Err(TryLockError::WouldBlock) => Err(TryLockError::WouldBlock),
+            Err(TryLockError::Poisoned(poisoned)) => Ok(self.recover(poisoned.into_inner())),
+        }
+    }
+}
+
 pub(crate) struct GhosttyPaneCore {
+    /// Set when the core lock was recovered from poison; the next dirty-patch
+    /// collection returns `Fallback` and clears it.
+    repaint_after_poison: bool,
     #[cfg(test)]
     pub dirty_collection_hook: Option<Box<dyn FnOnce() + Send>>,
     pub terminal: crate::ghostty::Terminal,
@@ -1181,7 +1226,8 @@ impl GhosttyPaneTerminal {
             crate::ghostty::KeyEncoder::new().map_err(|e| std::io::Error::other(e.to_string()))?;
         key_encoder.set_from_terminal(&terminal);
         Ok(Self {
-            core: Mutex::new(GhosttyPaneCore {
+            core: PaneCoreMutex::new(GhosttyPaneCore {
+                repaint_after_poison: false,
                 #[cfg(test)]
                 dirty_collection_hook: None,
                 terminal,
@@ -2238,11 +2284,7 @@ impl GhosttyPaneTerminal {
     }
 
     fn try_lock_core(&self) -> Option<std::sync::MutexGuard<'_, GhosttyPaneCore>> {
-        match self.core.try_lock() {
-            Ok(core) => Some(core),
-            Err(std::sync::TryLockError::WouldBlock) => None,
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
-        }
+        self.core.try_lock().ok()
     }
 
     pub(crate) fn try_compression_activity(&self) -> Result<Option<u64>, crate::ghostty::Error> {
@@ -2516,6 +2558,9 @@ impl GhosttyPaneTerminal {
             .lock()
             .ok()
             .map(|mut core| {
+                if std::mem::take(&mut core.repaint_after_poison) {
+                    return TerminalDirtyPatchOutcome::Fallback;
+                }
                 if core
                     .terminal
                     .mode_get(crate::ghostty::MODE_SYNCHRONIZED_OUTPUT)

@@ -635,6 +635,10 @@ impl TerminalRuntime {
         self.0.test_process_pty_bytes(bytes);
     }
 
+    pub(crate) fn test_poison_core(&self) {
+        self.0.test_poison_core();
+    }
+
     pub(crate) fn test_with_scrollback_bytes(
         cols: u16,
         rows: u16,

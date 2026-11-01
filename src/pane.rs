@@ -3736,6 +3736,16 @@ impl PaneRuntime {
         (release_tx, writer)
     }
 
+    pub(crate) fn test_poison_core(&self) {
+        let terminal = self.terminal.clone();
+        let _ = std::thread::spawn(move || {
+            let _core = terminal.ghostty.core.lock();
+            panic!("poison the pane core for a test");
+        })
+        .join();
+        assert!(self.terminal.ghostty.core.is_poisoned());
+    }
+
     pub(crate) fn test_process_pty_bytes(&self, bytes: &[u8]) {
         let _content_write_guard = match self.content_write_lock.lock() {
             Ok(guard) => guard,
@@ -3923,6 +3933,27 @@ mod tests {
         runtime.test_process_pty_bytes(b"\x1b[?1003h\x1b[?1016h\x1b[?1049h");
         let modes = assert_matches(&runtime);
         assert!(modes.mouse_reporting && modes.sgr_pixel_mouse && modes.alternate_screen_active);
+    }
+
+    #[tokio::test]
+    async fn poisoned_core_recovers_real_state_and_forces_one_repaint() {
+        let runtime = PaneRuntime::test_with_screen_bytes(20, 4, b"alive");
+        runtime
+            .collect_dirty_patch_snapshot(20, 4)
+            .expect("baseline snapshot");
+        runtime.test_poison_core();
+
+        // A poisoned lock used to read as (synchronized, epoch 0) forever.
+        assert_eq!(runtime.synchronized_output_state(), (false, 0));
+        assert!(runtime.visible_text().contains("alive"));
+
+        // Recovery flags one full repaint; the next collection is a plain patch again.
+        runtime.test_poison_core();
+        assert!(runtime.collect_dirty_patch_snapshot(20, 4).is_none());
+        assert!(runtime.collect_dirty_patch_snapshot(20, 4).is_some());
+
+        runtime.test_process_pty_bytes(b"\x1b[?2026h");
+        assert!(runtime.synchronized_output_state().0);
     }
 
     #[tokio::test]

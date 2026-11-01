@@ -1740,6 +1740,30 @@ async fn retained_patch_resolves_distinct_public_ids_for_one_pane() {
 }
 
 #[tokio::test]
+async fn poisoned_pane_core_does_not_freeze_the_shell_surface() {
+    let mut server = test_headless_server();
+    let pane_id = install_shared_view_test_runtime(&mut server);
+    let (_control, render) = connect_matching_test_shell(&mut server, 7);
+    server.render_and_stream();
+    let _ = recv_pane_surface(&render, "baseline");
+
+    server.app.state.workspaces[0].test_runtimes[&pane_id].test_poison_core();
+    write_shared_test_pane(&mut server, pane_id, b"\rRECOVER");
+    // The retained path must fall back to a full repaint, which must succeed.
+    assert!(!server.render_retained_pane_surface_and_stream(&HashSet::from([pane_id])));
+    server.render_and_stream();
+    let surface = recv_pane_surface(&render, "post-poison surface");
+    assert!(surface
+        .frame
+        .cells
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>()
+        .contains("RECOVER"));
+    shutdown_test_runtimes(&mut server);
+}
+
+#[tokio::test]
 async fn backpressured_shell_does_not_disable_retained_patches_for_responsive_peer() {
     let mut server = test_headless_server();
     let pane_id = install_shared_view_test_runtime(&mut server);
