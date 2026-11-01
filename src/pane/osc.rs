@@ -352,6 +352,10 @@ pub(super) fn parse_reported_cwd(value: &[u8]) -> Option<PathBuf> {
 struct OscStreamCollector {
     state: OscStreamState,
     body: Vec<u8>,
+    /// Sticky: set once any OSC body starts with `8;`. Set while the body is
+    /// still being collected, so the `MAX_BODY_BYTES` discard of a long URI
+    /// cannot hide the hyperlink.
+    saw_hyperlink: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -463,6 +467,9 @@ impl OscStreamCollector {
 
     fn push(&mut self, byte: u8) {
         self.body.push(byte);
+        if self.body == b"8;" {
+            self.saw_hyperlink = true;
+        }
         if self.body.len() > Self::MAX_BODY_BYTES {
             self.body.clear();
             self.state = OscStreamState::Discarding;
@@ -531,6 +538,16 @@ impl AgentOscStateTracker {
 
     pub(super) fn terminal_title(&self) -> Option<&str> {
         self.terminal_title.as_deref()
+    }
+
+    /// True once the child emitted OSC 8, or seeded history contained it.
+    /// Never reset: a hyperlink can stay on screen or in scrollback.
+    pub(super) fn may_have_hyperlinks(&self) -> bool {
+        self.collector.saw_hyperlink
+    }
+
+    pub(super) fn note_hyperlink_seen(&mut self) {
+        self.collector.saw_hyperlink = true;
     }
 
     #[cfg(unix)]
@@ -841,6 +858,29 @@ pub(super) fn restore_host_terminal_theme_if_needed(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn hyperlink_flag_is_set_before_the_body_cap_discard() {
+        let mut tracker = AgentOscStateTracker::default();
+        assert!(!tracker.may_have_hyperlinks());
+        let mut bytes = b"\x1b]8;;https://example.com/".to_vec();
+        bytes.extend(std::iter::repeat_n(b'a', 5000));
+        tracker.observe(&bytes);
+        assert!(tracker.may_have_hyperlinks());
+        tracker.clear_retained();
+        assert!(tracker.may_have_hyperlinks());
+    }
+
+    #[test]
+    fn hyperlink_flag_ignores_other_osc_and_c1_introducers() {
+        let mut tracker = AgentOscStateTracker::default();
+        tracker.observe(b"\x1b]0;title\x07\x1b]9;4;3;\x07\x1b]88;;x\x07");
+        tracker.observe("\u{9d}8;;https://example.com\u{9c}".as_bytes());
+        assert!(!tracker.may_have_hyperlinks());
+        tracker.observe(b"\x1b]8");
+        tracker.observe(b";;https://example.com\x07");
+        assert!(tracker.may_have_hyperlinks());
+    }
+
     #[test]
     fn bulk_osc_scans_match_bytewise_state_and_response_offsets() {
         use super::*;

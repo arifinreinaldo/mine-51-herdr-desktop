@@ -1570,6 +1570,10 @@ impl GhosttyPaneTerminal {
             return;
         };
         core.kitty_keyboard.observe(ansi.as_bytes());
+        // Plain scan: observe() would leak seeded titles and progress into agent OSC state.
+        if ansi.contains("\x1b]8;") {
+            core.agent_osc_state.note_hyperlink_seen();
+        }
         core.terminal.write(ansi.as_bytes());
         #[cfg(windows)]
         windows_recent_fallback::update(&mut core);
@@ -2312,6 +2316,7 @@ impl GhosttyPaneTerminal {
         self.core
             .lock()
             .ok()
+            .filter(|core| core.agent_osc_state.may_have_hyperlinks())
             .and_then(|mut core| ghostty_visible_hyperlinks(&mut core, area).ok())
             .unwrap_or_default()
     }

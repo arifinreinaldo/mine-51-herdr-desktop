@@ -3768,6 +3768,12 @@ impl PaneRuntime {
         let terminal = Arc::new(PaneTerminal::new(
             GhosttyPaneTerminal::new(terminal, tx.clone()).unwrap(),
         ));
+        // Bytes written to the raw terminal bypass process_pty_bytes, so flag OSC 8 here.
+        if bytes.windows(4).any(|window| window == b"\x1b]8;") {
+            if let Ok(mut core) = terminal.ghostty.core.lock() {
+                core.agent_osc_state.note_hyperlink_seen();
+            }
+        }
         let compression = TerminalCompressionTask::spawn(pane_id, terminal.clone());
 
         (
@@ -3875,6 +3881,44 @@ mod tests {
         runtime.test_process_pty_bytes(b"\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\");
         assert!(runtime.collect_dirty_patch_snapshot(20, 4).is_none());
         assert!(runtime.content_write_lock.try_lock().is_ok());
+    }
+
+    #[tokio::test]
+    async fn visible_hyperlinks_skip_panes_that_never_saw_osc8() {
+        let runtime = PaneRuntime::test_with_screen_bytes(20, 4, b"plain");
+        let area = Rect::new(0, 0, 20, 4);
+        assert!(runtime.visible_hyperlinks(area).is_empty());
+        runtime.test_process_pty_bytes(b"\r\n\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\");
+        let links = runtime.visible_hyperlinks(area);
+        assert_eq!(links.len(), 4, "{links:?}");
+        assert_eq!(links[0].2, "https://example.com");
+    }
+
+    #[tokio::test]
+    async fn visible_hyperlinks_survive_a_long_osc8_uri() {
+        let runtime = PaneRuntime::test_with_screen_bytes(20, 4, b"");
+        let uri = format!("https://example.com/{}", "a".repeat(2000));
+        runtime.test_process_pty_bytes(format!("\x1b]8;;{uri}\x1b\\link\x1b]8;;\x1b\\").as_bytes());
+        assert_eq!(runtime.visible_hyperlinks(Rect::new(0, 0, 20, 4)).len(), 4);
+    }
+
+    #[tokio::test]
+    async fn c1_osc8_does_not_set_the_hyperlink_flag() {
+        let runtime = PaneRuntime::test_with_screen_bytes(20, 4, b"");
+        runtime.test_process_pty_bytes("\u{9d}8;;https://example.com\u{9c}link".as_bytes());
+        assert!(runtime
+            .visible_hyperlinks(Rect::new(0, 0, 20, 4))
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn seeded_history_with_osc8_enables_hyperlink_scan_without_osc_state_leak() {
+        let runtime = PaneRuntime::test_with_screen_bytes(20, 4, b"");
+        runtime.terminal.ghostty.seed_history_ansi(
+            "\x1b]0;seeded title\x07\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\",
+        );
+        assert_eq!(runtime.visible_hyperlinks(Rect::new(0, 0, 20, 4)).len(), 4);
+        assert_eq!(runtime.terminal.ghostty.agent_osc_title(), "");
     }
 
     #[tokio::test]
