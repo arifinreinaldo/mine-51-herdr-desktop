@@ -52,6 +52,8 @@ use crate::server::client_accept::{
 };
 use crate::server::client_shell::{
     render_pane_surface as render_client_shell_pane_surface,
+    snapshot_base as client_shell_snapshot_base,
+    snapshot_for_location as client_shell_snapshot_for_location,
     snapshot_with_completions as client_shell_snapshot,
 };
 use crate::server::client_transport::ServerEvent;

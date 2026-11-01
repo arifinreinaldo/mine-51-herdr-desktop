@@ -488,6 +488,10 @@ impl HeadlessServer {
         }
 
         let mut broken_clients: Vec<u64> = Vec::new();
+        // Location-independent snapshot part, built on first use and shared by every
+        // shell client in this render. Sampling it after the first client's surface
+        // render matches where the per-client build ran before.
+        let mut snapshot_base = None;
         for (client_id, (cols, rows), cell_size, _is_foreground, mode) in render_targets {
             #[cfg(unix)]
             if matches!(mode, ClientConnectionMode::TerminalObserve { .. })
@@ -562,9 +566,12 @@ impl HeadlessServer {
                 let Some(client) = self.clients.get_mut(&client_id) else {
                     continue;
                 };
-                let (mut candidate, mut completions) = client_shell_snapshot(
+                let base = snapshot_base.get_or_insert_with(|| {
+                    client_shell_snapshot_base(&self.app, &self.client_shell_boot_id)
+                });
+                let (mut candidate, mut completions) = client_shell_snapshot_for_location(
+                    base,
                     &self.app,
-                    &self.client_shell_boot_id,
                     client.shell_projection_revision,
                     None,
                     location.as_ref(),

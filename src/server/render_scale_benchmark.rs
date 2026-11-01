@@ -246,11 +246,12 @@ fn profile_snapshot_encoding(
     }
     let run = || {
         let started = Instant::now();
+        // Production builds the base once per full render, then one snapshot per client.
+        let base = super::client_shell::snapshot_base(&pipeline.app, "bench-boot");
         for client_index in 0..client_count {
-            // Production builds one snapshot per attached client; do not share one.
-            let (snapshot, completions) = super::client_shell::snapshot_with_completions(
+            let (snapshot, completions) = super::client_shell::snapshot_for_location(
+                &base,
                 &pipeline.app,
-                "bench-boot",
                 client_index as u64 + 1,
                 None,
                 None,

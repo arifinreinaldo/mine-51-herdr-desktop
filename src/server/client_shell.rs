@@ -4,6 +4,9 @@ use crate::app;
 use crate::protocol::{self, FrameData};
 
 #[cfg(test)]
+mod snapshot_equivalence;
+
+#[cfg(test)]
 pub(super) fn snapshot(
     app: &app::App,
     boot_id: &str,
@@ -24,63 +27,50 @@ pub(super) fn snapshot_with_completions(
     protocol::ClientShellSnapshot,
     protocol::endpoint::EndpointAgentCompletions,
 ) {
+    snapshot_for_location(
+        &snapshot_base(app, boot_id),
+        app,
+        revision,
+        config_diagnostic,
+        location,
+    )
+}
+
+/// Everything in a shell snapshot that does not depend on the client location,
+/// built once per full render. Location-derived fields (`focused` flags, focus
+/// ids, `active_tab_id`, `new_workspace_cwd`, `tab_bar_right`) hold the
+/// server-wide defaults here and are always rewritten by `snapshot_for_location`.
+pub(super) struct SnapshotBase {
+    template: protocol::ClientShellSnapshot,
+    completions: protocol::endpoint::EndpointAgentCompletions,
+}
+
+pub(super) fn snapshot_base(app: &app::App, boot_id: &str) -> SnapshotBase {
     let snapshot = app.session_snapshot();
     let completions = protocol::endpoint::EndpointAgentCompletions {
         boot_id: boot_id.to_owned(),
-        revision,
+        revision: 0,
         completions: snapshot
             .agents
             .iter()
             .filter_map(|agent| agent.completion_seq.map(|seq| (agent.pane_id.clone(), seq)))
             .collect(),
     };
-    let focused_workspace_id = location
-        .and_then(|location| location.focused_workspace_id.clone())
-        .or_else(|| snapshot.focused_workspace_id.clone());
-    let focused_tab_id = location
-        .and_then(|location| location.focused_tab_id().map(str::to_owned))
-        .or_else(|| snapshot.focused_tab_id.clone());
-    let focused_pane_id = focused_tab_id
-        .as_deref()
-        .and_then(|tab_id| app.parse_tab_id(tab_id))
-        .and_then(|(workspace_index, tab_index)| {
-            let pane_id = app
-                .state
-                .workspaces
-                .get(workspace_index)?
-                .tabs
-                .get(tab_index)?
-                .layout
-                .focused();
-            app.public_pane_id(workspace_index, pane_id)
-        })
-        .or_else(|| snapshot.focused_pane_id.clone());
+    let focused_workspace_id = snapshot.focused_workspace_id.clone();
+    let focused_tab_id = snapshot.focused_tab_id.clone();
+    let focused_pane_id = snapshot.focused_pane_id.clone();
     let workspaces = snapshot
         .workspaces
         .into_iter()
         .zip(&app.state.workspaces)
-        .enumerate()
-        .map(|(workspace_index, (workspace, state))| {
+        .map(|(workspace, state)| {
             let mut tokens = workspace.tokens.into_iter().collect::<Vec<_>>();
             tokens.sort_by(|left, right| left.0.cmp(&right.0));
-            let workspace_id = workspace.workspace_id;
-            let active_tab_id = location
-                .and_then(|location| location.active_tab_ids.get(&workspace_id))
-                .cloned()
-                .unwrap_or(workspace.active_tab_id);
-            let active_tab_index =
-                app.parse_tab_id(&active_tab_id)
-                    .and_then(|(tab_workspace_index, tab_index)| {
-                        (tab_workspace_index == workspace_index).then_some(tab_index)
-                    });
             protocol::ClientShellWorkspace {
-                focused: focused_workspace_id.as_deref() == Some(workspace_id.as_str()),
-                workspace_id,
-                active_tab_id,
-                new_workspace_cwd: app
-                    .resolved_new_workspace_cwd_from_tab(workspace_index, active_tab_index)
-                    .display()
-                    .to_string(),
+                focused: false,
+                workspace_id: workspace.workspace_id,
+                active_tab_id: workspace.active_tab_id,
+                new_workspace_cwd: String::new(),
                 number: workspace.number,
                 label: workspace.label,
                 custom_label: state.custom_name.is_some(),
@@ -107,28 +97,23 @@ pub(super) fn snapshot_with_completions(
                 .iter()
                 .flat_map(|workspace| workspace.tabs.iter()),
         )
-        .map(|(tab, state)| {
-            let tab_id = tab.tab_id;
-            protocol::ClientShellTab {
-                focused: focused_tab_id.as_deref() == Some(tab_id.as_str()),
-                tab_id,
-                workspace_id: tab.workspace_id,
-                number: tab.number,
-                label: tab.label,
-                custom_label: !state.is_auto_named(),
-                zoomed: state.zoomed,
-                agent_status: tab.agent_status,
-            }
+        .map(|(tab, state)| protocol::ClientShellTab {
+            focused: false,
+            tab_id: tab.tab_id,
+            workspace_id: tab.workspace_id,
+            number: tab.number,
+            label: tab.label,
+            custom_label: !state.is_auto_named(),
+            zoomed: state.zoomed,
+            agent_status: tab.agent_status,
         })
         .collect();
     let panes = snapshot
         .panes
         .into_iter()
         .map(|pane| {
-            let pane_id = pane.pane_id;
-            let focused = focused_pane_id.as_deref() == Some(pane_id.as_str());
             let right_click_passthrough = app
-                .parse_pane_id(&pane_id)
+                .parse_pane_id(&pane.pane_id)
                 .and_then(|(workspace_index, pane_id)| {
                     app.state
                         .workspaces
@@ -137,13 +122,13 @@ pub(super) fn snapshot_with_completions(
                 })
                 .is_some_and(|pane| pane.right_click_passthrough);
             protocol::ClientShellPane {
-                pane_id,
+                pane_id: pane.pane_id,
                 workspace_id: pane.workspace_id,
                 tab_id: pane.tab_id,
                 label: pane.label,
                 cwd: pane.cwd,
                 foreground_cwd: pane.foreground_cwd,
-                focused,
+                focused: false,
                 right_click_passthrough,
             }
         })
@@ -152,14 +137,12 @@ pub(super) fn snapshot_with_completions(
         .agents
         .into_iter()
         .map(|agent| {
-            let pane_id = agent.pane_id;
-            let focused = focused_pane_id.as_deref() == Some(pane_id.as_str());
             let mut state_labels = agent.state_labels.into_iter().collect::<Vec<_>>();
             state_labels.sort_by(|left, right| left.0.cmp(&right.0));
             let mut tokens = agent.tokens.into_iter().collect::<Vec<_>>();
             tokens.sort_by(|left, right| left.0.cmp(&right.0));
             protocol::ClientShellAgent {
-                pane_id,
+                pane_id: agent.pane_id,
                 workspace_id: agent.workspace_id,
                 tab_id: agent.tab_id,
                 name: agent.name,
@@ -172,7 +155,7 @@ pub(super) fn snapshot_with_completions(
                 state_change_seq: agent.state_change_seq,
                 state_labels,
                 tokens,
-                focused,
+                focused: false,
             }
         })
         .collect();
@@ -185,39 +168,6 @@ pub(super) fn snapshot_with_completions(
     let agent_order = crate::ui::agent_panel_entries_from(&app.state, &app.terminal_runtimes)
         .into_iter()
         .filter_map(|entry| app.public_pane_id(entry.ws_idx, entry.pane_id))
-        .collect();
-
-    let zoomed = focused_tab_id
-        .as_deref()
-        .and_then(|tab_id| app.parse_tab_id(tab_id))
-        .and_then(|(workspace_index, tab_index)| {
-            app.state
-                .workspaces
-                .get(workspace_index)?
-                .tabs
-                .get(tab_index)
-        })
-        .is_some_and(|tab| tab.zoomed);
-    let tab_bar_right = app
-        .state
-        .tab_bar_right
-        .iter()
-        .filter_map(|segment| match segment {
-            crate::app::state::TabBarStatusSegment::Zoom if zoomed => {
-                Some(protocol::ClientShellTabStatusSegment {
-                    text: "ZOOM".to_owned(),
-                    accent: true,
-                })
-            }
-            crate::app::state::TabBarStatusSegment::Text(Some(text)) if !text.is_empty() => {
-                Some(protocol::ClientShellTabStatusSegment {
-                    text: text.clone(),
-                    accent: false,
-                })
-            }
-            crate::app::state::TabBarStatusSegment::Zoom
-            | crate::app::state::TabBarStatusSegment::Text(_) => None,
-        })
         .collect();
 
     let product_announcement = app.state.product_announcement.as_ref().map(|announcement| {
@@ -239,31 +189,139 @@ pub(super) fn snapshot_with_completions(
                 preview: notes.preview,
             });
 
-    let shell = protocol::ClientShellSnapshot {
-        boot_id: boot_id.to_owned(),
-        revision,
-        config_diagnostic: config_diagnostic.map(str::to_owned),
-        product_announcement,
-        update_available: app.state.update_available.clone(),
-        update_install_command: app.state.update_install_command.clone(),
-        server_keybindings_toml: app.client_shell_keybindings_profile().map(str::to_owned),
-        latest_release_notes_available: app.state.latest_release_notes_available,
-        integration_updates_available: app.state.integration_updates_available(),
-        worktree_directory: app.state.worktree_directory.to_string_lossy().into_owned(),
-        release_notes,
-        focused_workspace_id,
-        focused_tab_id,
-        focused_pane_id,
-        tab_bar_right,
-        tab_bar_right_separator: app.state.tab_bar_right_separator.clone(),
-        agent_view_label,
-        agent_order,
-        workspaces,
-        tabs,
-        panes,
-        agents,
-        commands: app.client_shell_command_manifest(),
-    };
+    SnapshotBase {
+        template: protocol::ClientShellSnapshot {
+            boot_id: boot_id.to_owned(),
+            revision: 0,
+            config_diagnostic: None,
+            product_announcement,
+            update_available: app.state.update_available.clone(),
+            update_install_command: app.state.update_install_command.clone(),
+            server_keybindings_toml: app.client_shell_keybindings_profile().map(str::to_owned),
+            latest_release_notes_available: app.state.latest_release_notes_available,
+            integration_updates_available: app.state.integration_updates_available(),
+            worktree_directory: app.state.worktree_directory.to_string_lossy().into_owned(),
+            release_notes,
+            focused_workspace_id,
+            focused_tab_id,
+            focused_pane_id,
+            tab_bar_right: Vec::new(),
+            tab_bar_right_separator: app.state.tab_bar_right_separator.clone(),
+            agent_view_label,
+            agent_order,
+            workspaces,
+            tabs,
+            panes,
+            agents,
+            commands: app.client_shell_command_manifest(),
+        },
+        completions,
+    }
+}
+
+/// Applies one client's location to the shared base. `app` is read only for
+/// id parsing and the per-location new-workspace cwd and zoom lookups.
+pub(super) fn snapshot_for_location(
+    base: &SnapshotBase,
+    app: &app::App,
+    revision: u64,
+    config_diagnostic: Option<&str>,
+    location: Option<&crate::server::clients::ClientShellLocation>,
+) -> (
+    protocol::ClientShellSnapshot,
+    protocol::endpoint::EndpointAgentCompletions,
+) {
+    let mut shell = base.template.clone();
+    let mut completions = base.completions.clone();
+    completions.revision = revision;
+    shell.revision = revision;
+    shell.config_diagnostic = config_diagnostic.map(str::to_owned);
+
+    let focused_workspace_id = location
+        .and_then(|location| location.focused_workspace_id.clone())
+        .or_else(|| base.template.focused_workspace_id.clone());
+    let focused_tab_id = location
+        .and_then(|location| location.focused_tab_id().map(str::to_owned))
+        .or_else(|| base.template.focused_tab_id.clone());
+    let focused_pane_id = focused_tab_id
+        .as_deref()
+        .and_then(|tab_id| app.parse_tab_id(tab_id))
+        .and_then(|(workspace_index, tab_index)| {
+            let pane_id = app
+                .state
+                .workspaces
+                .get(workspace_index)?
+                .tabs
+                .get(tab_index)?
+                .layout
+                .focused();
+            app.public_pane_id(workspace_index, pane_id)
+        })
+        .or_else(|| base.template.focused_pane_id.clone());
+
+    for (workspace_index, workspace) in shell.workspaces.iter_mut().enumerate() {
+        if let Some(active_tab_id) =
+            location.and_then(|location| location.active_tab_ids.get(&workspace.workspace_id))
+        {
+            workspace.active_tab_id = active_tab_id.clone();
+        }
+        let active_tab_index = app.parse_tab_id(&workspace.active_tab_id).and_then(
+            |(tab_workspace_index, tab_index)| {
+                (tab_workspace_index == workspace_index).then_some(tab_index)
+            },
+        );
+        workspace.focused =
+            focused_workspace_id.as_deref() == Some(workspace.workspace_id.as_str());
+        workspace.new_workspace_cwd = app
+            .resolved_new_workspace_cwd_from_tab(workspace_index, active_tab_index)
+            .display()
+            .to_string();
+    }
+    for tab in &mut shell.tabs {
+        tab.focused = focused_tab_id.as_deref() == Some(tab.tab_id.as_str());
+    }
+    for pane in &mut shell.panes {
+        pane.focused = focused_pane_id.as_deref() == Some(pane.pane_id.as_str());
+    }
+    for agent in &mut shell.agents {
+        agent.focused = focused_pane_id.as_deref() == Some(agent.pane_id.as_str());
+    }
+
+    let zoomed = focused_tab_id
+        .as_deref()
+        .and_then(|tab_id| app.parse_tab_id(tab_id))
+        .and_then(|(workspace_index, tab_index)| {
+            app.state
+                .workspaces
+                .get(workspace_index)?
+                .tabs
+                .get(tab_index)
+        })
+        .is_some_and(|tab| tab.zoomed);
+    shell.tab_bar_right = app
+        .state
+        .tab_bar_right
+        .iter()
+        .filter_map(|segment| match segment {
+            crate::app::state::TabBarStatusSegment::Zoom if zoomed => {
+                Some(protocol::ClientShellTabStatusSegment {
+                    text: "ZOOM".to_owned(),
+                    accent: true,
+                })
+            }
+            crate::app::state::TabBarStatusSegment::Text(Some(text)) if !text.is_empty() => {
+                Some(protocol::ClientShellTabStatusSegment {
+                    text: text.clone(),
+                    accent: false,
+                })
+            }
+            crate::app::state::TabBarStatusSegment::Zoom
+            | crate::app::state::TabBarStatusSegment::Text(_) => None,
+        })
+        .collect();
+    shell.focused_workspace_id = focused_workspace_id;
+    shell.focused_tab_id = focused_tab_id;
+    shell.focused_pane_id = focused_pane_id;
     (shell, completions)
 }
 
