@@ -41,6 +41,7 @@ pub(super) fn run_agent_command(args: &[String]) -> std::io::Result<i32> {
 fn agent_explain(args: &[String]) -> std::io::Result<i32> {
     let mut file = None;
     let mut agent = None;
+    let mut manifest = None;
     let mut json = false;
     let mut verbose = false;
     let mut target = None;
@@ -48,6 +49,14 @@ fn agent_explain(args: &[String]) -> std::io::Result<i32> {
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
+            "--manifest" => {
+                let Some(value) = args.get(index + 1) else {
+                    eprintln!("missing value for --manifest");
+                    return Ok(2);
+                };
+                manifest = Some(value.clone());
+                index += 2;
+            }
             "--file" => {
                 let Some(value) = args.get(index + 1) else {
                     eprintln!("missing value for --file");
@@ -90,7 +99,7 @@ fn agent_explain(args: &[String]) -> std::io::Result<i32> {
             "help" | "--help" | "-h" => {
                 eprintln!("usage: herdr agent explain <target> [--json|--verbose]");
                 eprintln!(
-                    "usage: herdr agent explain --file PATH --agent LABEL [--json|--verbose]"
+                    "usage: herdr agent explain --file PATH --agent LABEL [--manifest PATH] [--json|--verbose]"
                 );
                 return Ok(0);
             }
@@ -111,7 +120,9 @@ fn agent_explain(args: &[String]) -> std::io::Result<i32> {
 
     let explain = if let Some(path) = file {
         if target.is_some() {
-            eprintln!("usage: herdr agent explain --file PATH --agent LABEL [--json]");
+            eprintln!(
+                "usage: herdr agent explain --file PATH --agent LABEL [--manifest PATH] [--json]"
+            );
             return Ok(2);
         }
         let Some(agent_label) = agent else {
@@ -133,10 +144,49 @@ fn agent_explain(args: &[String]) -> std::io::Result<i32> {
                 return Ok(1);
             }
         };
-        crate::detect::manifest::explain_to_json_value(&crate::detect::manifest::explain_for_label(
-            &agent_label,
-            &content,
-        ))
+        let explain = match manifest {
+            None => crate::detect::manifest::explain_for_label(&agent_label, &content),
+            Some(manifest_path) => {
+                let loaded = std::fs::read_to_string(&manifest_path)
+                    .map_err(|err| {
+                        (
+                            "agent_explain_manifest_read_failed",
+                            format!("failed to read agent explain manifest {manifest_path}: {err}"),
+                        )
+                    })
+                    .and_then(|manifest_content| {
+                        crate::detect::manifest::explain_for_label_with_manifest(
+                            &agent_label,
+                            &content,
+                            std::path::Path::new(&manifest_path),
+                            &manifest_content,
+                        )
+                        .map_err(|err| {
+                            (
+                                "agent_explain_manifest_invalid",
+                                format!("invalid agent explain manifest {manifest_path}: {err}"),
+                            )
+                        })
+                    });
+                match loaded {
+                    Ok(explain) => explain,
+                    Err((code, message)) => {
+                        let response = ErrorResponse {
+                            id: "cli:agent:explain".into(),
+                            error: ErrorBody {
+                                code: code.into(),
+                                message,
+                            },
+                        };
+                        let response =
+                            serde_json::to_string(&response).map_err(std::io::Error::other)?;
+                        eprintln!("{response}");
+                        return Ok(1);
+                    }
+                }
+            }
+        };
+        crate::detect::manifest::explain_to_json_value(&explain)
     } else {
         let Some(target) = target else {
             eprintln!("usage: herdr agent explain <target> [--json]");
@@ -145,6 +195,10 @@ fn agent_explain(args: &[String]) -> std::io::Result<i32> {
         };
         if agent.is_some() {
             eprintln!("--agent is only valid with --file");
+            return Ok(2);
+        }
+        if manifest.is_some() {
+            eprintln!("--manifest is only valid with --file");
             return Ok(2);
         }
 

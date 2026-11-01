@@ -292,9 +292,12 @@ fn validate_machine_command(args: &[String]) -> Result<(), String> {
         "agent" => {
             subcommand != "attach"
                 && !(subcommand == "explain"
-                    && args[3..]
-                        .iter()
-                        .any(|arg| arg == "--file" || arg.starts_with("--file=")))
+                    && args[3..].iter().any(|arg| {
+                        arg == "--file"
+                            || arg.starts_with("--file=")
+                            || arg == "--manifest"
+                            || arg.starts_with("--manifest=")
+                    }))
         }
         "api" => subcommand == "snapshot",
         "status" => subcommand == "server",
@@ -447,6 +450,16 @@ mod tests {
             &["terminal", "session", "control", "w4:p1"],
             &["plugin", "install", "./plugin"],
             &["integration", "install", "pi"],
+            &[
+                "agent",
+                "explain",
+                "--file",
+                "f",
+                "--agent",
+                "pi",
+                "--manifest",
+                "m",
+            ],
             &["api", "schema", "--output", "schema.json"],
             &["status", "client"],
         ] {

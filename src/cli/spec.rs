@@ -437,6 +437,7 @@ fn agent_command() -> Command {
                 .arg(Arg::new("target").value_name("TARGET"))
                 .arg(path_option("file", "PATH"))
                 .arg(option("agent", "LABEL"))
+                .arg(path_option("manifest", "PATH"))
                 .arg(json_flag())
                 .arg(text_json_format_option())
                 .arg(

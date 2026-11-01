@@ -29,6 +29,103 @@ fn agent_explain_missing_file_reports_json_error() {
         .contains(missing.to_str().unwrap()));
 }
 
+fn run_explain_with_manifest(manifest: Option<&str>, extra: &[&str]) -> std::process::Output {
+    let base = unique_test_dir();
+    fs::create_dir_all(&base).unwrap();
+    let screen = base.join("screen.txt");
+    fs::write(&screen, "Synthetic-Marker\n").unwrap();
+    let mut args = vec![
+        "agent",
+        "explain",
+        "--file",
+        screen.to_str().unwrap(),
+        "--agent",
+        "claude",
+        "--json",
+    ];
+    let manifest_path = base.join("manifest.toml");
+    if let Some(content) = manifest {
+        fs::write(&manifest_path, content).unwrap();
+        args.extend(["--manifest", manifest_path.to_str().unwrap()]);
+    }
+    args.extend(extra);
+    run_named_cli(&base.join("config"), &base.join("runtime"), &args)
+}
+
+#[test]
+fn agent_explain_manifest_overrides_rules_for_the_saved_file() {
+    let output = run_explain_with_manifest(
+        Some(
+            "id = \"claude\"\n[[rules]]\nid = \"synthetic\"\nstate = \"working\"\ncontains = [\"synthetic-marker\"]\n",
+        ),
+        &[],
+    );
+
+    assert_eq!(output.status.code(), Some(0));
+    let explain: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(explain["state"], "working");
+    assert_eq!(explain["matched_rule"]["id"], "synthetic");
+    assert!(explain["manifest_source"]
+        .as_str()
+        .unwrap()
+        .ends_with("manifest.toml"));
+}
+
+#[test]
+fn agent_explain_manifest_errors_exit_one_without_falling_back() {
+    for (content, code) in [
+        (
+            "id = \"codex\"\n[[rules]]\nid = \"r\"\nstate = \"idle\"\ncontains = [\"x\"]\n",
+            "agent_explain_manifest_invalid",
+        ),
+        ("not toml [", "agent_explain_manifest_invalid"),
+    ] {
+        let output = run_explain_with_manifest(Some(content), &[]);
+        assert_eq!(output.status.code(), Some(1), "{content}");
+        assert!(output.stdout.is_empty());
+        let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["error"]["code"], code);
+    }
+}
+
+#[test]
+fn agent_explain_missing_manifest_reports_read_error() {
+    let base = unique_test_dir();
+    fs::create_dir_all(&base).unwrap();
+    let screen = base.join("screen.txt");
+    fs::write(&screen, "x").unwrap();
+    let output = run_named_cli(
+        &base.join("config"),
+        &base.join("runtime"),
+        &[
+            "agent",
+            "explain",
+            "--file",
+            screen.to_str().unwrap(),
+            "--agent",
+            "claude",
+            "--manifest",
+            base.join("missing.toml").to_str().unwrap(),
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let error: serde_json::Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "agent_explain_manifest_read_failed");
+}
+
+#[test]
+fn agent_explain_manifest_requires_file() {
+    let base = unique_test_dir();
+    let output = run_named_cli(
+        &base.join("config"),
+        &base.join("runtime"),
+        &["agent", "explain", "w1:p1", "--manifest", "m.toml"],
+    );
+
+    assert_eq!(output.status.code(), Some(2));
+}
+
 fn write_delayed_shell_and_fake_pi(
     base: &Path,
     shell_delay_seconds: &str,

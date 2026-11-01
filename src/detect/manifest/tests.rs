@@ -877,3 +877,37 @@ fn detection_path_skips_evaluated_rule_evidence() {
         assert_eq!(detect.matched_rule, explain.matched_rule);
     });
 }
+
+#[test]
+fn explain_with_manifest_uses_supplied_rules_and_leaves_cache_untouched() {
+    with_manifest_dirs("explain-with-manifest", || {
+        let before = load_manifest(Agent::Codex).expect("codex manifest");
+        let path = Path::new("/synthetic/codex.toml");
+
+        let explain = explain_for_label_with_manifest(
+            "codex",
+            "Custom-Marker",
+            path,
+            &local_manifest("working", "custom-marker"),
+        )
+        .unwrap();
+        assert_eq!(explain.state, AgentState::Working);
+        assert_eq!(
+            explain.source,
+            Some(ManifestSource::Override(path.to_path_buf()))
+        );
+        assert_eq!(explain.evaluated_rules.len(), 1);
+
+        let after = load_manifest(Agent::Codex).expect("codex manifest");
+        assert!(Arc::ptr_eq(&before, &after));
+    });
+}
+
+#[test]
+fn explain_with_manifest_rejects_id_mismatch_and_invalid_toml() {
+    let path = Path::new("m.toml");
+    let mismatch =
+        explain_for_label_with_manifest("pi", "x", path, &local_manifest("working", "x"));
+    assert!(mismatch.unwrap_err().contains("does not match"));
+    assert!(explain_for_label_with_manifest("codex", "x", path, "not toml [").is_err());
+}

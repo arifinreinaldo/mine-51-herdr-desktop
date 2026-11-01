@@ -394,28 +394,65 @@ pub fn explain_with_input(agent: Agent, input: DetectionInput<'_>) -> DetectionE
 
 pub fn explain_for_label(agent_label: &str, screen_content: &str) -> DetectionExplain {
     let Some(agent) = parse_agent_label(agent_label) else {
-        return DetectionExplain {
-            agent: Some(agent_label.to_string()),
-            state: AgentState::Unknown,
-            source: None,
-            matched_rule: None,
-            screen_detection_skipped: false,
-            visible_idle: false,
-            visible_blocker: false,
-            visible_working: false,
-            skip_state_update: false,
-            skipped_update_reason: None,
-            fallback_reason: Some("unknown_agent".to_string()),
-            evaluated_rules: Vec::new(),
-            warning: None,
-            manifest_version: None,
-            cached_remote_version: None,
-            local_override_shadowing_remote: false,
-            remote_update_status: None,
-            remote_update_error: None,
-        };
+        return unknown_agent_explain(agent_label);
     };
     explain(agent, screen_content)
+}
+
+/// Explain against a manifest the caller supplies, without touching the manifest cache.
+pub fn explain_for_label_with_manifest(
+    label: &str,
+    screen_content: &str,
+    manifest_path: &Path,
+    manifest_content: &str,
+) -> Result<DetectionExplain, String> {
+    let Some(agent) = parse_agent_label(label) else {
+        return Ok(unknown_agent_explain(label));
+    };
+    let manifest = parse_manifest(manifest_content)?;
+    if !manifest_matches_agent(&manifest, agent) {
+        return Err(format!(
+            "manifest id {} does not match {}",
+            manifest.id,
+            agent_label(agent)
+        ));
+    }
+    let loaded = loaded_manifest(
+        manifest,
+        ManifestSource::Override(manifest_path.to_path_buf()),
+        None,
+        None,
+        false,
+    )?;
+    let input = DetectionInput {
+        screen: screen_content,
+        osc_title: "",
+        osc_progress: "",
+    };
+    Ok(evaluate_loaded_manifest(agent, input, &loaded, true))
+}
+
+fn unknown_agent_explain(agent_label: &str) -> DetectionExplain {
+    DetectionExplain {
+        agent: Some(agent_label.to_string()),
+        state: AgentState::Unknown,
+        source: None,
+        matched_rule: None,
+        screen_detection_skipped: false,
+        visible_idle: false,
+        visible_blocker: false,
+        visible_working: false,
+        skip_state_update: false,
+        skipped_update_reason: None,
+        fallback_reason: Some("unknown_agent".to_string()),
+        evaluated_rules: Vec::new(),
+        warning: None,
+        manifest_version: None,
+        cached_remote_version: None,
+        local_override_shadowing_remote: false,
+        remote_update_status: None,
+        remote_update_error: None,
+    }
 }
 
 impl DetectionExplain {
