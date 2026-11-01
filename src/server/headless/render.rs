@@ -373,17 +373,35 @@ impl HeadlessServer {
     }
 
     pub(super) fn render_and_stream(&mut self) {
-        self.render_and_stream_with_graphics_limit(MAX_GRAPHICS_FRAME_SIZE);
+        self.render_and_stream_with_graphics_limit(MAX_GRAPHICS_FRAME_SIZE, None);
+    }
+
+    /// Full-renders only `clients`, after a retained pass already served the shell
+    /// clients. Unlike `render_and_stream` it keeps `full_redraw_pending` set and
+    /// skips controller resize (no controller is an observer). The caller owns
+    /// `record_render_attempt`.
+    pub(super) fn render_and_stream_for_clients(&mut self, clients: &HashSet<u64>) {
+        self.render_and_stream_with_graphics_limit(MAX_GRAPHICS_FRAME_SIZE, Some(clients));
     }
 
     #[cfg(all(test, unix))]
     pub(super) fn render_and_stream_with_test_graphics_limit(&mut self, max: usize) {
-        self.render_and_stream_with_graphics_limit(max);
+        self.render_and_stream_with_graphics_limit(max, None);
     }
 
-    fn render_and_stream_with_graphics_limit(&mut self, graphics_frame_limit: usize) {
+    fn render_and_stream_with_graphics_limit(
+        &mut self,
+        graphics_frame_limit: usize,
+        only_clients: Option<&HashSet<u64>>,
+    ) {
         let full_started = crate::render_prof::timer();
-        let render_targets = render_targets(&self.clients, self.foreground_client_id);
+        let mut render_targets = render_targets(&self.clients, self.foreground_client_id);
+        if let Some(only) = only_clients {
+            render_targets.retain(|(client_id, ..)| only.contains(client_id));
+            if render_targets.is_empty() {
+                return;
+            }
+        }
 
         if render_targets.is_empty() {
             let (cols, rows) = self.effective_size;
@@ -413,6 +431,7 @@ impl HeadlessServer {
 
         // Resize from the controlling client's geometry before drawing any observer.
         // Retained updates fall back here when a pane changes alternate screens.
+        // A subset render has no active shell client, so this loop skips every target.
         for (client_id, (cols, rows), cell_size, _, _) in &render_targets {
             let Some(client) = self.clients.get(client_id) else {
                 continue;
@@ -941,7 +960,9 @@ impl HeadlessServer {
         // Full-frame recovery is tracked per connection. A slow client must not
         // keep responsive peers on the global full-render path while it waits
         // for its render slot to drain.
-        self.app.full_redraw_pending = false;
+        if only_clients.is_none() {
+            self.app.full_redraw_pending = false;
+        }
         crate::render_prof::duration_since("full_render.total", full_started);
         debug!(cols, rows, foreground_client_id = ?self.foreground_client_id, "rendered virtual frame(s)");
     }

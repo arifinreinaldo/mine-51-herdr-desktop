@@ -261,7 +261,29 @@ impl SyncProbe {
 impl HeadlessServer {
     /// Applies terminal dirty rows to the committed origin-relative pane surface.
     /// Any presentation or geometry uncertainty falls back to the complete renderer.
+    /// Retained patches for shell clients; terminal attach and observe clients
+    /// get a full render of just themselves afterwards. Any shell-side fallback
+    /// returns false so the caller runs one full render for everyone.
     pub(super) fn render_retained_pane_surface_and_stream(
+        &mut self,
+        pty_sources: &HashSet<crate::layout::PaneId>,
+    ) -> bool {
+        if !self.render_retained_shell_surfaces(pty_sources) {
+            return false;
+        }
+        let direct_terminal_clients = render_targets(&self.clients, self.foreground_client_id)
+            .into_iter()
+            .filter(|target| !matches!(target.4, ClientConnectionMode::ClientShell))
+            .map(|target| target.0)
+            .collect::<HashSet<_>>();
+        if !direct_terminal_clients.is_empty() {
+            crate::render_prof::event("retained_surface.direct_terminal_full_render");
+            self.render_and_stream_for_clients(&direct_terminal_clients);
+        }
+        true
+    }
+
+    fn render_retained_shell_surfaces(
         &mut self,
         pty_sources: &HashSet<crate::layout::PaneId>,
     ) -> bool {
@@ -292,20 +314,14 @@ impl HeadlessServer {
         }
         let mut targets = render_targets(&self.clients, self.foreground_client_id);
         targets.retain(|(client_id, _, _, _, mode)| {
-            !matches!(mode, ClientConnectionMode::ClientShell)
-                || self
+            matches!(mode, ClientConnectionMode::ClientShell)
+                && self
                     .clients
                     .get(client_id)
                     .is_some_and(|client| client.shell_surface_active)
         });
         if targets.is_empty() {
             success!("no_active_surface");
-        }
-        if targets
-            .iter()
-            .any(|target| !matches!(target.4, ClientConnectionMode::ClientShell))
-        {
-            fallback!("non_shell_target");
         }
 
         let mut ids = PaneIdIndex::new(&self.app);

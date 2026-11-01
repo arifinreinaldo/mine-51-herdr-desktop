@@ -1763,6 +1763,82 @@ async fn poisoned_pane_core_does_not_freeze_the_shell_surface() {
     shutdown_test_runtimes(&mut server);
 }
 
+#[test]
+fn terminal_observer_does_not_force_shell_clients_off_retained_patches() {
+    with_terminal_session_test_server(|server, terminal_id, terminal_id_string, _| {
+        let pane_id = server.app.state.workspaces[0].tabs[0].root_pane;
+        server.app.state.active = Some(0);
+        server.app.state.selected = 0;
+        server.app.state.mode = crate::app::Mode::Terminal;
+        let (_shell_control, shell_render) = connect_test_shell(server, 7, 80, 24);
+        let (observer_writer, _observer_control, observer_render) = test_client_writer();
+        server.clients.insert(
+            9,
+            ClientConnection::new_with_mode(
+                ClientConnectionMode::TerminalObserve {
+                    terminal_id: terminal_id_string,
+                },
+                (80, 24),
+                crate::kitty_graphics::HostCellSize::default(),
+                9,
+                RenderEncoding::TerminalAnsi,
+                Some(observer_writer),
+            ),
+        );
+        server.render_and_stream();
+        let _ = recv_pane_surface(&shell_render, "shell baseline");
+        assert!(observer_render.try_recv().is_ok(), "observer baseline");
+
+        server
+            .runtime_for_terminal_id_string(&terminal_id.to_string())
+            .expect("runtime")
+            .test_process_pty_bytes(b"\rOBSERVED");
+        assert!(server.render_retained_pane_surface_and_stream(&HashSet::from([pane_id])));
+        let _ = recv_pane_surface_patch(&shell_render, "shell patch");
+        let ServerMessage::Terminal(_) = read_server_message(
+            observer_render
+                .try_recv()
+                .expect("observer receives a full terminal frame"),
+        ) else {
+            panic!("observer must receive a full terminal frame");
+        };
+        assert!(shell_render.try_recv().is_err());
+        assert!(observer_render.try_recv().is_err());
+    });
+}
+
+#[test]
+fn subset_render_keeps_full_redraw_pending_and_skips_other_clients() {
+    with_terminal_session_test_server(|server, _terminal_id, terminal_id_string, _| {
+        server.app.state.active = Some(0);
+        server.app.state.selected = 0;
+        server.app.state.mode = crate::app::Mode::Terminal;
+        let (_shell_control, shell_render) = connect_test_shell(server, 7, 80, 24);
+        let (observer_writer, _observer_control, observer_render) = test_client_writer();
+        server.clients.insert(
+            9,
+            ClientConnection::new_with_mode(
+                ClientConnectionMode::TerminalObserve {
+                    terminal_id: terminal_id_string,
+                },
+                (80, 24),
+                crate::kitty_graphics::HostCellSize::default(),
+                9,
+                RenderEncoding::TerminalAnsi,
+                Some(observer_writer),
+            ),
+        );
+        server.app.full_redraw_pending = true;
+        server.render_and_stream_for_clients(&HashSet::from([9]));
+        assert!(server.app.full_redraw_pending);
+        assert!(observer_render.try_recv().is_ok());
+        assert!(shell_render.try_recv().is_err());
+
+        server.render_and_stream();
+        assert!(!server.app.full_redraw_pending);
+    });
+}
+
 #[tokio::test]
 async fn backpressured_shell_does_not_disable_retained_patches_for_responsive_peer() {
     let mut server = test_headless_server();
