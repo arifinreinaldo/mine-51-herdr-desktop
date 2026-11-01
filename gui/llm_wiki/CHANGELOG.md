@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-01 - snapshot bus and per-region render skip
+- New `src/snapshotBus.ts` (`subscribeSnapshot`, `publishSnapshot`). `appEvents.ts` holds the one `snapshot` listener; four modules subscribe. `renderTabsNow` and `renderSidebarNow` skip when their JSON key is unchanged; `main.ts` render-guard release passes `force=true`. `areas/workspace-ui.md` updated; test `tests/unit/snapshotBus.test.ts`.
+
 ## 2026-11-01 - incremental Find File ranking
 - `fuzzy.ts`: new `makeRanker`; `rankPaths` shares `byRank`. `quickOpen.ts`: 30 ms rank debounce, flush on Enter and arrows. Marker moved to `fuzzy.ts:75`. `areas/files.md` and `shortcut-markers.md` updated.
 

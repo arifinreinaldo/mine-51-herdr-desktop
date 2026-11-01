@@ -17,6 +17,7 @@
 | `src/deviceExplorer.ts`, `device-explorer.html`, `src/android/deviceFiles.ts`, `src-tauri/src/device_explorer.rs`, `src-tauri/capabilities/device-explorer.json` | device explorer | [[device-explorer]] |
 | `src/usage.ts`, `src/ui/statusbar.ts`, `src/appStatusBar.ts`, `src-tauri/src/usage.rs`, `statusline.rs`, `src-tauri/resources/statusline/` | usage bar | [[usage-statusline]] |
 | `src/settings.ts`, `src/appState.ts`, `src-tauri/src/settings.rs` | settings | [[settings]] |
+| `src/snapshotBus.ts` | snapshot fan-out | [[workspace-ui]] |
 | `package.json`, `vite.config.ts`, `vitest.config.ts`, `src-tauri/tauri*.conf.json`, `scripts/` | build, test | [[build-test]] |
 | `src-tauri/src/macos.rs`, `src/macShell.ts`, `src/nativeMenu.ts`, `src/wizard/usageSetup.ts` | macOS port (untracked) | [[macos-port]] |
 | `src/wizard/` | first-run wizard | TBD |

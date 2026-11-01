@@ -4,8 +4,8 @@
 herdr owns workspaces, tabs and panes. The GUI shows them and sends actions.
 
 ## Key files
-- `src/ui/sidebar.ts` - `renderSidebar` (line 433), `sidebarAttention` (line 40). `src/appSidebarPanel.ts` - `renderSidebarNow` (line 116).
-- `src/ui/tabs.ts` - `renderTabStrip` (line 195), inline rename (lines 85, 135). `src/appTabStrip.ts` - `renderTabsNow` (line 73), `wireTabStripControls` (line 202).
+- `src/ui/sidebar.ts` - `renderSidebar` (line 433), `sidebarAttention` (line 40). `src/appSidebarPanel.ts` - `renderSidebarNow` (line 119).
+- `src/ui/tabs.ts` - `renderTabStrip` (line 195), inline rename (lines 85, 135). `src/appTabStrip.ts` - `renderTabsNow` (line 76), `wireTabStripControls` (line 209).
 - `src/appWorkspaceFlows.ts` - `newWorkspaceFlow` (line 15), `importThemeFlow` (line 53).
 - `src/workspace/` - pure helpers: `tabMove.ts`, `tabMru.ts`, `dedupe.ts`, `colors.ts`, `focusByIndex.ts`.
 - `src/ui/menus.ts` - menu bar items (`wireMenuBar`, line 302). `src/appMenuBar.ts` - `menuBarContext` (line 84).
@@ -24,5 +24,7 @@ herdr owns workspaces, tabs and panes. The GUI shows them and sends actions.
 - `main.ts` adds the CSS class `mac` on macOS (`src/main.ts:57`).
 
 ## Edges
-- A render guard defers tab and sidebar redraws during an inline rename or tab drag (`src/ui/renderGuard.ts:1-7`, `src/main.ts:139-140`).
+- A render guard defers tab and sidebar redraws during an inline rename or tab drag (`src/ui/renderGuard.ts:1-7`, `src/main.ts:140-141`). The release callbacks call `renderTabsNow(true)` and `renderSidebarNow(true)`.
+- `renderTabsNow` and `renderSidebarNow` keep a JSON key of what they draw (rows, ages, seen-done dots; workspaces, agent lines, workspace colors, theme colors, `filesExpanded`) and return early when it is unchanged. `force=true` skips that check.
+- One Tauri `snapshot` listener lives in `src/appEvents.ts`. It calls `publishSnapshot` (`src/snapshotBus.ts`); `appFiles`, `appSourceControl`, `appFlutterRun` and `appTabStrip` use `subscribeSnapshot`. A throwing subscriber is logged and does not stop the others.
 - Tests: `tests/unit/workspace/`, `tests/unit/notifications/`, `tests/unit/ui/`.
