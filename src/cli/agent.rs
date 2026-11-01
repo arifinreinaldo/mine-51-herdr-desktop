@@ -155,7 +155,7 @@ fn agent_explain(args: &[String]) -> std::io::Result<i32> {
             }),
         })?;
         if response.get("error").is_some() {
-            eprintln!("{}", serde_json::to_string(&response).unwrap());
+            eprintln!("{response}");
             return Ok(1);
         }
         response["result"]["explain"].clone()
@@ -492,7 +492,7 @@ fn agent_attach(args: &[String]) -> std::io::Result<i32> {
 
     let response = resolve_agent_target(&target, "cli:agent:attach:resolve")?;
     if response.get("error").is_some() {
-        eprintln!("{}", serde_json::to_string(&response).unwrap());
+        eprintln!("{response}");
         return Ok(1);
     }
     let Some(terminal_id) = response["result"]["agent"]["terminal_id"].as_str() else {

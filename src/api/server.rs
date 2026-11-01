@@ -1019,17 +1019,21 @@ fn caller_timeout_dispatch_uses_timeout_error() {
     assert_eq!(error.error.code, "timeout");
 }
 
+const ENCODE_FAILED_JSON: &str =
+    r#"{"id":"","error":{"code":"internal_error","message":"failed to encode error response"}}"#;
+
+/// Encode a response; fall back to a fixed internal_error line if serialization fails.
+pub(super) fn encode_json_or_internal_error<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| ENCODE_FAILED_JSON.to_string())
+}
+
 fn error_response_json(id: String, code: &str, message: String) -> String {
-    serde_json::to_string(&ErrorResponse {
+    encode_json_or_internal_error(&ErrorResponse {
         id,
         error: ErrorBody {
             code: code.into(),
             message,
         },
-    })
-    .unwrap_or_else(|_| {
-        r#"{"id":"","error":{"code":"internal_error","message":"failed to encode error response"}}"#
-            .to_string()
     })
 }
 
