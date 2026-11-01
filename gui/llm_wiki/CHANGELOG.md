@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-01 - gui CI workflow
+- `build-test.md`: new CI section for `.github/workflows/gui.yml`; notes the fmt and clippy baseline failures.
+
 ## 2026-11-01 - merge git-source-control into gui-phase1; mac open-path gate
 - Merged `feat/git-source-control` (open-path gate, install status, device explorer, smart search) into `feat/gui-phase1`, which holds the macOS work. No conflicts.
 - `is_safe_local_file` (`commands.rs`): the `C:\` drive-letter rule is now `#[cfg(windows)]`. On unix the gate needs an absolute path; the extension allowlist and the symlink check still apply. New test `local_file_gate_unix`.

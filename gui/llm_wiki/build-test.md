@@ -24,5 +24,9 @@ Run all commands from `gui/` unless the line says otherwise.
 - Config: `src-tauri/tauri.conf.json` (Windows base), `src-tauri/tauri.macos.conf.json` (macOS overrides).
 - Other scripts: `scripts/bench-startup.mjs` (startup budget), `scripts/gen-notices.mjs` (licences), `scripts/e2e-live.mjs`.
 
+## CI
+- `.github/workflows/gui.yml` runs on pull requests that touch `gui/**` or the workflow file. Matrix: `macos-latest` and `windows-latest`. Steps: `npm ci`, `npm run build`, `npm run check`. No Zig or Bun.
+- Baseline at 2026-11-01: `cargo fmt --check` (5 diffs in `commands.rs`, `flutter.rs`) and clippy (`double_ended_iterator_last`, `flutter.rs:498`) fail before this workflow exists. Fix them first or the job stays red.
+
 ## Not verified
 - The macOS bundle folder `gui/target/release/bundle/macos/` held no app when this page was written (2026-10-24).
