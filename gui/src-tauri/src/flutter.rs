@@ -159,13 +159,30 @@ pub(crate) fn default_sdk_dir() -> Option<PathBuf> {
 }
 
 /// Picks the first existing adb, in spec order: `ANDROID_HOME`,
-/// `ANDROID_SDK_ROOT`, `PATH`, then the default SDK folder. The env values
-/// are parameters so tests never change the process env.
+/// `ANDROID_SDK_ROOT`, `PATH`, then the default SDK folder, then (macOS) the
+/// Homebrew folders. The env values are parameters so tests never change the
+/// process env.
 pub fn resolve_adb(
     android_home: Option<&Path>,
     android_sdk_root: Option<&Path>,
     path_var: Option<&std::ffi::OsStr>,
     default_sdk: Option<&Path>,
+) -> Option<PathBuf> {
+    resolve_adb_in(
+        android_home,
+        android_sdk_root,
+        path_var,
+        default_sdk,
+        &mac_tool_dirs(),
+    )
+}
+
+fn resolve_adb_in(
+    android_home: Option<&Path>,
+    android_sdk_root: Option<&Path>,
+    path_var: Option<&std::ffi::OsStr>,
+    default_sdk: Option<&Path>,
+    mac_dirs: &[PathBuf],
 ) -> Option<PathBuf> {
     let name = tool_file_name("adb");
     let mut candidates: Vec<PathBuf> = Vec::new();
@@ -180,13 +197,54 @@ pub fn resolve_adb(
     if let Some(sdk) = default_sdk {
         candidates.push(sdk.join("platform-tools").join(&name));
     }
+    candidates.extend(mac_dirs.iter().map(|d| d.join(&name)));
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// The first `PATH` entry that holds `flutter.bat` (`flutter` elsewhere).
+/// Homebrew's bin folders on macOS, where a Finder-launched app's minimal
+/// `PATH` leaves them out. Empty elsewhere.
+fn mac_tool_dirs() -> Vec<PathBuf> {
+    if cfg!(target_os = "macos") {
+        crate::android::MAC_TOOL_DIRS
+            .iter()
+            .map(PathBuf::from)
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Common macOS Flutter install folders: Homebrew, then `~/flutter/bin`,
+/// `~/development/flutter/bin` and `~/fvm/default/bin`. Empty elsewhere.
+fn flutter_extra_dirs(home: Option<&Path>) -> Vec<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return Vec::new();
+    }
+    let mut dirs = mac_tool_dirs();
+    if let Some(home) = home {
+        dirs.push(home.join("flutter").join("bin"));
+        dirs.push(home.join("development").join("flutter").join("bin"));
+        dirs.push(home.join("fvm").join("default").join("bin"));
+    }
+    dirs
+}
+
+/// The first `PATH` entry that holds `flutter.bat` (`flutter` elsewhere),
+/// then the macOS install folders.
 pub fn resolve_flutter(path_var: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    resolve_flutter_in(path_var, &flutter_extra_dirs(home.as_deref()))
+}
+
+fn resolve_flutter_in(
+    path_var: Option<&std::ffi::OsStr>,
+    extra_dirs: &[PathBuf],
+) -> Option<PathBuf> {
     let name = tool_file_name("flutter");
-    std::env::split_paths(path_var?)
+    path_var
+        .into_iter()
+        .flat_map(std::env::split_paths)
+        .chain(extra_dirs.iter().cloned())
         .map(|dir| dir.join(&name))
         .find(|p| p.is_file())
 }
@@ -859,7 +917,7 @@ mod tests {
         fake_adb(&home);
         std::fs::write(on_path.join(tool_file_name("adb")), b"").unwrap();
         let path_var = std::env::join_paths([&on_path]).unwrap();
-        let found = resolve_adb(Some(&home), None, Some(&path_var), None).unwrap();
+        let found = resolve_adb_in(Some(&home), None, Some(&path_var), None, &[]).unwrap();
         assert_eq!(
             found,
             home.join("platform-tools").join(tool_file_name("adb"))
@@ -874,12 +932,12 @@ mod tests {
         let sdk = scratch("adb-default");
         fake_adb(&sdk);
         let path_var = std::env::join_paths([&empty]).unwrap();
-        let found = resolve_adb(Some(&empty), None, Some(&path_var), Some(&sdk)).unwrap();
+        let found = resolve_adb_in(Some(&empty), None, Some(&path_var), Some(&sdk), &[]).unwrap();
         assert_eq!(
             found,
             sdk.join("platform-tools").join(tool_file_name("adb"))
         );
-        assert!(resolve_adb(Some(&empty), None, Some(&path_var), None).is_none());
+        assert!(resolve_adb_in(Some(&empty), None, Some(&path_var), None, &[]).is_none());
         let _ = std::fs::remove_dir_all(&empty);
         let _ = std::fs::remove_dir_all(&sdk);
     }
@@ -890,13 +948,50 @@ mod tests {
         let bin = scratch("flutter-bin");
         std::fs::write(bin.join(tool_file_name("flutter")), b"").unwrap();
         let path_var = std::env::join_paths([&empty, &bin]).unwrap();
-        let found = resolve_flutter(Some(&path_var)).unwrap();
+        let found = resolve_flutter_in(Some(&path_var), &[]).unwrap();
         assert_eq!(found, bin.join(tool_file_name("flutter")));
         let only_empty = std::env::join_paths([&empty]).unwrap();
-        assert!(resolve_flutter(Some(&only_empty)).is_none());
-        assert!(resolve_flutter(None).is_none());
+        assert!(resolve_flutter_in(Some(&only_empty), &[]).is_none());
+        assert!(resolve_flutter_in(None, &[]).is_none());
         let _ = std::fs::remove_dir_all(&empty);
         let _ = std::fs::remove_dir_all(&bin);
+    }
+
+    #[test]
+    fn flutter_and_adb_fall_back_to_the_extra_dirs() {
+        let empty = scratch("extra-empty");
+        let extra = scratch("extra-bin");
+        std::fs::write(extra.join(tool_file_name("flutter")), b"").unwrap();
+        std::fs::write(extra.join(tool_file_name("adb")), b"").unwrap();
+        let path_var = std::env::join_paths([&empty]).unwrap();
+        let dirs = [extra.clone()];
+        assert_eq!(
+            resolve_flutter_in(Some(&path_var), &dirs),
+            Some(extra.join(tool_file_name("flutter")))
+        );
+        assert_eq!(
+            resolve_adb_in(None, None, Some(&path_var), None, &dirs),
+            Some(extra.join(tool_file_name("adb")))
+        );
+        // PATH still wins over the extra dirs.
+        std::fs::write(empty.join(tool_file_name("flutter")), b"").unwrap();
+        assert_eq!(
+            resolve_flutter_in(Some(&path_var), &dirs),
+            Some(empty.join(tool_file_name("flutter")))
+        );
+        let _ = std::fs::remove_dir_all(&empty);
+        let _ = std::fs::remove_dir_all(&extra);
+    }
+
+    #[test]
+    fn flutter_extra_dirs_lists_the_home_installs_on_macos() {
+        let dirs = flutter_extra_dirs(Some(Path::new("/h")));
+        if cfg!(target_os = "macos") {
+            assert!(dirs.contains(&PathBuf::from("/h/flutter/bin")));
+            assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
+        } else {
+            assert!(dirs.is_empty());
+        }
     }
 }
 

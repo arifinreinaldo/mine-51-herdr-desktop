@@ -52,7 +52,7 @@ fn find_tool(
 
 /// Homebrew's bin folders. A Finder-launched app gets a minimal `PATH` that
 /// leaves them out.
-const MAC_TOOL_DIRS: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
+pub(crate) const MAC_TOOL_DIRS: [&str; 2] = ["/opt/homebrew/bin", "/usr/local/bin"];
 
 /// `PATH`, then winget's link folder, then (macOS) the Homebrew folders. A
 /// `winget install` of scrcpy adds that folder to the user `PATH`, but this
