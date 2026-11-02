@@ -206,17 +206,14 @@ fn client_mouse_selection_highlights_and_copies_through_endpoint_extraction() {
             text: "LIV".into(),
         }),
     );
-    assert!(repaint);
+    assert!(!repaint);
     assert!(matches!(
         &actions[..],
         [ClientShellAction::ClipboardWrite(bytes)] if bytes == b"LIV"
     ));
-    assert_eq!(
-        state
-            .copy_feedback
-            .as_ref()
-            .map(|feedback| feedback.message.as_str()),
-        Some("copied to clipboard")
+    assert!(
+        state.copy_feedback.is_none(),
+        "feedback must wait for clipboard dispatch"
     );
 }
 
@@ -1856,7 +1853,7 @@ fn copy_mode_survives_mouse_motion_and_parks_across_focus_changes() {
         .as_ref()
         .is_some_and(|copy_mode| copy_mode.selection.is_some()));
 
-    let (prefix_key, prefix_modifiers) = state.config.keybinds.prefix;
+    let (prefix_key, prefix_modifiers) = state.config.keybinds.prefix[0];
     state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
         prefix_key,
         prefix_modifiers,
@@ -2038,7 +2035,7 @@ fn queued_copy_keys_preserve_prefix_order() {
     let origin = state.copy_mode.as_ref().expect("copy mode").cursor;
     let motion = state.handle_input_bytes(b"w");
     state.handle_input_bytes(b"l");
-    let (prefix_key, prefix_modifiers) = state.config.keybinds.prefix;
+    let (prefix_key, prefix_modifiers) = state.config.keybinds.prefix[0];
     state.handle_raw_events(vec![RawInputEvent::Key(crate::input::TerminalKey::new(
         prefix_key,
         prefix_modifiers,

@@ -21,6 +21,7 @@ use crate::ipc::{
     poll_local_stream_read, remove_socket_file_if_owned, set_local_stream_polling,
     socket_file_identity, LocalStream, LocalStreamRead, SocketFileIdentity,
 };
+use crate::server::shutdown::{ServerStop, ShutdownReason};
 
 #[cfg(test)]
 mod subscription_socket_tests;
@@ -31,6 +32,7 @@ pub(super) const APP_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
 const INITIAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const STREAM_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_INITIAL_REQUEST_BYTES: usize = 1024 * 1024;
+const ACCEPT_ERROR_BACKOFF: Duration = Duration::from_millis(50);
 
 pub struct ServerHandle {
     _thread: std::thread::JoinHandle<()>,
@@ -60,7 +62,7 @@ impl ServerHandle {
 pub(crate) fn start_server_with_stop_control(
     api_tx: ApiRequestSender,
     event_hub: EventHub,
-    server_stop: Arc<AtomicBool>,
+    server_stop: ServerStop,
 ) -> std::io::Result<ServerHandle> {
     start_server_inner(api_tx, event_hub, default_capabilities(), Some(server_stop))
 }
@@ -80,7 +82,7 @@ fn start_server_inner(
     api_tx: ApiRequestSender,
     event_hub: EventHub,
     mut capabilities: Option<ServerCapabilities>,
-    server_stop: Option<Arc<AtomicBool>>,
+    server_stop: Option<ServerStop>,
 ) -> std::io::Result<ServerHandle> {
     let path = socket_path();
     prepare_socket_path(&path)?;
@@ -117,40 +119,45 @@ fn start_server_inner(
 
     let running = Arc::new(AtomicBool::new(true));
     let listener_running = Arc::clone(&running);
-    let thread = std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    let api_tx = api_tx.clone();
-                    let event_hub = event_hub.clone();
-                    let capabilities = capabilities.clone();
-                    let server_stop = server_stop.clone();
-                    let connection_running = Arc::clone(&listener_running);
-                    #[cfg(unix)]
-                    let ssh_agents = ssh_agents.clone();
-                    std::thread::spawn(move || {
-                        if let Err(err) = handle_connection_with_stop(
-                            stream,
-                            &api_tx,
-                            &event_hub,
-                            &connection_running,
-                            capabilities,
-                            server_stop.as_ref(),
-                            #[cfg(unix)]
-                            ssh_agents.as_ref(),
-                        ) {
-                            warn!(err = %err, "api connection failed");
-                        }
-                    });
-                }
-                Err(err) => {
-                    error!(err = %err, "api listener accept failed");
-                    break;
-                }
-            }
-        }
+    let spawned = crate::thread_spawn::spawn_named("herdr-api-accept", move || {
+        run_accept_loop(
+            listener.incoming(),
+            &listener_running,
+            ACCEPT_ERROR_BACKOFF,
+            |stream| {
+                let api_tx = api_tx.clone();
+                let event_hub = event_hub.clone();
+                let capabilities = capabilities.clone();
+                let server_stop = server_stop.clone();
+                let connection_running = Arc::clone(&listener_running);
+                #[cfg(unix)]
+                let ssh_agents = ssh_agents.clone();
+                spawn_connection_handler(move || {
+                    if let Err(err) = handle_connection_with_stop(
+                        stream,
+                        &api_tx,
+                        &event_hub,
+                        &connection_running,
+                        capabilities,
+                        server_stop.as_ref(),
+                        #[cfg(unix)]
+                        ssh_agents.as_ref(),
+                    ) {
+                        warn!(err = %err, "api connection failed");
+                    }
+                });
+            },
+        );
         debug!("api server thread exiting");
     });
+    let thread = match spawned {
+        Ok(thread) => thread,
+        Err(err) => {
+            // No ServerHandle owns the socket yet, so its Drop cleanup won't run.
+            let _ = remove_socket_file_if_owned(&path, &identity);
+            return Err(err);
+        }
+    };
 
     Ok(ServerHandle {
         _thread: thread,
@@ -158,6 +165,107 @@ fn start_server_inner(
         identity,
         running,
     })
+}
+
+/// Starts one connection's worker. When the OS refuses a thread, only this
+/// connection is dropped; the accept loop keeps serving.
+fn spawn_connection_handler(work: impl FnOnce() + Send + 'static) {
+    if let Err(err) = crate::thread_spawn::spawn_named("herdr-api-conn", work) {
+        warn!(err = %err, "failed to spawn api connection thread; dropping connection");
+    }
+}
+
+fn run_accept_loop<S>(
+    incoming: impl IntoIterator<Item = io::Result<S>>,
+    running: &AtomicBool,
+    error_backoff: Duration,
+    mut handle: impl FnMut(S),
+) {
+    let mut consecutive_errors = 0_u64;
+    for stream in incoming {
+        match stream {
+            Ok(stream) => {
+                if consecutive_errors > 0 {
+                    info!(consecutive_errors, "api listener accept recovered");
+                    consecutive_errors = 0;
+                }
+                handle(stream);
+            }
+            Err(err) => {
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+                // Accept errors such as ECONNABORTED or EMFILE are transient;
+                // exiting would leave the socket file with no listener.
+                if consecutive_errors == 0 {
+                    error!(err = %err, "api listener accept failed; retrying");
+                }
+                consecutive_errors = consecutive_errors.saturating_add(1);
+                std::thread::sleep(error_backoff);
+                if !running.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod accept_loop_tests {
+    use super::*;
+
+    fn accept_error() -> io::Result<u32> {
+        Err(io::Error::other("transient accept failure"))
+    }
+
+    #[test]
+    fn keeps_serving_after_repeated_errors() {
+        let running = AtomicBool::new(true);
+        let mut handled = Vec::new();
+
+        run_accept_loop(
+            [Ok(1), accept_error(), accept_error(), Ok(2)],
+            &running,
+            Duration::ZERO,
+            |stream| handled.push(stream),
+        );
+
+        assert_eq!(handled, vec![1, 2]);
+    }
+
+    #[test]
+    fn keeps_serving_after_connection_thread_spawn_fails() {
+        let running = AtomicBool::new(true);
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        crate::thread_spawn::test_hook::fail_next_spawns(1);
+        run_accept_loop([Ok(1), Ok(2)], &running, Duration::ZERO, |stream| {
+            let tx = tx.clone();
+            spawn_connection_handler(move || tx.send(stream).unwrap());
+        });
+        drop(tx);
+
+        assert_eq!(rx.iter().collect::<Vec<_>>(), vec![2]);
+    }
+
+    #[test]
+    fn exits_when_shutdown_happens_while_errors_continue() {
+        let running = AtomicBool::new(true);
+        let mut attempts = 0;
+        let incoming = std::iter::from_fn(|| {
+            attempts += 1;
+            if attempts == 3 {
+                running.store(false, Ordering::Relaxed);
+            }
+            Some(accept_error())
+        });
+
+        run_accept_loop(incoming, &running, Duration::ZERO, |_| {
+            panic!("no connection should be handled")
+        });
+
+        assert_eq!(attempts, 3);
+    }
 }
 
 fn retired_pane_graphics_method_error(line: &str, id: &str) -> Option<ErrorResponse> {
@@ -223,7 +331,7 @@ fn handle_connection_with_stop(
     event_hub: &EventHub,
     running: &Arc<AtomicBool>,
     capabilities: Option<ServerCapabilities>,
-    server_stop: Option<&Arc<AtomicBool>>,
+    server_stop: Option<&ServerStop>,
     #[cfg(unix)] ssh_agents: Option<&crate::platform::ssh_agent::SshAgentRegistry>,
 ) -> std::io::Result<()> {
     if let Err(err) = stream.set_send_timeout(Some(STREAM_WRITE_TIMEOUT)) {
@@ -379,6 +487,9 @@ fn handle_connection_with_stop(
         }
         method_body => {
             let (response_write_tx, response_write_rx) = std::sync::mpsc::channel();
+            let stop_caller = matches!(method_body, Method::ServerStop(_))
+                .then(|| crate::platform::local_stream_peer_description(&stream))
+                .flatten();
             let response = handle_request(
                 Request {
                     id: request_id.clone(),
@@ -387,6 +498,7 @@ fn handle_connection_with_stop(
                 api_tx,
                 capabilities,
                 server_stop,
+                stop_caller,
                 Some(response_write_rx),
             );
             let result = write_text_line_allow_disconnect(&mut stream, &response);
@@ -440,7 +552,8 @@ fn handle_request(
     request: Request,
     api_tx: &ApiRequestSender,
     capabilities: Option<ServerCapabilities>,
-    server_stop: Option<&Arc<AtomicBool>>,
+    server_stop: Option<&ServerStop>,
+    stop_caller: Option<String>,
     response_write_complete: Option<std::sync::mpsc::Receiver<()>>,
 ) -> String {
     if matches!(&request.method, Method::Ping(_)) {
@@ -468,14 +581,16 @@ fn handle_request(
 
     if matches!(&request.method, Method::ServerStop(_)) {
         if let Some(server_stop) = server_stop {
-            server_stop.store(true, Ordering::Release);
+            server_stop.request(ShutdownReason::ApiStop {
+                caller: stop_caller,
+            });
             return serde_json::to_string(&SuccessResponse {
                 id: request.id,
                 result: ResponseResult::Ok {},
             })
             .unwrap_or_else(|_| "{}".to_string());
         }
-    } else if server_stop.is_some_and(|stop| stop.load(Ordering::Acquire)) {
+    } else if server_stop.is_some_and(ServerStop::is_requested) {
         return error_response_json(
             request.id,
             "server_unavailable",
@@ -487,110 +602,7 @@ fn handle_request(
 }
 
 pub(crate) fn api_method_name(method: &Method) -> &'static str {
-    match method {
-        Method::Ping(_) => "ping",
-        Method::ServerStop(_) => "server.stop",
-        Method::ServerLiveHandoff(_) => "server.live_handoff",
-        Method::ServerReloadConfig(_) => "server.reload_config",
-        Method::ServerSshAgentRegister(_) => "server.ssh_agent.register",
-        Method::ServerAgentManifests(_) => "server.agent_manifests",
-        Method::ServerReloadAgentManifests(_) => "server.reload_agent_manifests",
-        Method::NotificationShow(_) => "notification.show",
-        Method::ProductAnnouncementDismiss(_) => "product_announcement.dismiss",
-        Method::ReleaseNotesDismiss(_) => "release_notes.dismiss",
-        Method::CommandInvoke(_) => "command.invoke",
-        Method::ClientWindowTitleSet(_) => "client.window_title.set",
-        Method::ClientWindowTitleClear(_) => "client.window_title.clear",
-        Method::ClientShellSurfaceSet(_) => "client_shell.surface.set",
-        Method::SessionSnapshot(_) => "session.snapshot",
-        Method::WorkspaceCreate(_) => "workspace.create",
-        Method::WorkspaceList(_) => "workspace.list",
-        Method::WorkspaceGet(_) => "workspace.get",
-        Method::WorkspaceFocus(_) => "workspace.focus",
-        Method::WorkspaceRename(_) => "workspace.rename",
-        Method::WorkspaceMove(_) => "workspace.move",
-        Method::WorkspaceMoveBlock(_) => "workspace.move_block",
-        Method::WorkspaceReportMetadata(_) => "workspace.report_metadata",
-        Method::WorkspaceClose(_) => "workspace.close",
-        Method::WorktreeList(_) => "worktree.list",
-        Method::WorktreeCreate(_) => "worktree.create",
-        Method::WorktreeOpen(_) => "worktree.open",
-        Method::WorktreeRemove(_) => "worktree.remove",
-        Method::TabCreate(_) => "tab.create",
-        Method::TabList(_) => "tab.list",
-        Method::TabGet(_) => "tab.get",
-        Method::TabFocus(_) => "tab.focus",
-        Method::TabRename(_) => "tab.rename",
-        Method::TabMove(_) => "tab.move",
-        Method::TabClose(_) => "tab.close",
-        Method::AgentList(_) => "agent.list",
-        Method::AgentGet(_) => "agent.get",
-        Method::AgentRead(_) => "agent.read",
-        Method::AgentExplain(_) => "agent.explain",
-        Method::AgentSendKeys(_) => "agent.send_keys",
-        Method::AgentRename(_) => "agent.rename",
-        Method::AgentViewSet(_) => "agent.view.set",
-        Method::AgentViewClear(_) => "agent.view.clear",
-        Method::AgentFocus(_) => "agent.focus",
-        Method::AgentStart(_) => "agent.start",
-        Method::AgentPrompt(_) => "agent.prompt",
-        Method::AgentWait(_) => "agent.wait",
-        Method::PaneSplit(_) => "pane.split",
-        Method::PaneSwap(_) => "pane.swap",
-        Method::PaneMove(_) => "pane.move",
-        Method::PaneZoom(_) => "pane.zoom",
-        Method::PaneLayout(_) => "pane.layout",
-        Method::PaneProcessInfo(_) => "pane.process_info",
-        Method::LayoutExport(_) => "layout.export",
-        Method::LayoutApply(_) => "layout.apply",
-        Method::LayoutSetSplitRatio(_) => "layout.set_split_ratio",
-        Method::PaneNeighbor(_) => "pane.neighbor",
-        Method::PaneEdges(_) => "pane.edges",
-        Method::PaneFocusDirection(_) => "pane.focus_direction",
-        Method::PaneResize(_) => "pane.resize",
-        Method::PaneScroll(_) => "pane.scroll",
-        Method::PaneClear(_) => "pane.clear",
-        Method::PaneEditScrollback(_) => "pane.edit_scrollback",
-        Method::PaneSelectionRead(_) => "pane.selection.read",
-        Method::PaneCopyMotion(_) => "pane.copy_motion",
-        Method::PaneCopySearch(_) => "pane.copy_search",
-        Method::PaneList(_) => "pane.list",
-        Method::PaneCurrent(_) => "pane.current",
-        Method::PaneGet(_) => "pane.get",
-        Method::PaneFocus(_) => "pane.focus",
-        Method::PaneInputSet(_) => "pane.input.set",
-        Method::PaneLinkActivate(_) => "pane.link.activate",
-        Method::PaneLinkResolve(_) => "pane.link.resolve",
-        Method::PaneRename(_) => "pane.rename",
-        Method::PaneSendText(_) => "pane.send_text",
-        Method::PaneSendKeys(_) => "pane.send_keys",
-        Method::PaneSendInput(_) => "pane.send_input",
-        Method::PaneRead(_) => "pane.read",
-        Method::PaneReportAgent(_) => "pane.report_agent",
-        Method::PaneReportAgentSession(_) => "pane.report_agent_session",
-        Method::PaneReportMetadata(_) => "pane.report_metadata",
-        Method::PaneClearAgentAuthority(_) => "pane.clear_agent_authority",
-        Method::PaneReleaseAgent(_) => "pane.release_agent",
-        Method::PaneClose(_) => "pane.close",
-        Method::PopupClose(_) => "popup.close",
-        Method::EventsSubscribe(_) => "events.subscribe",
-        Method::EventsWait(_) => "events.wait",
-        Method::PaneWaitForOutput(_) => "pane.wait_for_output",
-        Method::IntegrationList(_) => "integration.list",
-        Method::IntegrationInstall(_) => "integration.install",
-        Method::IntegrationUninstall(_) => "integration.uninstall",
-        Method::PluginLink(_) => "plugin.link",
-        Method::PluginList(_) => "plugin.list",
-        Method::PluginUnlink(_) => "plugin.unlink",
-        Method::PluginEnable(_) => "plugin.enable",
-        Method::PluginDisable(_) => "plugin.disable",
-        Method::PluginActionList(_) => "plugin.action.list",
-        Method::PluginActionInvoke(_) => "plugin.action.invoke",
-        Method::PluginLogList(_) => "plugin.log.list",
-        Method::PluginPaneOpen(_) => "plugin.pane.open",
-        Method::PluginPaneFocus(_) => "plugin.pane.focus",
-        Method::PluginPaneClose(_) => "plugin.pane.close",
-    }
+    method.operation().name
 }
 
 fn api_response_outcome(response: &str) -> &'static str {
@@ -1182,6 +1194,24 @@ mod tests {
     }
 
     #[test]
+    fn api_accept_thread_spawn_failure_removes_bound_socket() {
+        let _guard = env_lock().lock().unwrap();
+        let dir = unique_test_path("api-accept-spawn-failure");
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("herdr.sock");
+        std::env::set_var(crate::api::SOCKET_PATH_ENV_VAR, &path);
+        let (api_tx, _api_rx) = mpsc::unbounded_channel();
+
+        crate::thread_spawn::test_hook::fail_next_spawns(1);
+        let result = start_server_inner(api_tx, EventHub::default(), None, None);
+        std::env::remove_var(crate::api::SOCKET_PATH_ENV_VAR);
+
+        assert!(result.is_err());
+        assert!(!path.exists(), "bound socket must be removed");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn socket_path_prefers_explicit_env_override() {
         let _guard = env_lock().lock().unwrap();
         let unique = format!("/tmp/herdr-test-{}.sock", std::process::id());
@@ -1370,6 +1400,7 @@ mod tests {
             }),
             None,
             None,
+            None,
         );
 
         let parsed: SuccessResponse = serde_json::from_str(&response).unwrap();
@@ -1380,7 +1411,7 @@ mod tests {
     #[test]
     fn server_stop_control_bypasses_app_channel() {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let stop = Arc::new(AtomicBool::new(false));
+        let stop = ServerStop::default();
         let response = handle_request(
             Request {
                 id: "priority_stop".into(),
@@ -1389,13 +1420,20 @@ mod tests {
             &tx,
             None,
             Some(&stop),
+            Some("pid 42 (herdr)".into()),
             None,
         );
 
         let response: serde_json::Value = serde_json::from_str(&response).unwrap();
         assert_eq!(response["id"], "priority_stop");
         assert_eq!(response["result"]["type"], "ok");
-        assert!(stop.load(Ordering::Acquire));
+        assert!(stop.is_requested());
+        assert_eq!(
+            stop.take_reason(),
+            Some(ShutdownReason::ApiStop {
+                caller: Some("pid 42 (herdr)".into())
+            })
+        );
 
         let rejected = handle_request(
             Request {
@@ -1405,6 +1443,7 @@ mod tests {
             &tx,
             None,
             Some(&stop),
+            None,
             None,
         );
         let rejected: serde_json::Value = serde_json::from_str(&rejected).unwrap();
@@ -1421,8 +1460,9 @@ mod tests {
         };
 
         let request_for_thread = request.clone();
-        let thread =
-            std::thread::spawn(move || handle_request(request_for_thread, &tx, None, None, None));
+        let thread = std::thread::spawn(move || {
+            handle_request(request_for_thread, &tx, None, None, None, None)
+        });
 
         let msg = rx.blocking_recv().unwrap();
         assert_eq!(msg.request.id, "req_2");
