@@ -1,6 +1,6 @@
 [package]
 name = "herdr-gui"
-version = "0.1.0"
+version = "0.2.0"
 description = "herdr GUI: a Tauri 2 client for the herdr terminal multiplexer server"
 edition = "2021"
 build = "build.rs"
