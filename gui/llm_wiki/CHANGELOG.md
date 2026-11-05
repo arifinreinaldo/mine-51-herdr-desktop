@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-05 - Cowbell 0.2.0
+- Version moves from 0.1.0 to 0.2.0 in `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `Cargo.lock`. The release adds gui CI, flutter and adb fallbacks on macOS, incremental Find File ranking and one shared snapshot listener.
+
 ## 2026-11-01 - snapshot bus and per-region render skip
 - New `src/snapshotBus.ts` (`subscribeSnapshot`, `publishSnapshot`). `appEvents.ts` holds the one `snapshot` listener; four modules subscribe. `renderTabsNow` and `renderSidebarNow` skip when their JSON key is unchanged; `main.ts` render-guard release passes `force=true`. `areas/workspace-ui.md` updated; test `tests/unit/snapshotBus.test.ts`.
 
