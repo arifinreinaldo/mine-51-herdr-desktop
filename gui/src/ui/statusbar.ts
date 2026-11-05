@@ -9,6 +9,7 @@ import {
   formatFiveHourPopoverRow,
   formatFiveHourStatusBarLabel,
   formatWeeklyPopoverRow,
+  isUsageStale,
   usageColor,
   worstActivePct,
   type UsageState,
@@ -294,7 +295,7 @@ export function renderUsageStatusItem(
   onSetup?: () => void,
 ): void {
   el.textContent = "";
-  el.classList.remove("is-warning", "is-danger", "is-actionable");
+  el.classList.remove("is-warning", "is-danger", "is-actionable", "is-stale");
   el.removeAttribute("role");
   el.removeAttribute("title");
 
@@ -317,13 +318,22 @@ export function renderUsageStatusItem(
   icon.className = "codicon codicon-pulse";
   el.appendChild(icon);
 
-  if (usage.five_hour && usage.five_hour.resets_at < now) {
+  if (!usage.five_hour) {
+    // No rate_limits in the file: say so rather than draw a false 0% meter.
+    el.append("5h no data");
+    el.title = "No rate limit data from Claude Code yet";
+  } else if (usage.five_hour.resets_at < now) {
     el.append("5h — reset");
   } else {
     el.append("5h");
-    renderUsageMeterInto(el, "usage-meter", usage.five_hour?.used_pct ?? 0);
+    renderUsageMeterInto(el, "usage-meter", usage.five_hour.used_pct);
     const label = formatFiveHourStatusBarLabel(usage.five_hour, now);
     if (label) el.append(label);
+  }
+
+  if (isUsageStale(usage.captured_at, now)) {
+    el.classList.add("is-stale");
+    el.title = formatAsOfLabel(usage.captured_at, now) ?? "";
   }
 
   const worst = worstActivePct(usage, now);

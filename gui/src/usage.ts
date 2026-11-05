@@ -151,3 +151,13 @@ export function formatAsOfLabel(capturedAt: number | null, now: number): string 
   if (capturedAt === null) return null;
   return `as of ${formatAgo(now - capturedAt)}`;
 }
+
+/** Captured data older than this (seconds) counts as stale: the status item
+ * dims and says how old it is. */
+export const USAGE_STALE_SECONDS = 15 * 60;
+
+/** True once `now - capturedAt` exceeds `USAGE_STALE_SECONDS` (exactly 15
+ * minutes is still fresh). No `captured_at` is not stale: nothing to age. */
+export function isUsageStale(capturedAt: number | null, now: number): boolean {
+  return capturedAt !== null && now - capturedAt > USAGE_STALE_SECONDS;
+}

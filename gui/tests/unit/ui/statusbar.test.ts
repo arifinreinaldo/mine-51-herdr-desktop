@@ -215,3 +215,23 @@ describe("renderUsageStatusItem: no data yet opens the setup dialog", () => {
     expect(el.classList.contains("is-actionable")).toBe(false);
   });
 });
+
+describe("renderUsageStatusItem: no data and stale (usage phase 1)", () => {
+  it("empty rate_limits renders no meter and a no-data label", () => {
+    renderUsageStatusItem(el, overlayRoot, usage({ five_hour: null, seven_day: null }), NOW);
+    expect(el.querySelector(".usage-meter")).toBeNull();
+    expect(el.textContent).toContain("5h no data");
+    expect(el.textContent).not.toContain("0%");
+  });
+
+  it("dims and titles the item once captured_at is older than 15 minutes", () => {
+    renderUsageStatusItem(el, overlayRoot, usage({ captured_at: NOW - 900 }), NOW);
+    expect(el.classList.contains("is-stale")).toBe(false); // exactly 15m is fresh
+    renderUsageStatusItem(el, overlayRoot, usage({ captured_at: NOW - 901 }), NOW);
+    expect(el.classList.contains("is-stale")).toBe(true);
+    expect(el.title).toBe("as of 15m ago");
+    renderUsageStatusItem(el, overlayRoot, usage({ captured_at: NOW }), NOW);
+    expect(el.classList.contains("is-stale")).toBe(false);
+    expect(el.title).toBe("");
+  });
+});

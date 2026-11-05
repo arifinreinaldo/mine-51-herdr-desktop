@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { UsageState } from "../../src/usage";
-import { formatUsage, usageColor, worstActivePct } from "../../src/usage";
+import { USAGE_STALE_SECONDS, formatUsage, isUsageStale, usageColor, worstActivePct } from "../../src/usage";
 
 const NOW = 1_790_400_000; // arbitrary fixed "now" for deterministic tests
 
@@ -97,5 +97,16 @@ describe("worstActivePct", () => {
       status: "ok",
     };
     expect(worstActivePct(state, NOW)).toBe(0);
+  });
+});
+
+describe("isUsageStale", () => {
+  it("is fresh at exactly the threshold and stale just after", () => {
+    expect(isUsageStale(NOW - USAGE_STALE_SECONDS, NOW)).toBe(false);
+    expect(isUsageStale(NOW - USAGE_STALE_SECONDS - 1, NOW)).toBe(true);
+  });
+
+  it("is not stale without captured_at", () => {
+    expect(isUsageStale(null, NOW)).toBe(false);
   });
 });

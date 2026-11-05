@@ -943,6 +943,10 @@ body.has-workspace-colors #tab-strip {
   background: var(--statusBarItem-warningBackground);
 }
 
+#status-usage.is-stale {
+  opacity: 0.55;
+}
+
 #status-usage.is-danger {
   background: var(--statusBarItem-errorBackground);
 }
