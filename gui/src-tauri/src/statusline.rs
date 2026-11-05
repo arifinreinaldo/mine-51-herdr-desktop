@@ -23,6 +23,11 @@ const TAP_SCRIPT: &[u8] = include_bytes!("../resources/statusline/herdr-usage.sh
 /// Code runs statusLine commands through Git Bash on Windows).
 const SH_SCRIPT: &[u8] = include_bytes!("../resources/statusline/herdr-usage.sh");
 
+/// Version line both bundled tap scripts carry. Bump it (in both scripts and
+/// here) when a script changes: a herdr tap whose installed copy lacks it is
+/// reported as outdated so the wizard offers a refresh.
+const TAP_VERSION_MARKER: &str = "herdr-usage-tap v2";
+
 const TRUNCATE_LEN: usize = 120;
 const TAP_COMMAND_MARKER: &str = "herdr-usage";
 
@@ -522,6 +527,19 @@ pub struct StatuslineStatusWire {
     pub error: Option<String>,
     /// `settings.json` is a symlink (shared); this is the file it points to.
     pub shared_target: Option<String>,
+    /// `class == "herdr"` but the installed script is missing or older than
+    /// this build's bundled one; re-running the install refreshes it.
+    pub script_outdated: bool,
+}
+
+/// True when the installed tap script lacks `TAP_VERSION_MARKER`.
+fn installed_script_outdated() -> bool {
+    let path = if is_shared_settings(&settings_json_path()) {
+        shared_script_path()
+    } else {
+        tap_script_path()
+    };
+    std::fs::read_to_string(path).map_or(true, |text| !text.contains(TAP_VERSION_MARKER))
 }
 
 /// Where a symlinked `settings.json` points, as shown in the consent text.
@@ -543,18 +561,21 @@ fn status_wire_from(class: StatuslineClass, error: Option<String>) -> Statusline
             other_command: None,
             error,
             shared_target,
+            script_outdated: false,
         },
         StatuslineClass::Herdr => StatuslineStatusWire {
             class: "herdr".to_string(),
             other_command: None,
             error,
             shared_target,
+            script_outdated: installed_script_outdated(),
         },
         StatuslineClass::Other { display_command } => StatuslineStatusWire {
             class: "other".to_string(),
             other_command: Some(display_command),
             error,
             shared_target,
+            script_outdated: false,
         },
     }
 }
@@ -1240,6 +1261,16 @@ mod tests {
         drop(scoped);
     }
 
+    #[test]
+    fn both_bundled_scripts_carry_the_version_marker() {
+        for script in [
+            SH_SCRIPT,
+            include_bytes!("../resources/statusline/herdr-usage.ps1"),
+        ] {
+            assert!(String::from_utf8_lossy(script).contains(TAP_VERSION_MARKER));
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn the_shared_command_works_when_run_by_sh() {
@@ -1283,6 +1314,47 @@ mod tests {
         );
         let usage = std::fs::read_to_string(home.join(".claude").join("herdr-usage.json")).unwrap();
         assert!(usage.contains("\"used_percentage\":7"), "{usage}");
+
+        // A full payload: rate_limits is written exactly as before, and a
+        // per-session file holds only the whitelisted keys (no cwd/prompt).
+        let usage_path = home.join(".claude").join("herdr-usage.json");
+        run(
+            r#"{"session_id":"abc-1_X","cwd":"/secret/dir","prompt":"hello",
+            "transcript_path":"/secret/t.jsonl","model":{"display_name":"Opus"},
+            "cost":{"total_cost_usd":1.5,"total_lines_added":10,"total_lines_removed":2},
+            "context_window":{"used_percentage":42.5},
+            "rate_limits":{"five_hour":{"used_percentage":7,"resets_at":1}}}"#,
+        );
+        let main: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&usage_path).unwrap()).unwrap();
+        assert_eq!(
+            main["rate_limits"],
+            serde_json::json!({"five_hour":{"used_percentage":7,"resets_at":1}})
+        );
+        assert_eq!(main.as_object().unwrap().len(), 2, "{main}");
+        let session_file = home
+            .join(".claude")
+            .join("herdr-usage")
+            .join("abc-1_X.json");
+        let session_text = std::fs::read_to_string(&session_file).unwrap();
+        let session: serde_json::Value = serde_json::from_str(&session_text).unwrap();
+        assert_eq!(session["model"], "Opus");
+        assert_eq!(session["cost_usd"], 1.5);
+        assert_eq!(session["lines_added"], 10);
+        assert_eq!(session["lines_removed"], 2);
+        assert_eq!(session["context_pct"], 42.5);
+        assert!(!session_text.contains("secret") && !session_text.contains("hello"));
+
+        // An unsafe session_id writes no session file; a payload without the
+        // new fields still writes rate_limits.
+        run(r#"{"session_id":"../evil","rate_limits":{}}"#);
+        assert!(!home.join(".claude").join("evil.json").exists());
+        assert_eq!(
+            std::fs::read_dir(home.join(".claude").join("herdr-usage"))
+                .unwrap()
+                .count(),
+            1
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 }

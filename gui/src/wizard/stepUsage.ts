@@ -13,6 +13,8 @@ interface StatuslineStatusWire {
   /** settings.json is a symlink (shared with a dotfiles repo or another
    * machine); this is the file it points to. */
   sharedTarget: string | null;
+  /** class is "herdr" but the installed script is older than the bundled one. */
+  scriptOutdated?: boolean;
 }
 
 function renderConsent(container: HTMLElement, detail: string, onConfirm: () => void, onCancel: () => void): void {
@@ -61,6 +63,23 @@ export function renderUsageStep(
     if (status.class === "herdr") {
       summary.statuslineInstalled = true;
       body.appendChild(el("p", undefined, "herdr's usage tap is already installed."));
+      if (status.scriptOutdated) {
+        body.appendChild(
+          el("p", "wizard-step-description", "A newer tap script is available (adds session cost, model and context)."),
+        );
+        body.appendChild(
+          button(
+            "Update script",
+            () => {
+              void (async () => {
+                await invokeOk("statusline_install");
+                render();
+              })();
+            },
+            "btn btn--primary",
+          ),
+        );
+      }
       body.appendChild(undoRow());
       body.appendChild(footerRow(true));
       container.appendChild(body);

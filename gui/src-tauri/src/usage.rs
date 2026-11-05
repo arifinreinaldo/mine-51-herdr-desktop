@@ -36,7 +36,30 @@ pub struct UsageState {
     /// Unix epoch seconds.
     pub captured_at: Option<i64>,
     pub status: UsageStatus,
+    /// Newest per-session facts (`~/.claude/herdr-usage/*.json`), newest
+    /// first. Absent from the payload when empty; old frontends ignore it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sessions: Vec<SessionUsage>,
 }
+
+/// One Claude Code session's facts from the tap's whitelist. Every field is
+/// optional: the statusLine payload shape is not guaranteed.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct SessionUsage {
+    /// File mtime, Unix epoch seconds.
+    pub updated_at: i64,
+    pub model: Option<String>,
+    /// Finite and `>= 0`, else `None`.
+    pub cost_usd: Option<f64>,
+    pub lines_added: Option<u64>,
+    pub lines_removed: Option<u64>,
+    /// Clamped to `0.0..=100.0`.
+    pub context_pct: Option<f64>,
+}
+
+/// Newest session files read per poll, and the age past which a file is ignored.
+const MAX_SESSIONS: usize = 20;
+const SESSION_MAX_AGE_SECS: i64 = 24 * 3600;
 
 impl UsageState {
     pub fn missing() -> Self {
@@ -45,6 +68,7 @@ impl UsageState {
             seven_day: None,
             captured_at: None,
             status: UsageStatus::Missing,
+            sessions: Vec::new(),
         }
     }
 
@@ -54,6 +78,7 @@ impl UsageState {
             seven_day: None,
             captured_at: None,
             status: UsageStatus::Invalid,
+            sessions: Vec::new(),
         }
     }
 }
@@ -118,7 +143,88 @@ pub fn parse_usage_json(json: &str) -> UsageState {
         }),
         captured_at: raw.captured_at,
         status: UsageStatus::Ok,
+        sessions: Vec::new(),
     }
+}
+
+/// Parses one per-session file. `None` for non-objects, garbage, or a record
+/// with no usable field. Bad individual fields become `None`, not an error.
+pub fn parse_session_json(json: &str, updated_at: i64) -> Option<SessionUsage> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let obj = value.as_object()?;
+    let model = obj
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(|m| m.trim().chars().take(60).collect::<String>())
+        .filter(|m| !m.is_empty());
+    let cost_usd = obj
+        .get("cost_usd")
+        .and_then(|v| v.as_f64())
+        .filter(|c| c.is_finite() && *c >= 0.0);
+    let context_pct = obj
+        .get("context_pct")
+        .and_then(|v| v.as_f64())
+        .filter(|p| p.is_finite())
+        .map(clamp_pct);
+    let lines_added = obj.get("lines_added").and_then(|v| v.as_u64());
+    let lines_removed = obj.get("lines_removed").and_then(|v| v.as_u64());
+    if model.is_none()
+        && cost_usd.is_none()
+        && context_pct.is_none()
+        && lines_added.is_none()
+        && lines_removed.is_none()
+    {
+        return None;
+    }
+    Some(SessionUsage {
+        updated_at,
+        model,
+        cost_usd,
+        lines_added,
+        lines_removed,
+        context_pct,
+    })
+}
+
+fn is_safe_session_stem(stem: &str) -> bool {
+    !stem.is_empty()
+        && stem.len() <= 128
+        && stem
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Reads up to `MAX_SESSIONS` `<safe id>.json` files in `dir` (newest by
+/// mtime, none older than 24h before `now`), newest first. A missing dir or
+/// unreadable file yields fewer sessions, never an error.
+pub fn read_sessions(dir: &Path, now: i64) -> Vec<SessionUsage> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<(i64, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let stem = path.file_stem()?.to_str()?;
+            if path.extension()? != "json" || !is_safe_session_stem(stem) {
+                return None;
+            }
+            let meta = entry.metadata().ok().filter(|m| m.is_file())?;
+            let mtime = meta
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()?
+                .as_secs() as i64;
+            (now - mtime <= SESSION_MAX_AGE_SECS).then_some((mtime, path))
+        })
+        .collect();
+    files.sort_by_key(|f| std::cmp::Reverse(f.0));
+    files.truncate(MAX_SESSIONS);
+    files
+        .into_iter()
+        .filter_map(|(mtime, path)| parse_session_json(&std::fs::read_to_string(path).ok()?, mtime))
+        .collect()
 }
 
 /// Reads and parses `path`. A missing file yields `UsageState::missing()`
@@ -126,7 +232,16 @@ pub fn parse_usage_json(json: &str) -> UsageState {
 /// session runs).
 pub fn read_usage_file(path: &Path) -> UsageState {
     match std::fs::read_to_string(path) {
-        Ok(contents) => parse_usage_json(&contents),
+        Ok(contents) => {
+            let mut state = parse_usage_json(&contents);
+            if state.status == UsageStatus::Ok {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs() as i64);
+                state.sessions = read_sessions(&path.with_file_name("herdr-usage"), now);
+            }
+            state
+        }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => UsageState::missing(),
         Err(_) => UsageState::invalid(),
     }
@@ -230,6 +345,88 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let state = read_usage_file(&path);
         assert_eq!(state.status, UsageStatus::Missing);
+    }
+
+    #[test]
+    fn parses_a_full_session_record() {
+        let json = r#"{"captured_at":1,"model":"Opus 4.7","cost_usd":1.25,"lines_added":10,"lines_removed":2,"context_pct":42.5}"#;
+        let s = parse_session_json(json, 99).unwrap();
+        assert_eq!(s.updated_at, 99);
+        assert_eq!(s.model.as_deref(), Some("Opus 4.7"));
+        assert_eq!(s.cost_usd, Some(1.25));
+        assert_eq!(s.lines_added, Some(10));
+        assert_eq!(s.lines_removed, Some(2));
+        assert_eq!(s.context_pct, Some(42.5));
+    }
+
+    #[test]
+    fn a_partial_session_record_keeps_the_present_fields() {
+        let s = parse_session_json(r#"{"model":null,"cost_usd":0.5}"#, 1).unwrap();
+        assert_eq!(s.cost_usd, Some(0.5));
+        assert!(s.model.is_none() && s.lines_added.is_none() && s.context_pct.is_none());
+    }
+
+    #[test]
+    fn session_garbage_and_empty_records_are_none() {
+        assert!(parse_session_json("not json {{{", 1).is_none());
+        assert!(parse_session_json("[1,2]", 1).is_none());
+        assert!(parse_session_json("{}", 1).is_none());
+        assert!(parse_session_json(r#"{"model":null,"cost_usd":null}"#, 1).is_none());
+    }
+
+    #[test]
+    fn session_cost_rejects_negative_and_wrong_types_and_context_clamps() {
+        let s =
+            parse_session_json(r#"{"cost_usd":-1,"context_pct":250,"lines_added":-3}"#, 1).unwrap();
+        assert!(s.cost_usd.is_none());
+        assert!(s.lines_added.is_none());
+        assert_eq!(s.context_pct, Some(100.0));
+        // serde_json rejects a bare NaN token, so the whole record is garbage.
+        assert!(parse_session_json(r#"{"cost_usd":NaN}"#, 1).is_none());
+        let s = parse_session_json(r#"{"cost_usd":"5","context_pct":-4}"#, 1).unwrap();
+        assert!(s.cost_usd.is_none());
+        assert_eq!(s.context_pct, Some(0.0));
+    }
+
+    #[test]
+    fn old_shape_file_without_a_sessions_dir_has_no_sessions() {
+        let dir =
+            std::env::temp_dir().join(format!("herdr-gui-test-usage-old-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("herdr-usage.json");
+        std::fs::write(&path, FULL_SAMPLE).unwrap();
+        let state = read_usage_file(&path);
+        assert_eq!(state.status, UsageStatus::Ok);
+        assert!(state.sessions.is_empty());
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(!json.contains("sessions"), "{json}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_sessions_skips_unsafe_names_and_old_files_and_caps_at_20() {
+        let dir = std::env::temp_dir().join(format!(
+            "herdr-gui-test-usage-sessions-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let rec = r#"{"cost_usd":1.0}"#;
+        for i in 0..25 {
+            std::fs::write(dir.join(format!("s{i}.json")), rec).unwrap();
+        }
+        std::fs::write(dir.join("bad name.json"), rec).unwrap();
+        std::fs::write(dir.join("ok.json.tmp-1"), rec).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        assert_eq!(read_sessions(&dir, now).len(), 20);
+        // 25h later every file is older than 24h.
+        assert!(read_sessions(&dir, now + 25 * 3600).is_empty());
+        assert!(read_sessions(&dir.join("absent"), now).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

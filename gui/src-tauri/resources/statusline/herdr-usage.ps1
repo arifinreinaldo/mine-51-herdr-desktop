@@ -12,6 +12,11 @@
 #
 # Never throws: the whole body is one try/catch, and the script always
 # exits 0 so a broken statusLine can never break Claude Code's UI.
+#
+# herdr-usage-tap v2: also writes `~/.claude/herdr-usage/<session_id>.json`
+# with a whitelist of numbers and the model name (never prompts, cwd or
+# transcript). Bump the version above when this script changes; the GUI
+# offers an update.
 
 try {
     # Read stdin as raw bytes. Never `$input` or `[Console]::In`: under
@@ -29,10 +34,33 @@ try {
     $inputText = $utf8NoBom.GetString($bytes)
 
     $rateLimits = @{}
+    $sessionId = ""
+    $sessionRecord = $null
     try {
         $parsed = $inputText | ConvertFrom-Json -ErrorAction Stop
         if ($null -ne $parsed.rate_limits) {
             $rateLimits = $parsed.rate_limits
+        }
+        # Whitelisted per-session facts; every field is optional.
+        function Get-Num($v) {
+            if (($v -is [double] -or $v -is [int] -or $v -is [long] -or $v -is [decimal]) -and
+                -not ([double]::IsNaN([double]$v) -or [double]::IsInfinity([double]$v))) { return $v }
+            return $null
+        }
+        $sid = $parsed.session_id
+        if ($sid -is [string] -and $sid -cmatch '\A[A-Za-z0-9_-]{1,128}\z') { $sessionId = $sid }
+        $modelName = $null
+        if ($parsed.model -and $parsed.model.display_name -is [string]) {
+            $modelName = $parsed.model.display_name
+            if ($modelName.Length -gt 60) { $modelName = $modelName.Substring(0, 60) }
+        }
+        $sessionRecord = [ordered]@{
+            captured_at   = [long][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            model         = $modelName
+            cost_usd      = Get-Num $parsed.cost.total_cost_usd
+            lines_added   = Get-Num $parsed.cost.total_lines_added
+            lines_removed = Get-Num $parsed.cost.total_lines_removed
+            context_pct   = Get-Num $parsed.context_window.used_percentage
         }
     } catch {
         # Not valid JSON, or no rate_limits field: fall back to an empty
@@ -53,6 +81,21 @@ try {
     if (-not (Test-Path -LiteralPath $claudeDir)) {
         New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
     }
+    # Per-session file first, so the GUI sees it when it reacts to the main file.
+    if ($sessionId -and $null -ne $sessionRecord) { try {
+        $sessionDir = Join-Path $claudeDir "herdr-usage"
+        if (-not (Test-Path -LiteralPath $sessionDir)) {
+            New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null
+        }
+        $sessionPath = Join-Path $sessionDir "$sessionId.json"
+        $sessionTmp = "$sessionPath.tmp-$PID"
+        [IO.File]::WriteAllBytes($sessionTmp, $utf8NoBom.GetBytes(($sessionRecord | ConvertTo-Json -Compress)))
+        if (Test-Path -LiteralPath $sessionPath) {
+            [IO.File]::Replace($sessionTmp, $sessionPath, $null)
+        } else {
+            [IO.File]::Move($sessionTmp, $sessionPath)
+        }
+    } catch { } }  # a failed session write must never block the main usage file
     $outPath = Join-Path $claudeDir "herdr-usage.json"
     $tmpPath = "$outPath.tmp-$PID"
 
