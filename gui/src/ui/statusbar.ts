@@ -10,7 +10,11 @@ import {
   formatFiveHourPopoverRow,
   formatFiveHourStatusBarLabel,
   formatWeeklyPopoverRow,
+  formatCost,
   isUsageStale,
+  latestSession,
+  sessionRows,
+  todayCost,
   usageColor,
   worstActivePct,
   type UsageState,
@@ -131,6 +135,38 @@ function appendBurnEta(popover: HTMLElement, eta: string | null): void {
   popover.appendChild(line);
 }
 
+function appendSessionRow(popover: HTMLElement, label: string, value: string): void {
+  const row = document.createElement("div");
+  row.className = "usage-popover__row";
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  const valueEl = document.createElement("span");
+  valueEl.textContent = value;
+  row.append(labelEl, valueEl);
+  popover.appendChild(row);
+}
+
+/** The latest session's model/cost/lines/context plus today's total cost;
+ * nothing at all when the tap has recorded no session. */
+function appendSessionBlock(popover: HTMLElement, usage: UsageState, now: number): void {
+  const session = latestSession(usage.sessions);
+  if (!session) return;
+  const header = document.createElement("div");
+  header.className = "usage-popover__header usage-popover__session";
+  const title = document.createElement("b");
+  title.textContent = "Last session";
+  header.appendChild(title);
+  if (session.model) {
+    const model = document.createElement("span");
+    model.textContent = session.model;
+    header.appendChild(model);
+  }
+  popover.appendChild(header);
+  for (const { label, value } of sessionRows(session)) appendSessionRow(popover, label, value);
+  const today = todayCost(usage.sessions, now);
+  if (today !== null) appendSessionRow(popover, "Today", formatCost(today));
+}
+
 function openUsagePopover(
   overlayRoot: HTMLElement,
   anchor: HTMLElement,
@@ -185,6 +221,8 @@ function openUsagePopover(
     renderUsageMeterInto(popover, "usage-popover__bar", usage.seven_day?.used_pct ?? 0);
     appendBurnEta(popover, burnEtaFor("seven_day", usage.seven_day, now));
   }
+
+  appendSessionBlock(popover, usage, now);
 
   overlayRoot.appendChild(popover);
 

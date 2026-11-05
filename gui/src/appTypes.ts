@@ -5,6 +5,7 @@
 // behavior, so moving them is zero-risk.
 
 import type { AgentStatus } from "./agents";
+import type { SessionUsage } from "./usage";
 
 export interface RawWorktree {
   key: string;
@@ -87,4 +88,5 @@ export interface UsageEventPayload {
   seven_day: { used_pct: number; resets_at: number } | null;
   captured_at: number | null;
   status: "ok" | "missing" | "invalid";
+  sessions?: SessionUsage[];
 }

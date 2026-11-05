@@ -213,6 +213,7 @@ export function renderUsageBarNow(): void {
     seven_day: appState.usagePayload.seven_day,
     captured_at: appState.usagePayload.captured_at,
     status: appState.usagePayload.status,
+    sessions: appState.usagePayload.sessions,
   };
   renderUsageStatusItem(statusUsageEl, overlayRoot, state, Math.floor(Date.now() / 1000), openUsageSetup);
 }

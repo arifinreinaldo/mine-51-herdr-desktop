@@ -16,6 +16,19 @@ export interface UsageState {
   /** Unix epoch seconds. */
   captured_at: number | null;
   status: "ok" | "missing" | "invalid";
+  /** Per-session facts, newest first; absent from older backends/payloads. */
+  sessions?: SessionUsage[];
+}
+
+/** One Claude Code session (tap whitelist); every fact is optional. */
+export interface SessionUsage {
+  /** File mtime, Unix epoch seconds. */
+  updated_at: number;
+  model: string | null;
+  cost_usd: number | null;
+  lines_added: number | null;
+  lines_removed: number | null;
+  context_pct: number | null;
 }
 
 export type UsageColor = "normal" | "warning" | "danger";
@@ -214,4 +227,44 @@ export function recordUsageSamples(state: UsageState): void {
 
 export function burnEtaFor(key: "five_hour" | "seven_day", window: UsageWindow | null, now: number): string | null {
   return window && window.resets_at >= now ? formatBurnEta(usageSamples[key], window, now) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Per-session rows (popover). All pure; `now` is injected.
+// ---------------------------------------------------------------------------
+
+/** The most recently updated session, or `null` with none. */
+export function latestSession(sessions: SessionUsage[] | undefined): SessionUsage | null {
+  if (!sessions || sessions.length === 0) return null;
+  return sessions.reduce((a, b) => (b.updated_at > a.updated_at ? b : a));
+}
+
+export function formatCost(usd: number): string {
+  return "$" + usd.toFixed(2);
+}
+
+function localDay(epochSeconds: number): string {
+  const d = new Date(epochSeconds * 1000);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+/** Summed cost of sessions last updated on today's local date, or `null`
+ * when none of them has a cost. */
+export function todayCost(sessions: SessionUsage[] | undefined, now: number): number | null {
+  const today = localDay(now);
+  const costs = (sessions ?? [])
+    .filter((s) => s.cost_usd !== null && localDay(s.updated_at) === today)
+    .map((s) => s.cost_usd as number);
+  return costs.length === 0 ? null : costs.reduce((a, b) => a + b, 0);
+}
+
+/** Label/value rows for the popover's session block; empty facts are left out. */
+export function sessionRows(session: SessionUsage): { label: string; value: string }[] {
+  const rows: { label: string; value: string }[] = [];
+  if (session.cost_usd !== null) rows.push({ label: "Cost", value: formatCost(session.cost_usd) });
+  if (session.lines_added !== null || session.lines_removed !== null) {
+    rows.push({ label: "Lines", value: `+${session.lines_added ?? 0} / -${session.lines_removed ?? 0}` });
+  }
+  if (session.context_pct !== null) rows.push({ label: "Context", value: `${formatPct(session.context_pct)}%` });
+  return rows;
 }

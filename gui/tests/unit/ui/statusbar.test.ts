@@ -128,6 +128,38 @@ describe("renderUsageStatusItem: open/close across many re-renders (finding #10)
   });
 });
 
+describe("usage popover session rows", () => {
+  const open = (state: UsageState): string => {
+    renderUsageStatusItem(el, overlayRoot, state, NOW);
+    el.dispatchEvent(new MouseEvent("click"));
+    return overlayRoot.querySelector(".usage-popover")?.textContent ?? "";
+  };
+
+  it("shows nothing session-related without sessions", () => {
+    const text = open(usage());
+    expect(text).not.toContain("Last session");
+    expect(text).not.toContain("Today");
+  });
+
+  it("shows the newest session's facts and today's total cost", () => {
+    const text = open(
+      usage({
+        sessions: [
+          { updated_at: NOW - 600, model: "Sonnet", cost_usd: 1, lines_added: 1, lines_removed: 1, context_pct: 5 },
+          { updated_at: NOW - 60, model: "Opus", cost_usd: 2.5, lines_added: 10, lines_removed: 2, context_pct: 42 },
+        ],
+      }),
+    );
+    expect(text).toContain("Last session");
+    expect(text).toContain("Opus");
+    expect(text).not.toContain("Sonnet");
+    expect(text).toContain("$2.50");
+    expect(text).toContain("+10 / -2");
+    expect(text).toContain("42%");
+    expect(text).toContain("Today$3.50");
+  });
+});
+
 // UX pass 1 spec §4 "Honest disconnected state": counts dim and gain an
 // "as of HH:MM" suffix while not connected.
 describe("renderAgentCounts (UX pass 1 spec §4)", () => {
