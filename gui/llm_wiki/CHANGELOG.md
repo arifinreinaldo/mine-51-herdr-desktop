@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-05 - usage phase 1
+- The status bar shows `5h no data` when the limits are missing. Before, it drew a false 0% meter. It dims and shows `as of N m ago` after 15 minutes without a fresh sample (`isUsageStale`). The popover shows a burn-rate ETA from in-memory samples (`addUsageSample`, `formatBurnEta`). `areas/usage-statusline.md` updated; the stale `lib.rs:264` reference is now `:291`. Tests in `tests/unit/usage.test.ts` and `tests/unit/ui/statusbar.test.ts`.
+
 ## 2026-11-05 - Cowbell 0.2.0
 - Version moves from 0.1.0 to 0.2.0 in `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `Cargo.lock`. The release adds gui CI, flutter and adb fallbacks on macOS, incremental Find File ranking and one shared snapshot listener.
 
