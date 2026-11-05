@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-05 - usage phase 2
+- The tap writes per-session files `~/.claude/herdr-usage/<session_id>.json` (whitelist: model, cost, lines, context). `usage.rs` adds `sessions` to the `usage` event. The popover shows `Last session` and `Today` cost. Tap scripts carry `herdr-usage-tap v2`; `statusline_status` returns `scriptOutdated` and the wizard offers `Update script`. `areas/usage-statusline.md` updated. Tests: `usage.rs`, `statusline.rs` sh test, `tests/unit/usagePopover.test.ts`, `tests/unit/ui/statusbar.test.ts`.
+
 ## 2026-11-05 - usage phase 1
 - The status bar shows `5h no data` when the limits are missing. Before, it drew a false 0% meter. It dims and shows `as of N m ago` after 15 minutes without a fresh sample (`isUsageStale`). The popover shows a burn-rate ETA from in-memory samples (`addUsageSample`, `formatBurnEta`). `areas/usage-statusline.md` updated; the stale `lib.rs:264` reference is now `:291`. Tests in `tests/unit/usage.test.ts` and `tests/unit/ui/statusbar.test.ts`.
 
