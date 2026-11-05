@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { UsageState } from "../../src/usage";
-import { USAGE_STALE_SECONDS, formatUsage, isUsageStale, usageColor, worstActivePct } from "../../src/usage";
+import {
+  USAGE_STALE_SECONDS,
+  addUsageSample,
+  formatBurnEta,
+  formatUsage,
+  isUsageStale, usageColor,
+  worstActivePct,
+} from "../../src/usage";
 
 const NOW = 1_790_400_000; // arbitrary fixed "now" for deterministic tests
 
@@ -108,5 +115,54 @@ describe("isUsageStale", () => {
 
   it("is not stale without captured_at", () => {
     expect(isUsageStale(null, NOW)).toBe(false);
+  });
+});
+
+describe("burn-rate ETA", () => {
+  const window = { used_pct: 20, resets_at: NOW + 5 * 3600 };
+
+  it("projects 100% from two samples", () => {
+    // 10% -> 20% in 10 minutes = 1% per minute; 80% left = 80 minutes.
+    let samples = addUsageSample([], NOW - 600, 10);
+    samples = addUsageSample(samples, NOW, 20);
+    expect(formatBurnEta(samples, window, NOW)).toBe("at this pace: 100% in ~1h20m");
+  });
+
+  it("shows nothing for flat usage", () => {
+    let samples = addUsageSample([], NOW - 600, 20);
+    samples = addUsageSample(samples, NOW, 20);
+    expect(formatBurnEta(samples, window, NOW)).toBeNull();
+  });
+
+  it("shows nothing when 100% would land after the window resets", () => {
+    let samples = addUsageSample([], NOW - 600, 10);
+    samples = addUsageSample(samples, NOW, 20);
+    expect(formatBurnEta(samples, { ...window, resets_at: NOW + 3600 }, NOW)).toBeNull();
+  });
+
+  it("shows nothing with one sample or a span under 2 minutes", () => {
+    expect(formatBurnEta(addUsageSample([], NOW, 20), window, NOW)).toBeNull();
+    let samples = addUsageSample([], NOW - 119, 10);
+    samples = addUsageSample(samples, NOW, 20);
+    expect(formatBurnEta(samples, window, NOW)).toBeNull();
+  });
+
+  it("ignores a duplicate or older captured_at", () => {
+    const samples = addUsageSample([], NOW, 20);
+    expect(addUsageSample(samples, NOW, 25)).toBe(samples);
+    expect(addUsageSample(samples, NOW - 5, 25)).toBe(samples);
+  });
+
+  it("clears the samples when usage decreases (window reset)", () => {
+    let samples = addUsageSample([], NOW - 600, 80);
+    samples = addUsageSample(samples, NOW, 3);
+    expect(samples).toEqual([{ t: NOW, pct: 3 }]);
+  });
+
+  it("keeps only the newest 12 samples", () => {
+    let samples: ReturnType<typeof addUsageSample> = [];
+    for (let i = 0; i < 20; i++) samples = addUsageSample(samples, NOW + i, i);
+    expect(samples).toHaveLength(12);
+    expect(samples[0].t).toBe(NOW + 8);
   });
 });

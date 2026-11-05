@@ -161,3 +161,57 @@ export const USAGE_STALE_SECONDS = 15 * 60;
 export function isUsageStale(capturedAt: number | null, now: number): boolean {
   return capturedAt !== null && now - capturedAt > USAGE_STALE_SECONDS;
 }
+
+// ---------------------------------------------------------------------------
+// Burn-rate ETA (popover). Samples live in memory only; a restart starts
+// over, which just hides the ETA until two samples span the minimum.
+// ---------------------------------------------------------------------------
+
+export interface UsageSample {
+  /** `captured_at`, Unix epoch seconds. */
+  t: number;
+  pct: number;
+}
+
+export const USAGE_SAMPLE_LIMIT = 12;
+/** The samples must span at least this long (seconds) before a rate counts. */
+export const USAGE_ETA_MIN_SPAN_SECONDS = 120;
+
+/** Appends a sample and returns the new list. A repeated or older `t` is
+ * ignored; a lower `pct` than the last means the window reset, so the list
+ * restarts from this sample. Keeps the newest `USAGE_SAMPLE_LIMIT`. */
+export function addUsageSample(samples: UsageSample[], t: number, pct: number): UsageSample[] {
+  const last = samples[samples.length - 1];
+  if (last && t <= last.t) return samples;
+  if (last && pct < last.pct) return [{ t, pct }];
+  return [...samples, { t, pct }].slice(-USAGE_SAMPLE_LIMIT);
+}
+
+/** `"at this pace: 100% in ~1h12m"`, or `null` unless the rate is positive,
+ * the samples span `USAGE_ETA_MIN_SPAN_SECONDS`, and 100% comes before the
+ * window resets. Linear rate from the first to the last sample. */
+export function formatBurnEta(samples: UsageSample[], window: UsageWindow, now: number): string | null {
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  if (!first || !last || last.t - first.t < USAGE_ETA_MIN_SPAN_SECONDS) return null;
+  const rate = (last.pct - first.pct) / (last.t - first.t); // percent per second
+  if (rate <= 0 || last.pct >= 100) return null;
+  const hitsAt = last.t + (100 - last.pct) / rate;
+  if (hitsAt >= window.resets_at) return null;
+  return `at this pace: 100% in ~${formatDuration(hitsAt - now)}`;
+}
+
+const usageSamples: Record<"five_hour" | "seven_day", UsageSample[]> = { five_hour: [], seven_day: [] };
+
+/** Feeds each present window's latest reading into the in-memory samples. */
+export function recordUsageSamples(state: UsageState): void {
+  if (state.captured_at === null) return;
+  for (const key of ["five_hour", "seven_day"] as const) {
+    const window = state[key];
+    if (window) usageSamples[key] = addUsageSample(usageSamples[key], state.captured_at, window.used_pct);
+  }
+}
+
+export function burnEtaFor(key: "five_hour" | "seven_day", window: UsageWindow | null, now: number): string | null {
+  return window && window.resets_at >= now ? formatBurnEta(usageSamples[key], window, now) : null;
+}

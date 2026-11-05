@@ -5,6 +5,7 @@ import { focusKeyboardCapture } from "../keyboard/focusCapture";
 import type { HighlightCard } from "../notifications/doneDetector";
 import { formatAge } from "../notifications/statusAge";
 import {
+  burnEtaFor,
   formatAsOfLabel,
   formatFiveHourPopoverRow,
   formatFiveHourStatusBarLabel,
@@ -122,6 +123,14 @@ interface UsagePopoverCallbacks {
   onClose?: () => void;
 }
 
+function appendBurnEta(popover: HTMLElement, eta: string | null): void {
+  if (!eta) return;
+  const line = document.createElement("div");
+  line.className = "usage-popover__eta";
+  line.textContent = eta;
+  popover.appendChild(line);
+}
+
 function openUsagePopover(
   overlayRoot: HTMLElement,
   anchor: HTMLElement,
@@ -160,6 +169,7 @@ function openUsagePopover(
     row.append(label, value);
     popover.appendChild(row);
     renderUsageMeterInto(popover, "usage-popover__bar", usage.five_hour?.used_pct ?? 0);
+    appendBurnEta(popover, burnEtaFor("five_hour", usage.five_hour, now));
   }
 
   const weeklyRow = formatWeeklyPopoverRow(usage.seven_day, now);
@@ -173,6 +183,7 @@ function openUsagePopover(
     row.append(label, value);
     popover.appendChild(row);
     renderUsageMeterInto(popover, "usage-popover__bar", usage.seven_day?.used_pct ?? 0);
+    appendBurnEta(popover, burnEtaFor("seven_day", usage.seven_day, now));
   }
 
   overlayRoot.appendChild(popover);

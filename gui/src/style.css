@@ -1247,6 +1247,11 @@ body.has-workspace-colors #tab-strip {
   justify-content: space-between;
 }
 
+.usage-popover__eta {
+  margin: -6px 0 10px;
+  color: var(--descriptionForeground);
+}
+
 .usage-popover__bar {
   display: block;
   width: 100%;
