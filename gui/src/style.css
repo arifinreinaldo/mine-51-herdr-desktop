@@ -947,6 +947,20 @@ body.has-workspace-colors #tab-strip {
   background: var(--statusBarItem-errorBackground);
 }
 
+.usage-ctx {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.usage-ctx.is-warning {
+  background: var(--statusBarItem-warningBackground);
+}
+
+.usage-ctx.is-danger {
+  background: var(--statusBarItem-errorBackground);
+}
+
 .usage-meter {
   width: 64px;
   height: 4px;

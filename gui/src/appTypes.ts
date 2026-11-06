@@ -37,6 +37,8 @@ export interface RawPane {
   pane_id: string;
   workspace_id: string;
   tab_id: string;
+  cwd: string | null;
+  foreground_cwd: string | null;
   focused: boolean;
   /** Terminal-parity spec P0 #5 "Terminal right-click menu": herdr's own
    * `ClientShellPane.right_click_passthrough` (`src/protocol/wire.rs:1072`),
@@ -82,9 +84,4 @@ export interface RawSnapshot {
   integration_updates_available: boolean;
 }
 
-export interface UsageEventPayload {
-  five_hour: { used_pct: number; resets_at: number } | null;
-  seven_day: { used_pct: number; resets_at: number } | null;
-  captured_at: number | null;
-  status: "ok" | "missing" | "invalid";
-}
+export type { UsageState as UsageEventPayload } from "./usage";

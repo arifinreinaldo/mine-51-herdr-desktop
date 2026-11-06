@@ -22,7 +22,8 @@ import {
   type AgentPopoverRow,
   type OpenAgentPopoverOptions,
 } from "./ui/statusbar";
-import type { UsageState as FormatUsageState } from "./usage";
+import { subscribeSnapshot } from "./snapshotBus";
+import { sessionForPane } from "./usage";
 import { syncDockBadge } from "./macShell";
 import { openUsageSetup } from "./wizard/usageSetup";
 
@@ -208,13 +209,11 @@ export function renderStatusBarNow(): void {
 }
 
 export function renderUsageBarNow(): void {
-  const state: FormatUsageState = {
-    five_hour: appState.usagePayload.five_hour,
-    seven_day: appState.usagePayload.seven_day,
-    captured_at: appState.usagePayload.captured_at,
-    status: appState.usagePayload.status,
-  };
-  renderUsageStatusItem(statusUsageEl, overlayRoot, state, Math.floor(Date.now() / 1000), openUsageSetup);
+  const usage = appState.usagePayload;
+  const focusedPaneId = appState.snapshot?.focused_pane_id ?? null;
+  const pane = appState.snapshot?.panes.find((p) => p.pane_id === focusedPaneId);
+  const session = sessionForPane(usage.sessions ?? [], focusedPaneId, pane?.foreground_cwd ?? pane?.cwd ?? null);
+  renderUsageStatusItem(statusUsageEl, overlayRoot, { ...usage, session }, Math.floor(Date.now() / 1000), openUsageSetup);
 }
 
 const USAGE_REFRESH_INTERVAL_MS = 30_000;
@@ -223,4 +222,11 @@ export function wireUsageRefresh(): void {
   // missing-data item is not yet the "set up" button.
   renderUsageBarNow();
   window.setInterval(renderUsageBarNow, USAGE_REFRESH_INTERVAL_MS);
+  // The session shown follows the focused pane: re-render only when that changes.
+  let lastFocusedPaneId: string | null | undefined;
+  subscribeSnapshot((snapshot) => {
+    if (snapshot.focused_pane_id === lastFocusedPaneId) return;
+    lastFocusedPaneId = snapshot.focused_pane_id;
+    renderUsageBarNow();
+  });
 }

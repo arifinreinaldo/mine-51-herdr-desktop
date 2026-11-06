@@ -8,6 +8,11 @@ import {
   formatAsOfLabel,
   formatFiveHourPopoverRow,
   formatFiveHourStatusBarLabel,
+  formatContextRow,
+  formatCostRow,
+  formatLinesRow,
+  formatPct,
+  formatSessionHeader,
   formatWeeklyPopoverRow,
   usageColor,
   worstActivePct,
@@ -121,6 +126,40 @@ interface UsagePopoverCallbacks {
   onClose?: () => void;
 }
 
+/** One titled block of the usage popover, with the `as of Nm ago` text of its own data. */
+function appendUsageBlock(popover: HTMLElement, title: string, capturedAt: number | null, now: number): HTMLElement {
+  const block = document.createElement("div");
+  block.className = "usage-popover__block";
+  const header = document.createElement("div");
+  header.className = "usage-popover__header";
+  const titleEl = document.createElement("b");
+  titleEl.textContent = title;
+  header.appendChild(titleEl);
+  const asOf = formatAsOfLabel(capturedAt, now);
+  if (asOf) {
+    const asOfEl = document.createElement("span");
+    asOfEl.textContent = asOf;
+    header.appendChild(asOfEl);
+  }
+  block.appendChild(header);
+  popover.appendChild(block);
+  return block;
+}
+
+/** A label/value row, plus a meter when `meterPct` is set. A `null` value adds no row. */
+function appendUsageRow(block: HTMLElement, label: string, value: string | null, meterPct: number | null): void {
+  if (value === null) return;
+  const row = document.createElement("div");
+  row.className = "usage-popover__row";
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  const valueEl = document.createElement("span");
+  valueEl.textContent = value;
+  row.append(labelEl, valueEl);
+  block.appendChild(row);
+  if (meterPct !== null) renderUsageMeterInto(block, "usage-popover__bar", meterPct);
+}
+
 function openUsagePopover(
   overlayRoot: HTMLElement,
   anchor: HTMLElement,
@@ -135,43 +174,16 @@ function openUsagePopover(
   popover.style.right = `${rootRect.right - anchorRect.right}px`;
   popover.style.bottom = `${rootRect.bottom - anchorRect.top}px`;
 
-  const header = document.createElement("div");
-  header.className = "usage-popover__header";
-  const title = document.createElement("b");
-  title.textContent = "Claude usage";
-  header.appendChild(title);
-  const asOf = formatAsOfLabel(usage.captured_at, now);
-  if (asOf) {
-    const asOfEl = document.createElement("span");
-    asOfEl.textContent = asOf;
-    header.appendChild(asOfEl);
-  }
-  popover.appendChild(header);
+  const account = appendUsageBlock(popover, "ACCOUNT", usage.captured_at, now);
+  appendUsageRow(account, "5-hour", formatFiveHourPopoverRow(usage.five_hour, now), usage.five_hour?.used_pct ?? 0);
+  appendUsageRow(account, "Weekly", formatWeeklyPopoverRow(usage.seven_day, now), usage.seven_day?.used_pct ?? 0);
 
-  const fiveHourRow = formatFiveHourPopoverRow(usage.five_hour, now);
-  if (fiveHourRow) {
-    const row = document.createElement("div");
-    row.className = "usage-popover__row";
-    const label = document.createElement("span");
-    label.textContent = "5-hour";
-    const value = document.createElement("span");
-    value.textContent = fiveHourRow;
-    row.append(label, value);
-    popover.appendChild(row);
-    renderUsageMeterInto(popover, "usage-popover__bar", usage.five_hour?.used_pct ?? 0);
-  }
-
-  const weeklyRow = formatWeeklyPopoverRow(usage.seven_day, now);
-  if (weeklyRow) {
-    const row = document.createElement("div");
-    row.className = "usage-popover__row";
-    const label = document.createElement("span");
-    label.textContent = "Weekly";
-    const value = document.createElement("span");
-    value.textContent = weeklyRow;
-    row.append(label, value);
-    popover.appendChild(row);
-    renderUsageMeterInto(popover, "usage-popover__bar", usage.seven_day?.used_pct ?? 0);
+  if (usage.session) {
+    const { session } = usage.session;
+    const block = appendUsageBlock(popover, formatSessionHeader(usage.session), session.captured_at, now);
+    appendUsageRow(block, "Context", formatContextRow(session.context), session.context.used_pct);
+    appendUsageRow(block, "Cost", formatCostRow(session.cost), null);
+    appendUsageRow(block, "Lines", formatLinesRow(session.cost), null);
   }
 
   overlayRoot.appendChild(popover);
@@ -324,6 +336,15 @@ export function renderUsageStatusItem(
     renderUsageMeterInto(el, "usage-meter", usage.five_hour?.used_pct ?? 0);
     const label = formatFiveHourStatusBarLabel(usage.five_hour, now);
     if (label) el.append(label);
+  }
+
+  // `latest` is some other pane's session: its context would mislead here.
+  const ctxPct = usage.session && usage.session.kind !== "latest" ? usage.session.session.context.used_pct : null;
+  if (ctxPct !== null) {
+    const ctx = document.createElement("span");
+    ctx.className = `usage-ctx is-${usageColor(ctxPct)}`;
+    ctx.textContent = `ctx ${formatPct(ctxPct)}%`;
+    el.appendChild(ctx);
   }
 
   const worst = worstActivePct(usage, now);

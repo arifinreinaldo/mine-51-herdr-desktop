@@ -41,7 +41,8 @@ function New-TempHome {
 function Invoke-Tap {
     param(
         [Parameter(Mandatory)] [string]$HomeDir,
-        [Parameter(Mandatory)] [byte[]]$InputBytes
+        [Parameter(Mandatory)] [byte[]]$InputBytes,
+        [string]$PaneId = ""
     )
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -53,6 +54,8 @@ function Invoke-Tap {
     $psi.CreateNoWindow = $true
     $psi.EnvironmentVariables["USERPROFILE"] = $HomeDir
     $psi.EnvironmentVariables["HOME"] = $HomeDir
+    # Inside herdr this process inherits HERDR_PANE_ID; remove it for the null case.
+    if ($PaneId) { $psi.EnvironmentVariables["HERDR_PANE_ID"] = $PaneId } else { $psi.EnvironmentVariables.Remove("HERDR_PANE_ID") }
 
     $proc = [System.Diagnostics.Process]::Start($psi)
     $proc.StandardInput.BaseStream.Write($InputBytes, 0, $InputBytes.Length)
@@ -145,6 +148,71 @@ try {
     Assert-True (Test-Path -LiteralPath (Join-Path $home3 ".claude\herdr-usage.json")) "still writes herdr-usage.json while chaining"
 } finally {
     Remove-Item -Recurse -Force $home3 -ErrorAction SilentlyContinue
+}
+
+# ---------------------------------------------------------------------
+# 4. Per-session file: ~/.claude/herdr-usage/<session_id>.json carries the
+#    pane id, the raw stdin object and a fresh captured_at.
+# ---------------------------------------------------------------------
+Write-Host "test 4: writes one per-session file with the pane id and the raw session"
+$home4 = New-TempHome
+try {
+    $sessionInput = '{"session_id":"sess-1","cwd":"C:\\repo","model":{"display_name":"Opus"},"context_window":{"used_percentage":42},"rate_limits":{}}'
+    $result = Invoke-Tap -HomeDir $home4 -InputBytes ($utf8NoBom.GetBytes($sessionInput)) -PaneId "w18:p1B"
+    Assert-True ($result.ExitCode -eq 0) "exits 0 (stderr: $($result.Stderr))"
+    Assert-True ($result.StdoutBytes.Length -eq 0) "prints nothing to stdout with no chain file"
+
+    $sessionDir4 = Join-Path $home4 ".claude\herdr-usage"
+    $sessionPath4 = Join-Path $sessionDir4 "sess-1.json"
+    Assert-True (Test-Path -LiteralPath $sessionPath4) "writes ~/.claude/herdr-usage/sess-1.json"
+    $sessionFile = Get-Content -Raw -LiteralPath $sessionPath4 | ConvertFrom-Json
+    Assert-True ($sessionFile.pane_id -eq "w18:p1B") "pane_id comes from HERDR_PANE_ID"
+    Assert-True ($sessionFile.session.model.display_name -eq "Opus") "session.model.display_name round-trips"
+    Assert-True ($sessionFile.session.context_window.used_percentage -eq 42) "session.context_window.used_percentage round-trips"
+    $nowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    Assert-True ([Math]::Abs([int64]$sessionFile.captured_at - $nowEpoch) -lt 30) "captured_at is a fresh epoch-seconds timestamp"
+    Assert-True (Test-Path -LiteralPath (Join-Path $home4 ".claude\herdr-usage.json")) "still writes the legacy herdr-usage.json"
+    $leftovers = @(Get-ChildItem -LiteralPath $sessionDir4 -Filter "*.tmp-*")
+    Assert-True ($leftovers.Count -eq 0) "leaves no .tmp-* file behind"
+} finally {
+    Remove-Item -Recurse -Force $home4 -ErrorAction SilentlyContinue
+}
+
+# ---------------------------------------------------------------------
+# 5. No pane id gives null; an id that fails the file-name rule writes nothing.
+# ---------------------------------------------------------------------
+Write-Host "test 5: null pane_id and a rejected session_id"
+$home5 = New-TempHome
+try {
+    $result = Invoke-Tap -HomeDir $home5 -InputBytes ($utf8NoBom.GetBytes('{"session_id":"sess-2"}'))
+    Assert-True ($result.ExitCode -eq 0) "exits 0 without a pane id"
+    $sessionDir5 = Join-Path $home5 ".claude\herdr-usage"
+    $sessionFile = Get-Content -Raw -LiteralPath (Join-Path $sessionDir5 "sess-2.json") | ConvertFrom-Json
+    Assert-True ($null -eq $sessionFile.pane_id) "pane_id is null when HERDR_PANE_ID is unset"
+
+    $result = Invoke-Tap -HomeDir $home5 -InputBytes ($utf8NoBom.GetBytes('{"session_id":"..\\evil"}'))
+    Assert-True ($result.ExitCode -eq 0) "exits 0 on a path-like session_id"
+    $names = @(Get-ChildItem -LiteralPath $sessionDir5 | ForEach-Object { $_.Name })
+    Assert-True (($names.Count -eq 1) -and ($names[0] -eq "sess-2.json")) "session folder holds only sess-2.json"
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $home5 ".claude\evil.json"))) "no .claude\evil.json escapes the folder"
+} finally {
+    Remove-Item -Recurse -Force $home5 -ErrorAction SilentlyContinue
+}
+
+# ---------------------------------------------------------------------
+# 6. A JSON array root writes no session file (member enumeration would
+#    otherwise read a session_id out of its items).
+# ---------------------------------------------------------------------
+Write-Host "test 6: an array root writes no session file"
+$home6 = New-TempHome
+try {
+    $result = Invoke-Tap -HomeDir $home6 -InputBytes ($utf8NoBom.GetBytes('[{"session_id":"s6"}]'))
+    Assert-True ($result.ExitCode -eq 0) "exits 0 on an array root"
+    $session6 = Join-Path $home6 ".claude\herdr-usage"
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $session6 "s6.json"))) "writes no s6.json"
+    Assert-True (Test-Path -LiteralPath (Join-Path $home6 ".claude\herdr-usage.json")) "still writes the legacy herdr-usage.json"
+} finally {
+    Remove-Item -Recurse -Force $home6 -ErrorAction SilentlyContinue
 }
 
 Write-Host ""

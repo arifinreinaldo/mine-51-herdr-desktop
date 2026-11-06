@@ -10,6 +10,8 @@
 # statusLine command was chained -- runs it with the same raw stdin and
 # forwards its stdout byte-for-byte, unmodified.
 #
+# It also writes one ~/.claude/herdr-usage/<session_id>.json per Claude Code session.
+#
 # Never throws: the whole body is one try/catch, and the script always
 # exits 0 so a broken statusLine can never break Claude Code's UI.
 
@@ -53,6 +55,40 @@ try {
     if (-not (Test-Path -LiteralPath $claudeDir)) {
         New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
     }
+    # One file per Claude Code session, ~/.claude/herdr-usage/<session_id>.json:
+    # {"captured_at":<epoch s>,"pane_id":<HERDR_PANE_ID or null>,"session":<raw stdin>}.
+    # Written before the legacy file: the GUI rereads the sessions when that file
+    # changes. Its own try/catch keeps the legacy file and the chain running.
+    try {
+        # Object root only: a JSON array also parses, and member enumeration would
+        # then yield a session_id from its items.
+        if (($parsed -is [pscustomobject]) -and $inputText.Trim().StartsWith('{')) {
+            $sessionId = [string]$parsed.session_id
+            if ($sessionId -match '^[A-Za-z0-9_-]{1,128}\z') {
+                $sessionDir = Join-Path $claudeDir "herdr-usage"
+                if (-not (Test-Path -LiteralPath $sessionDir)) {
+                    New-Item -ItemType Directory -Path $sessionDir -Force | Out-Null
+                }
+                $paneJson = "null"
+                if ([string]$env:HERDR_PANE_ID -match '^[A-Za-z0-9:_-]{1,128}\z') {
+                    $paneJson = '"' + $env:HERDR_PANE_ID + '"'
+                }
+                # $parsed is set only when stdin parsed as JSON, so the raw text splices in as is.
+                $sessionJson = '{"captured_at":' + $capturedAt + ',"pane_id":' + $paneJson + ',"session":' + $inputText.Trim() + '}'
+                $sessionPath = Join-Path $sessionDir "$sessionId.json"
+                $sessionTmp = "$sessionPath.tmp-$PID"
+                [IO.File]::WriteAllBytes($sessionTmp, $utf8NoBom.GetBytes($sessionJson))
+                if (Test-Path -LiteralPath $sessionPath) {
+                    [IO.File]::Replace($sessionTmp, $sessionPath, $null)
+                } else {
+                    [IO.File]::Move($sessionTmp, $sessionPath)
+                }
+            }
+        }
+    } catch {
+        # Skip the per-session file only.
+    }
+
     $outPath = Join-Path $claudeDir "herdr-usage.json"
     $tmpPath = "$outPath.tmp-$PID"
 

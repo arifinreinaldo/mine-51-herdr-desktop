@@ -13,7 +13,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatAsOfClock, renderAgentCounts, renderUsageStatusItem, type AgentCounts } from "../../../src/ui/statusbar";
-import type { UsageState } from "../../../src/usage";
+import type { SessionMatch, UsageState } from "../../../src/usage";
 
 const NOW = 1_000_000;
 
@@ -213,5 +213,87 @@ describe("renderUsageStatusItem: no data yet opens the setup dialog", () => {
   it("stays a plain label when no handler is given", () => {
     renderUsageStatusItem(el, overlayRoot, missing(), NOW);
     expect(el.classList.contains("is-actionable")).toBe(false);
+  });
+});
+
+function withSession(kind: SessionMatch["kind"], usedPct: number | null): Partial<UsageState> {
+  return {
+    session: {
+      kind,
+      session: {
+        session_id: "s1",
+        pane_id: "w1:p1",
+        captured_at: NOW - 120,
+        cwd: "/repo",
+        model: { display_name: "Opus" },
+        effort_level: null,
+        fast_mode: null,
+        context: { used_pct: usedPct, size: 200_000 },
+        cost: { usd: 1.23, duration_ms: 47 * 60_000, api_duration_ms: 18 * 60_000, lines_added: 312, lines_removed: 88 },
+      },
+    },
+  };
+}
+
+describe("renderUsageStatusItem: ctx item", () => {
+  it("shows the focused pane's context percent, coloured by level", () => {
+    renderUsageStatusItem(el, overlayRoot, usage(withSession("pane", 75)), NOW);
+    const ctx = el.querySelector(".usage-ctx");
+    expect(ctx?.textContent).toBe("ctx 75%");
+    expect(ctx?.classList.contains("is-warning")).toBe(true);
+  });
+
+  it("shows for a cwd match", () => {
+    renderUsageStatusItem(el, overlayRoot, usage(withSession("cwd", 10)), NOW);
+    expect(el.querySelector(".usage-ctx")?.textContent).toBe("ctx 10%");
+  });
+
+  it("is hidden for a latest match, a null percent and no session", () => {
+    renderUsageStatusItem(el, overlayRoot, usage(withSession("latest", 75)), NOW);
+    expect(el.querySelector(".usage-ctx")).toBeNull();
+    renderUsageStatusItem(el, overlayRoot, usage(withSession("pane", null)), NOW);
+    expect(el.querySelector(".usage-ctx")).toBeNull();
+    renderUsageStatusItem(el, overlayRoot, usage({ session: null }), NOW);
+    expect(el.querySelector(".usage-ctx")).toBeNull();
+    renderUsageStatusItem(el, overlayRoot, usage(), NOW);
+    expect(el.querySelector(".usage-ctx")).toBeNull();
+  });
+
+  it("drops the ctx item when the session goes away on a re-render", () => {
+    renderUsageStatusItem(el, overlayRoot, usage(withSession("pane", 75)), NOW);
+    renderUsageStatusItem(el, overlayRoot, usage(), NOW + 30);
+    expect(el.querySelector(".usage-ctx")).toBeNull();
+  });
+});
+
+describe("renderUsageStatusItem: popover blocks", () => {
+  function openBlocks(overrides: Partial<UsageState>): HTMLElement[] {
+    renderUsageStatusItem(el, overlayRoot, usage(overrides), NOW);
+    el.dispatchEvent(new MouseEvent("click"));
+    return Array.from(overlayRoot.querySelectorAll<HTMLElement>(".usage-popover__block"));
+  }
+
+  it("shows ACCOUNT and the session block with context, cost and lines", () => {
+    const blocks = openBlocks(withSession("pane", 75));
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].textContent).toContain("ACCOUNT");
+    expect(blocks[0].textContent).toContain("5-hour");
+    expect(blocks[0].textContent).toContain("Weekly");
+    expect(blocks[1].textContent).toContain("THIS PANE");
+    expect(blocks[1].textContent).toContain("as of 2m ago");
+    expect(blocks[1].textContent).toContain("75% of 200k");
+    expect(blocks[1].textContent).toContain("$1.23 · 47m (api 18m)");
+    expect(blocks[1].textContent).toContain("+312 −88");
+  });
+
+  it("titles a latest match LAST ACTIVE SESSION", () => {
+    const blocks = openBlocks(withSession("latest", 75));
+    expect(blocks[1].textContent).toContain("LAST ACTIVE SESSION");
+  });
+
+  it("shows only ACCOUNT without a session", () => {
+    const blocks = openBlocks({});
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].textContent).toContain("ACCOUNT");
   });
 });

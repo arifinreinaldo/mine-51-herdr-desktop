@@ -16,6 +16,34 @@ export interface UsageState {
   /** Unix epoch seconds. */
   captured_at: number | null;
   status: "ok" | "missing" | "invalid";
+  /** One entry per Claude Code session file the backend read, sorted by `session_id`. */
+  sessions?: SessionUsage[];
+  /** The focused pane's session; set only by `renderUsageBarNow`, never by the backend. */
+  session?: SessionMatch | null;
+}
+
+export interface SessionUsage {
+  session_id: string;
+  pane_id: string | null;
+  /** Unix epoch seconds. */
+  captured_at: number | null;
+  cwd: string | null;
+  model: { display_name: string | null };
+  effort_level: string | null;
+  fast_mode: boolean | null;
+  context: { used_pct: number | null; size: number | null };
+  cost: {
+    usd: number | null;
+    duration_ms: number | null;
+    api_duration_ms: number | null;
+    lines_added: number | null;
+    lines_removed: number | null;
+  };
+}
+
+export interface SessionMatch {
+  session: SessionUsage;
+  kind: "pane" | "cwd" | "latest";
 }
 
 export type UsageColor = "normal" | "warning" | "danger";
@@ -54,7 +82,7 @@ function formatWindow(label: string, window: UsageWindow, now: number): string {
   return `${label} ${formatPct(window.used_pct)}% · resets ${resetLabel}`;
 }
 
-function formatPct(pct: number): string {
+export function formatPct(pct: number): string {
   return Number.isInteger(pct) ? String(pct) : String(Math.round(pct * 10) / 10);
 }
 
@@ -150,4 +178,71 @@ export function formatWeeklyPopoverRow(window: UsageWindow | null, now: number):
 export function formatAsOfLabel(capturedAt: number | null, now: number): string | null {
   if (capturedAt === null) return null;
   return `as of ${formatAgo(now - capturedAt)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Per-session usage (the focused pane's Claude Code session).
+// ---------------------------------------------------------------------------
+
+/** `\` -> `/`, no trailing `/`, lowercase. Lowercasing can false-match on case-sensitive paths. */
+function normalizeCwd(cwd: string): string {
+  return cwd.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+function newestFirst(a: SessionUsage, b: SessionUsage): number {
+  return (b.captured_at ?? 0) - (a.captured_at ?? 0);
+}
+
+/** Pane id first (newest session wins), then exactly one session with the pane's cwd, then the newest overall. */
+export function sessionForPane(
+  sessions: readonly SessionUsage[],
+  paneId: string | null,
+  paneCwd: string | null,
+): SessionMatch | null {
+  if (sessions.length === 0) return null;
+  if (paneId !== null) {
+    const byPane = sessions.filter((s) => s.pane_id === paneId).sort(newestFirst);
+    if (byPane.length > 0) return { session: byPane[0], kind: "pane" };
+  }
+  const wanted = paneCwd ? normalizeCwd(paneCwd) : "";
+  if (wanted) {
+    const byCwd = sessions.filter((s) => s.cwd !== null && normalizeCwd(s.cwd) === wanted);
+    if (byCwd.length === 1) return { session: byCwd[0], kind: "cwd" };
+  }
+  return { session: [...sessions].sort(newestFirst)[0], kind: "latest" };
+}
+
+/** `200000` -> `200k`, `1000000` -> `1M`, `1500` -> `1.5k`. */
+export function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M`;
+  if (n >= 1000) return `${Math.round(n / 100) / 10}k`;
+  return String(n);
+}
+
+export function formatSessionHeader(match: SessionMatch): string {
+  return match.kind === "pane" ? "THIS PANE" : "LAST ACTIVE SESSION";
+}
+
+/** `–` / `42%` / `42% of 200k`. */
+export function formatContextRow(context: SessionUsage["context"]): string {
+  if (context.used_pct === null) return "–";
+  const pct = `${formatPct(context.used_pct)}%`;
+  return context.size === null ? pct : `${pct} of ${formatTokens(context.size)}`;
+}
+
+/** `$1.23 · 47m (api 18m)`, or `null` with neither cost nor duration. */
+export function formatCostRow(cost: SessionUsage["cost"]): string | null {
+  const parts: string[] = [];
+  if (cost.usd !== null) parts.push(`$${cost.usd.toFixed(2)}`);
+  if (cost.duration_ms !== null) {
+    const api = cost.api_duration_ms === null ? "" : ` (api ${formatDuration(cost.api_duration_ms / 1000)})`;
+    parts.push(`${formatDuration(cost.duration_ms / 1000)}${api}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/** `+312 −88`, or `null` with neither count. */
+export function formatLinesRow(cost: SessionUsage["cost"]): string | null {
+  if (cost.lines_added === null && cost.lines_removed === null) return null;
+  return `+${cost.lines_added ?? 0} −${cost.lines_removed ?? 0}`;
 }

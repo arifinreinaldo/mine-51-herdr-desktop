@@ -2,6 +2,12 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-06 - per-session Claude usage
+- Taps (`herdr-usage.ps1`, `herdr-usage.sh`) also write `~/.claude/herdr-usage/<session_id>.json`, before the legacy file. `usage.rs`: `default_sessions_dir`, `parse_session_json`, `read_sessions` (24 h ignore, 7 d prune by mtime). `lib.rs` `run_usage_poll_loop` adds `sessions` to the `usage` event.
+- `usage.ts`: `sessionForPane` (pane, unique cwd, latest) and the session formatters. `statusbar.ts`: `ctx NN%` for kinds `pane` and `cwd`; popover `ACCOUNT` block (5-hour, Weekly) plus a session block, each with `as of Nm ago`. `appStatusBar.ts` feeds the focused pane's session.
+- `stepUsage.ts`: new `Update tap` button (the tap has no version marker). P3 (prompt cache, pr) deferred.
+- `areas/usage-statusline.md` rewritten with fresh line refs; `code_map.md` rows still correct. Tests: `scripts/test-statusline.ps1`, `usagePopover.test.ts`, `statusbar.test.ts`.
+
 ## 2026-11-01 - snapshot bus and per-region render skip
 - New `src/snapshotBus.ts` (`subscribeSnapshot`, `publishSnapshot`). `appEvents.ts` holds the one `snapshot` listener; four modules subscribe. `renderTabsNow` and `renderSidebarNow` skip when their JSON key is unchanged; `main.ts` render-guard release passes `force=true`. `areas/workspace-ui.md` updated; test `tests/unit/snapshotBus.test.ts`.
 

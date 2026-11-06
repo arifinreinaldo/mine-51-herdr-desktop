@@ -284,19 +284,23 @@ fn build_prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 
 /// Polls `~/.claude/herdr-usage.json`'s `mtime` every 2s (spec §4
 /// `usage.rs`: "no watcher dependency") and emits a `usage` event to the
-/// frontend whenever the parsed state changes. Also caches the latest
+/// frontend whenever the parsed state changes. Each reread also attaches the
+/// per-session files from `~/.claude/herdr-usage/` as `sessions`; the taps
+/// write those before the legacy file, so its mtime is the wake signal. Also caches the latest
 /// state on `inner` so `commands::sync_state` (spec §4 v3) can re-emit it
 /// to a frontend that registered its `listen` call after this last fired
 /// (finding #1).
 async fn run_usage_poll_loop(app: tauri::AppHandle, inner: std::sync::Arc<commands::Inner>) {
     let path = usage::default_usage_path();
+    let sessions_dir = usage::default_sessions_dir();
     let mut last_mtime = None;
     let mut last_state: Option<usage::UsageState> = None;
     loop {
         let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         if mtime != last_mtime {
             last_mtime = mtime;
-            let state = usage::read_usage_file(&path);
+            let mut state = usage::read_usage_file(&path);
+            state.sessions = usage::read_sessions(&sessions_dir, std::time::SystemTime::now());
             if last_state.as_ref() != Some(&state) {
                 inner.record_usage(state.clone());
                 let _ = app.emit("usage", &state);
