@@ -8,6 +8,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { api, errorMessage, invokeSafe, showErrorNotice } from "./appApi";
+import { openConsentDialog } from "./ui/consentDialog";
 import { IS_MAC } from "./shortcuts";
 
 export interface PaneLinkParams {
@@ -130,8 +131,13 @@ export function pathAtWrappedRows(rows: { row: number; text: string }[], row: nu
 }
 
 /** Ctrl+click fallback: opens the file path under the click, if any. */
-export function openLocalPath(path: string): void {
-  void invokeSafe("open_local_path", { path });
+export function openLocalPath(path: string, confirmed = false): void {
+  invoke("open_local_path", { path, confirmed }).catch((err: unknown) => {
+    // A web page asks first; the backend still refuses it unless `confirmed`.
+    const code = err && typeof err === "object" && "code" in err ? (err as { code: unknown }).code : null;
+    if (!confirmed && code === "needs_consent") openConsentDialog(errorMessage(err), () => openLocalPath(path, true));
+    else showErrorNotice(errorMessage(err));
+  });
 }
 
 /** Ctrl+hover: resolves the link region(s) at/around the hovered cell, for

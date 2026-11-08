@@ -630,13 +630,30 @@ pub fn open_external_url(app: AppHandle, url: String) -> Result<(), ApiError> {
 /// allowlisted document/media extension. Terminal output is untrusted text,
 /// so the allowlist limits what a crafted path can launch.
 #[tauri::command]
-pub fn open_local_path(app: AppHandle, path: String) -> Result<(), ApiError> {
+pub fn open_local_path(
+    app: AppHandle,
+    path: String,
+    confirmed: Option<bool>,
+) -> Result<(), ApiError> {
     let p = std::path::Path::new(&path);
     if !is_safe_local_file(p) {
-        return Err(ApiError {
-            code: "unsafe_path".to_string(),
-            message: format!("refusing to open: {path}"),
-        });
+        // A web page opens only after the user confirms; every other blocked type never opens.
+        if !needs_consent(p) {
+            return Err(ApiError {
+                code: "unsafe_path".to_string(),
+                message: format!("refusing to open: {path} (this file type is not allowed)"),
+            });
+        }
+        if confirmed != Some(true) {
+            let name = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("this file");
+            return Err(ApiError {
+                code: "needs_consent".to_string(),
+                message: name.to_string(),
+            });
+        }
     }
     use tauri_plugin_opener::OpenerExt;
     app.opener()
@@ -647,21 +664,32 @@ pub fn open_local_path(app: AppHandle, path: String) -> Result<(), ApiError> {
         })
 }
 
+// Allowlist, not a denylist: Windows has too many runnable types
+// (pif, msc, ...) to enumerate. Macro-capable formats (docm, xlsm, pptm,
+// and the legacy binary doc/xls) are left out on purpose.
+const ALLOWED: &[&str] = &[
+    "xlsx", "csv", "tsv", "docx", "pptx", "pdf", "txt", "md", "log", "json", "yml", "yaml", "png",
+    "jpg", "jpeg", "gif", "svg", "webp", "mp4", "mov", "mp3", "wav",
+];
+/// Types that open only after the user confirms: a web page runs scripts in the browser.
+const CONSENT: &[&str] = &["html", "htm"];
+
 fn is_safe_local_file(p: &std::path::Path) -> bool {
-    // Allowlist, not a denylist: Windows has too many runnable types
-    // (pif, msc, ...) to enumerate. Macro-capable formats (docm, xlsm, pptm,
-    // and the legacy binary doc/xls) are left out on purpose.
-    const ALLOWED: &[&str] = &[
-        "xlsx", "csv", "tsv", "docx", "pptx", "pdf", "txt", "md", "log", "json", "yml", "yaml",
-        "png", "jpg", "jpeg", "gif", "svg", "webp", "mp4", "mov", "mp3", "wav",
-    ];
+    local_file_ok(p, ALLOWED)
+}
+
+fn needs_consent(p: &std::path::Path) -> bool {
+    local_file_ok(p, CONSENT)
+}
+
+fn local_file_ok(p: &std::path::Path, exts: &[&str]) -> bool {
     let allowed_ext = |path: &std::path::Path| {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        ALLOWED.contains(&ext.as_str())
+        exts.contains(&ext.as_str())
     };
     // Drive-letter paths only: a UNC path (`\\host\share`) would make
     // `canonicalize` connect to a remote host. A `:` past the drive letter is
@@ -780,7 +808,42 @@ pub async fn sync_state(state: tauri::State<'_, AppState>, app: AppHandle) -> Re
 
 #[cfg(test)]
 mod safe_web_url_tests {
-    use super::{is_safe_local_file, is_safe_web_url};
+    use super::{is_safe_local_file, is_safe_web_url, needs_consent};
+
+    #[cfg(windows)]
+    #[test]
+    fn web_pages_ask_for_consent_and_other_types_never_do() {
+        let dir = std::env::temp_dir();
+        let write = |name: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, b"x").unwrap();
+            p
+        };
+        let html = write("herdr_consent_test.html");
+        let htm = write("herdr_consent_test.HTM");
+        let bat = write("herdr_consent_test.bat");
+        let xlsx = write("herdr_consent_test.xlsx");
+        for p in [&html, &htm] {
+            assert!(!is_safe_local_file(p)); // not opened without asking
+            assert!(needs_consent(p));
+        }
+        assert!(!needs_consent(&bat)); // never opens, even confirmed
+        assert!(!needs_consent(&xlsx)); // already allowed, no prompt
+        assert!(!needs_consent(&dir.join("herdr_consent_missing.html"))); // must exist
+        let name = html.to_str().unwrap();
+        assert!(!needs_consent(std::path::Path::new(&format!("{name}:s.txt")))); // alternate data stream
+        assert!(!needs_consent(std::path::Path::new(&format!(r"\\?\{name}")))); // verbatim prefix
+        // An `.html` symlink to a `.bat`: the name passes, the target must not.
+        let link = dir.join("herdr_consent_link.html");
+        let _ = std::fs::remove_file(&link);
+        if std::os::windows::fs::symlink_file(&bat, &link).is_ok() {
+            assert!(!needs_consent(&link));
+            let _ = std::fs::remove_file(&link);
+        }
+        for p in [html, htm, bat, xlsx] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
 
     #[cfg(unix)]
     #[test]

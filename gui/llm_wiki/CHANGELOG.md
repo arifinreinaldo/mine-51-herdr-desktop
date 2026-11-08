@@ -2,6 +2,12 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-08 - web-page consent for Ctrl+click
+- `open_local_path` (`commands.rs`) takes `confirmed: Option<bool>`. A real `.html` or `.htm` file fails the allowlist, so `needs_consent` returns the `needs_consent` error code with the file name. It opens only when `confirmed` is true. Other blocked types still return `unsafe_path`.
+- `is_safe_local_file` and `needs_consent` share `local_file_ok`. The drive-letter, stream and symlink checks apply to both. Constants `ALLOWED` and `CONSENT` hold the extensions. Windows test `web_pages_ask_for_consent_and_other_types_never_do`.
+- `links.ts` `openLocalPath(path, confirmed)` opens `openConsentDialog` (`ui/consentDialog.ts`) on `needs_consent`. Cancel has focus. Open calls again with `confirmed` true. Test: `openLocalPath.test.ts`.
+- Source: re-applied by hand from `stash@{0}` (feat/git-source-control). The rest of that stash is not applied.
+
 ## 2026-11-08 - UI/UX critique fixes
 - Auto-opened Done popover no longer claims Esc from the terminal: new `OpenAgentPopoverOptions.autoOpened` (fed from `appState.agentPopoverAutoOpened` in `appStatusBar.ts`); `statusbar.ts` skips outside Esc and sets `escapableFromOutside` false for it.
 - `style.css`: white text on warning amber, `--errorForeground` for danger text, explicit `background` on `.btn--primary:hover` and `.btn--danger:hover`, 2px foreground focus ring on `.ws.is-selected` and `.tab.active`.

@@ -22,6 +22,6 @@
 | `src-tauri/src/macos.rs`, `src/macShell.ts`, `src/nativeMenu.ts`, `src/wizard/usageSetup.ts` | macOS port (untracked) | [[macos-port]] |
 | `src/wizard/` | first-run wizard | TBD |
 | `src/mouse/`, `src/paneChrome/`, `src/copyMode.ts`, `src/scroll.ts` | mouse, selection, copy mode | TBD |
-| `src/links.ts`, `src/appTerminalMouse.ts` (Ctrl+click and Ctrl+hover), `open_external_url` and `open_local_path` in `src-tauri/src/commands.rs` | terminal links: URL via herdr, `C:\...` (Windows) or `/...` (macOS) file path via client match | TBD |
+| `src/links.ts`, `src/appTerminalMouse.ts` (Ctrl+click and Ctrl+hover), `open_external_url` and `open_local_path` in `src-tauri/src/commands.rs` | terminal links: URL via herdr, `C:\...` (Windows) or `/...` (macOS) file path via client match; `.html`/`.htm` ask first (`ui/consentDialog.ts`) | TBD |
 | `src-tauri/src/clipboard.rs`, `memory.rs`, `folder_picker.rs` | small helpers | TBD |
 | `docs/`, `PRODUCT.md` | specs (can be old) | [[doc-mismatches]] |
