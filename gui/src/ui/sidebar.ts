@@ -311,6 +311,12 @@ function renderRow(
         separatorBefore: true,
         onSelect: () => callbacks.onOpenFolder(workspace.workspace_id),
       },
+      {
+        id: "close",
+        label: "Close Workspace…",
+        separatorBefore: true,
+        onSelect: () => openWorkspaceCloseConfirm(workspace, all, overlayRoot, row, callbacks, agentLines),
+      },
     ];
     openMenu(overlayRoot, { left: x - rootRect.left, top: y - rootRect.top }, items, {
       returnFocusTo: keyboardCaptureReturnTarget(),
@@ -333,6 +339,10 @@ function renderRow(
       // not lasting keyboard focus, once its job is done.
       callbacks.onFocusWorkspace(workspace.workspace_id);
       focusKeyboardCapture();
+    } else if (event.key === "Delete") {
+      // Keyboard path to the same confirm the close button opens.
+      event.preventDefault();
+      openWorkspaceCloseConfirm(workspace, all, overlayRoot, row, callbacks, agentLines);
     } else if (event.key === "Escape") {
       // Esc backs out of sidebar keyboard navigation with no change.
       event.preventDefault();

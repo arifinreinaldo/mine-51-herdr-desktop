@@ -18,7 +18,7 @@ const PALETTE: CompactPalette = {
   tabActiveBg: "#f4b183",
   tabActiveFg: "#1a1a1a",
   hoverW: "#161616",
-  orange: "#f4b183",
+  orange: "#f0883e", // Dark Modern's blocked: the peach is the active-tab fill
   ansi: {
     black: "#0c0c0c",
     red: "#e06c75",

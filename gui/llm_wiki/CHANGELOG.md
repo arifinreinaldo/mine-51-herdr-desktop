@@ -2,6 +2,15 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-08 - UI/UX critique fixes
+- Auto-opened Done popover no longer claims Esc from the terminal: new `OpenAgentPopoverOptions.autoOpened` (fed from `appState.agentPopoverAutoOpened` in `appStatusBar.ts`); `statusbar.ts` skips outside Esc and sets `escapableFromOutside` false for it.
+- `style.css`: white text on warning amber, `--errorForeground` for danger text, explicit `background` on `.btn--primary:hover` and `.btn--danger:hover`, 2px foreground focus ring on `.ws.is-selected` and `.tab.active`.
+- Keyboard and aria: `tabs.ts` `aria-selected` and Left/Right focus moves; `sidebar.ts` Delete key and "Close Workspace…" context item open the existing close confirm; `runToolbar.ts` keeps `aria-label` in step with `title`.
+- Theme: the herdr palette `orange` in `themes/herdr.ts` is now `#f0883e`. The blocked colour no longer equals the peach active-tab fill. `style.css` gives the rename input on the active tab a foreground border. `contrast.test.ts` checks blocked against `tab.activeBackground` at 1.3:1 or more.
+- Modal: `modal.ts` `trapTab` wraps Tab and Shift+Tab at the first and last control. `.modal` has `tabIndex = -1` and takes focus after `openOverlay`. Ctrl, Alt and Meta Tab pass through. Test: `modal.test.ts`.
+- Menu ARIA: `menu.ts` sets `menuitemcheckbox` with `aria-checked`, `aria-disabled` and `aria-haspopup`. `menus.ts` `wireMenuBar` sets title roles and `aria-expanded`. `#menubar` has `role="menubar"`. Left and Right move focus between titles.
+- Run shortcuts: `run.play`, `run.hotReload` and `run.hotRestart` in `shortcuts.ts`. `appMenuBar.ts` calls `triggerRunAction` in `appFlutterRun.ts`, which calls `RunToolbar.trigger`. Tooltips show the key. Test: `runToolbar.test.ts`.
+
 ## 2026-11-06 - per-session Claude usage
 - Taps (`herdr-usage.ps1`, `herdr-usage.sh`) also write `~/.claude/herdr-usage/<session_id>.json`, before the legacy file. `usage.rs`: `default_sessions_dir`, `parse_session_json`, `read_sessions` (24 h ignore, 7 d prune by mtime). `lib.rs` `run_usage_poll_loop` adds `sessions` to the `usage` event.
 - `usage.ts`: `sessionForPane` (pane, unique cwd, latest) and the session formatters. `statusbar.ts`: `ctx NN%` for kinds `pane` and `cwd`; popover `ACCOUNT` block (5-hour, Weekly) plus a session block, each with `as of Nm ago`. `appStatusBar.ts` feeds the focused pane's session.

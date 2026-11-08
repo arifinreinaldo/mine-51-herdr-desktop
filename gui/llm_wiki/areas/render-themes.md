@@ -20,6 +20,7 @@ The frontend draws the herdr grid on a canvas. Theme colors set the 16 ANSI colo
 3. Commit `312095d2` switched ANSI 0-15 from fixed values to the theme palette.
 
 ## Edges
+- The herdr blocked colour is `#f0883e` (`src/themes/herdr.ts` `orange`). `contrast.test.ts` keeps blocked at 1.3:1 or more against `tab.activeBackground`.
 - Wire color packing is fixed. Index order follows the wire format (`src/colors.ts:11-17`).
 - A hidden window pauses painting (`src/main.ts:165-168`).
 - Tests: `tests/unit/colors.test.ts`, `tests/unit/golden.test.ts`, `tests/golden/`.

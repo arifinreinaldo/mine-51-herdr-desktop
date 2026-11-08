@@ -74,6 +74,7 @@ function agentPopoverRenderOptions(): OpenAgentPopoverOptions {
     highlightCards: highlightCards.list(),
     highlightRowFor: (paneId) => agentPopoverRows().find((r) => r.pane_id === paneId),
     pinned: appState.settings.agentListPinned,
+    autoOpened: appState.agentPopoverAutoOpened,
     ageMsFor: (paneId) => statusAge.ageMs(paneId, Date.now()),
     anchor: statusAgentCountsEl,
   };

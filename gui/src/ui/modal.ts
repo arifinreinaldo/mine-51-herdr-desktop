@@ -15,6 +15,10 @@ export interface ModalOptions {
 
 let modalCount = 0;
 
+/** The tab stops a dialog body can hold. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function openModal(
   title: string,
   buildBody: (body: HTMLElement) => void,
@@ -31,6 +35,7 @@ export function openModal(
   modal.setAttribute("role", "dialog");
   modal.setAttribute("aria-modal", "true");
   modal.setAttribute("aria-labelledby", heading.id);
+  modal.tabIndex = -1; // the trap's home when the body has no controls
   modal.appendChild(heading);
 
   const body = document.createElement("div");
@@ -43,8 +48,23 @@ export function openModal(
     if (event.key === "Escape") {
       event.preventDefault();
       dispose();
+    } else if (event.key === "Tab" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+      trapTab(event);
     }
   };
+  /** aria-modal focus trap: Tab and Shift+Tab wrap at the edges. Ctrl+Tab stays a shortcut. */
+  function trapTab(event: KeyboardEvent): void {
+    // Queried per key: some bodies add their controls after open (usage setup, licences).
+    const items = Array.from(modal.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.tabIndex >= 0 && !el.closest("[hidden]"));
+    const first = items[0] ?? modal;
+    const last = items[items.length - 1] ?? modal;
+    const active = document.activeElement;
+    const inside = active !== modal && modal.contains(active);
+    const back = event.shiftKey;
+    if (inside && active !== (back ? first : last)) return; // not at an edge: the browser moves focus
+    event.preventDefault();
+    (back ? last : first).focus();
+  }
   document.addEventListener("keydown", onKeydown, true);
   backdrop.addEventListener("mousedown", (event) => {
     if (event.target === backdrop) dispose();
@@ -69,5 +89,8 @@ export function openModal(
   // tell "some overlay is open" uniformly and route Esc to it instead of
   // the terminal, regardless of which of the four kinds it is.
   openOverlay(dispose);
+  // After `openOverlay`: the overlay it supersedes can return focus to the terminal as it closes.
+  // Callers that focus a field later (setTimeout 0) still win.
+  modal.focus({ preventScroll: true });
   return dispose;
 }

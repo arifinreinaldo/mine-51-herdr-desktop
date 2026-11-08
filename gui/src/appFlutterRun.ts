@@ -27,7 +27,7 @@ import { openFlavorPicker } from "./ui/flavorPicker";
 import { openMenu, type MenuItemSpec } from "./ui/menu";
 import { subscribeSnapshot } from "./snapshotBus";
 import { closeActiveOverlay } from "./ui/overlay";
-import { createRunToolbar } from "./ui/runToolbar";
+import { createRunToolbar, type RunAction } from "./ui/runToolbar";
 
 const SHELL_STARTUP_GRACE_MS = 800;
 const BUTTON_GUARD_MS = 300;
@@ -75,6 +75,11 @@ const toolbar = createRunToolbar(runToolbarEl, {
   onRestart: () => void sendRunKey("R"),
   onStop: () => void sendRunKey("q", true),
 });
+
+/** The `run.*` keyboard shortcuts (`shortcuts.ts`). They press the toolbar button, so a key obeys its hidden and disabled state. */
+export function triggerRunAction(action: RunAction): void {
+  toolbar.trigger(action);
+}
 
 function allDevices(): AndroidDevice[] {
   // An Android workspace runs nothing through flutter: desktop and web entries do not apply.

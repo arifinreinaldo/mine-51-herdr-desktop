@@ -40,10 +40,18 @@ function buildItemEl(
 ): HTMLElement {
   const el = document.createElement("div");
   el.className = "menu-item";
-  el.setAttribute("role", "menuitem");
+  // `checked: false` still marks a checkable item, so test presence, not truth.
+  const checkable = item.checked !== undefined;
+  el.setAttribute("role", checkable ? "menuitemcheckbox" : "menuitem");
+  if (checkable) el.setAttribute("aria-checked", String(item.checked));
   el.tabIndex = -1;
   if (item.danger) el.classList.add("is-danger");
-  if (item.disabled) el.classList.add("is-disabled");
+  if (item.disabled) {
+    el.classList.add("is-disabled");
+    el.setAttribute("aria-disabled", "true");
+  }
+  // A plain submenu only: the swatch grid has no menu role to announce.
+  if (item.submenu) el.setAttribute("aria-haspopup", "menu");
   // Items without their own icon keep the menu's *current* alignment; the
   // left icon slot is reserved for every item in the menu only when at
   // least one item in it actually has an icon or checkmark (mock-b.png /

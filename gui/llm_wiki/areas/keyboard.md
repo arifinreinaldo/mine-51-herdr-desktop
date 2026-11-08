@@ -26,6 +26,8 @@ One capture-phase router sends every key. It checks the shortcut table, then the
 
 ## Edges
 - Find File has no table entry. Only double-Shift opens it. Ctrl+F and Cmd+F inside the viewer open the viewer find bar (`src/appFiles.ts:184-186`).
+- The `run.*` shortcuts are Ctrl+Shift+F5 (Run), Ctrl+Shift+R (Hot Reload) and Alt+Shift+R (Hot Restart). Windows only: they are unbound on macOS. `onShortcut` calls `triggerRunAction`, which presses the toolbar button.
+- The modal Tab trap lives in `src/ui/modal.ts` (`trapTab`). Focus moves into `.modal` after `openOverlay`.
 - A text field keeps its Shift taps. Do not remove the `inTextField` guard (`src/keyboard/routing.ts:98`).
 - Tests: `tests/unit/keyboard/`, `tests/unit/keymap.test.ts`.
 - Shortcut marker: [[shortcut-markers]] (fixed 400 ms window).

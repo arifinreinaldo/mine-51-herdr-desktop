@@ -3,6 +3,7 @@
 // the state and hands a fresh view to `render`.
 
 import type { RunStatus } from "../flutter/runState";
+import { shortcutDisplay } from "../shortcuts";
 
 export interface RunToolbarView {
   visible: boolean;
@@ -43,8 +44,13 @@ export interface RunToolbarHandlers {
   onStop: () => void;
 }
 
+/** The toolbar actions the `run.*` shortcuts press. */
+export type RunAction = "play" | "reload" | "restart";
+
 export interface RunToolbar {
   render: (view: RunToolbarView) => void;
+  /** Presses the action's button only while it shows and is enabled: a key obeys the same state as a click. */
+  trigger: (action: RunAction) => void;
 }
 
 function makeButton(className: string, icon: string, title: string, onClick: () => void): HTMLButtonElement {
@@ -58,6 +64,12 @@ function makeButton(className: string, icon: string, title: string, onClick: () 
   btn.appendChild(i);
   btn.addEventListener("click", onClick);
   return btn;
+}
+
+/** "Hot Reload (Ctrl+Shift+R)". The bare title where the action has no key (macOS). */
+function withKey(title: string, id: string): string {
+  const key = shortcutDisplay(id);
+  return key ? `${title} (${key})` : title;
 }
 
 export function createRunToolbar(root: HTMLElement, handlers: RunToolbarHandlers): RunToolbar {
@@ -88,8 +100,8 @@ export function createRunToolbar(root: HTMLElement, handlers: RunToolbarHandlers
   const explorer = makeButton("run-btn--explorer", "folder-opened", "Browse device files", handlers.onExplorer);
   const play = makeButton("run-btn--play", "play", "Run on the selected device", handlers.onPlay);
   const playIcon = play.querySelector("i") as HTMLElement;
-  const reload = makeButton("run-btn--reload", "flame", "Hot Reload", handlers.onReload);
-  const restart = makeButton("run-btn--restart", "debug-restart", "Hot Restart", handlers.onRestart);
+  const reload = makeButton("run-btn--reload", "flame", withKey("Hot Reload", "run.hotReload"), handlers.onReload);
+  const restart = makeButton("run-btn--restart", "debug-restart", withKey("Hot Restart", "run.hotRestart"), handlers.onRestart);
   const stop = makeButton("run-btn--stop", "debug-stop", "Stop", handlers.onStop);
   root.append(deviceBtn, flavorBtn, mirror, db, explorer, play, reload, restart, stop);
 
@@ -114,20 +126,29 @@ export function createRunToolbar(root: HTMLElement, handlers: RunToolbarHandlers
       mirrorIcon.className = view.mirrorBusy
         ? "codicon codicon-loading codicon-modifier-spin"
         : "codicon codicon-screen-full";
+      // The title changes with state; keep the accessible name in step with it.
+      const retitle = (btn: HTMLButtonElement, title: string) => {
+        btn.title = title;
+        btn.setAttribute("aria-label", title);
+      };
       mirror.disabled = view.mirrorDisabled;
-      mirror.title = view.mirrorTitle;
+      retitle(mirror, view.mirrorTitle);
       db.disabled = view.dbDisabled;
-      db.title = view.dbTitle;
+      retitle(db, view.dbTitle);
       explorer.disabled = view.dbDisabled;
-      explorer.title = view.explorerTitle;
+      retitle(explorer, view.explorerTitle);
       play.classList.toggle("run-btn--running", running && !view.starting);
       play.disabled = view.playDisabled;
-      play.title = view.playTitle;
+      retitle(play, view.playDisabled ? view.playTitle : withKey(view.playTitle, "run.play"));
       play.hidden = !view.playVisible;
       for (const btn of [reload, restart, stop]) {
         btn.hidden = !running;
         btn.disabled = view.actionsDisabled;
       }
+    },
+    trigger(action) {
+      const btn = { play, reload, restart }[action];
+      if (!root.hidden && !btn.hidden && !btn.disabled) btn.click();
     },
   };
 }

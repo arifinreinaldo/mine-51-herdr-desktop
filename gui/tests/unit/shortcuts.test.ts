@@ -168,6 +168,29 @@ describe("findShortcut: keyboard shortcuts feature", () => {
   });
 });
 
+describe("findShortcut: run toolbar", () => {
+  it("resolves Run, Hot Reload and Hot Restart", () => {
+    const cases: Array<[KeyCombo, string]> = [
+      [{ ctrl: true, shift: true, alt: false, code: "F5" }, "run.play"],
+      [{ ctrl: true, shift: true, alt: false, code: "KeyR" }, "run.hotReload"],
+      [{ ctrl: false, shift: true, alt: true, code: "KeyR" }, "run.hotRestart"],
+    ];
+    for (const [c, id] of cases) {
+      expect(findShortcut({ ctrlKey: c.ctrl, shiftKey: c.shift, altKey: c.alt, code: c.code }, false)?.id).toBe(id);
+    }
+  });
+
+  it("leaves bare F5 and plain Ctrl+R to the terminal", () => {
+    expect(findShortcut({ ctrlKey: false, shiftKey: false, altKey: false, code: "F5" }, false)).toBeUndefined();
+    expect(findShortcut({ ctrlKey: true, shiftKey: false, altKey: false, code: "KeyR" }, false)).toBeUndefined();
+  });
+
+  it("groups them under Run in the cheat sheet", () => {
+    const run = cheatSheetEntries().filter((e) => e.menu === "Run").map((e) => e.id);
+    expect(run).toEqual(["run.play", "run.hotReload", "run.hotRestart"]);
+  });
+});
+
 describe("cheatSheetEntries / filterCheatSheetEntries / groupCheatSheetEntriesByMenu", () => {
   it("collapses each 9-wide focus-by-index range into a single entry", () => {
     const entries = cheatSheetEntries();
@@ -214,7 +237,7 @@ describe("cheatSheetEntries / filterCheatSheetEntries / groupCheatSheetEntriesBy
   it("groups by menu in the spec's fixed order, skipping menus with no entries", () => {
     const groups = groupCheatSheetEntriesByMenu(cheatSheetEntries());
     const menuNames = groups.map(([menu]) => menu);
-    expect(menuNames).toEqual(["Workspace", "Tab", "Pane", "Agents", "View", "herdr"]);
+    expect(menuNames).toEqual(["Workspace", "Tab", "Pane", "Agents", "View", "Run", "herdr"]);
     // "Help" has no ShortcutAction of its own (its menu item has no
     // keyboard shortcut), so it must not appear as an empty group.
     expect(menuNames).not.toContain("Help");

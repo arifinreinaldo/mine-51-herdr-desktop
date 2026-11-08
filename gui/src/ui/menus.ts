@@ -321,8 +321,12 @@ export function wireMenuBar(menuTitleEls: readonly HTMLElement[], ctx: MenuBarCo
   const openFor = (name: string, titleEl: HTMLElement) => {
     const builder = MENU_BUILDERS[name];
     if (!builder) return;
-    for (const el of menuTitleEls) el.classList.remove("is-open");
+    for (const el of menuTitleEls) {
+      el.classList.remove("is-open");
+      el.setAttribute("aria-expanded", "false");
+    }
     titleEl.classList.add("is-open");
+    titleEl.setAttribute("aria-expanded", "true");
     openMenuName = name;
     const rect = titleEl.getBoundingClientRect();
     const rootRect = ctx.overlayRoot.getBoundingClientRect();
@@ -336,6 +340,7 @@ export function wireMenuBar(menuTitleEls: readonly HTMLElement[], ctx: MenuBarCo
         returnFocusTo: keyboardCaptureReturnTarget(),
         onClose: () => {
           titleEl.classList.remove("is-open");
+          titleEl.setAttribute("aria-expanded", "false");
           // Finding #11 "menu hover-switch works repeatedly": switching
           // menus on hover opens the new one (setting `openMenuName` to
           // it) *before* `openMenu`'s own `openOverlay` synchronously
@@ -364,6 +369,10 @@ export function wireMenuBar(menuTitleEls: readonly HTMLElement[], ctx: MenuBarCo
 
   for (const titleEl of menuTitleEls) {
     const name = titleEl.dataset.menu ?? "";
+    // `#menubar` has role="menubar" (index.html). Each title opens a menu.
+    titleEl.setAttribute("role", "menuitem");
+    titleEl.setAttribute("aria-haspopup", "menu");
+    titleEl.setAttribute("aria-expanded", "false");
     titleEl.addEventListener("click", () => {
       if (openMenuName === name) {
         closeActiveOverlay();
@@ -382,6 +391,12 @@ export function wireMenuBar(menuTitleEls: readonly HTMLElement[], ctx: MenuBarCo
       if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
         event.preventDefault();
         openFor(name, titleEl);
+      } else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && !event.defaultPrevented) {
+        // Menubar keys: Left and Right move focus between the titles, with wrap.
+        // An open menu claims these keys first (`onSwitchTopLevel`) and calls preventDefault.
+        event.preventDefault();
+        const step = event.key === "ArrowRight" ? 1 : -1;
+        menuTitleEls[(menuTitleEls.indexOf(titleEl) + step + menuTitleEls.length) % menuTitleEls.length].focus();
       }
     });
   }

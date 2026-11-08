@@ -176,7 +176,7 @@ function openUsagePopover(
 
   const account = appendUsageBlock(popover, "ACCOUNT", usage.captured_at, now);
   appendUsageRow(account, "5-hour", formatFiveHourPopoverRow(usage.five_hour, now), usage.five_hour?.used_pct ?? 0);
-  appendUsageRow(account, "Weekly", formatWeeklyPopoverRow(usage.seven_day, now), usage.seven_day?.used_pct ?? 0);
+  appendUsageRow(account, "Weekly", formatWeeklyPopoverRow(usage.seven_day, now), usage.seven_day && usage.seven_day.resets_at >= now ? usage.seven_day.used_pct : 0);
 
   if (usage.session) {
     const { session } = usage.session;
@@ -508,6 +508,10 @@ export interface OpenAgentPopoverOptions {
    * doesn't auto-hide and doesn't close on an outside click (both enforced
    * by the caller/this module respectively). Defaults to `false`. */
   pinned?: boolean;
+  /** True when the popover opened itself on a done transition. Like a pinned
+   * list, it must not claim an Esc typed outside it: Esc belongs to the agent
+   * in the terminal. Defaults to `false`. */
+  autoOpened?: boolean;
   /** Feeds each row's age label (spec §2) and the Needs You/Done ordering
    * (spec §3). Defaults to "always unknown" so callers that don't care
    * about ages (most tests) don't need to supply one. */
@@ -686,7 +690,7 @@ export function openAgentPopover(
       // central router's own Esc-closes-overlay rule is separately gated
       // for the same reason, via `openOverlay`'s `escapableFromOutside`
       // below.)
-      if (!focusInsidePopover && pinned) return;
+      if (!focusInsidePopover && (pinned || options.autoOpened)) return;
       event.preventDefault();
       dispose();
       return;
@@ -732,7 +736,7 @@ export function openAgentPopover(
   // *pinned* popover opts out of the central router's outside-Esc close and
   // asks to be reopened once whatever superseded it later closes.
   openOverlay(dispose, {
-    escapableFromOutside: !pinned,
+    escapableFromOutside: !pinned && !options.autoOpened,
     onSupersededReopen: pinned ? callbacks.onSupersededReopen : undefined,
   });
   return dispose;

@@ -18,7 +18,7 @@
 // and `Shift+Insert` (Paste) and `Shift+PgUp`/`PgDn`/`Home`/`End`
 // (scrollback), a brand-new bare-`Shift+<key>` class that *did* need one.
 
-export type MenuName = "Workspace" | "Tab" | "Pane" | "Agents" | "View" | "herdr" | "Help";
+export type MenuName = "Workspace" | "Tab" | "Pane" | "Agents" | "View" | "Run" | "herdr" | "Help";
 
 export interface KeyCombo {
   ctrl: boolean;
@@ -310,6 +310,29 @@ const NAMED_SHORTCUTS: readonly ShortcutAction[] = [
     label: "Scroll to Bottom",
     display: "Shift+End",
     combo: combo(false, true, false, "End"),
+  },
+  // Flutter run toolbar (`ui/runToolbar.ts`). There is no menu-bar menu: "Run" groups them in the cheat sheet.
+  // Ctrl+Shift+F5 keeps bare F5 for terminal programs. R and Shift+R match `flutter run`'s own r and R keys.
+  {
+    id: "run.play",
+    menu: "Run",
+    label: "Run",
+    display: "Ctrl+Shift+F5",
+    combo: combo(true, true, false, "F5"),
+  },
+  {
+    id: "run.hotReload",
+    menu: "Run",
+    label: "Hot Reload",
+    display: "Ctrl+Shift+R",
+    combo: combo(true, true, false, "KeyR"),
+  },
+  {
+    id: "run.hotRestart",
+    menu: "Run",
+    label: "Hot Restart",
+    display: "Alt+Shift+R",
+    combo: combo(false, true, true, "KeyR"),
   },
 ];
 
@@ -645,6 +668,7 @@ const CHEAT_SHEET_MENU_ORDER: readonly MenuName[] = [
   "Pane",
   "Agents",
   "View",
+  "Run",
   "herdr",
   "Help",
 ];

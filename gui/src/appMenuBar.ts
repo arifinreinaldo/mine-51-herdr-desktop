@@ -18,6 +18,7 @@ import {
 import { applySidebarVisibility } from "./appSidebarResize";
 import { applySourceControlVisibility } from "./appSourceControl";
 import { findInFileViewer } from "./appFiles";
+import { triggerRunAction } from "./appFlutterRun";
 import { focusSidebarForKeyboard } from "./appSidebarPanel";
 import { appState, persistSettings, tabMru } from "./appState";
 import { focusAgentSequence, openOrRefreshAgentPopover } from "./appStatusBar";
@@ -432,6 +433,9 @@ const SHORTCUT_HANDLERS: Readonly<Record<string, () => void>> = {
   "pane.scrollPageDown": () => void scrollFocusedPaneByPage("down"),
   "pane.scrollToTop": () => void scrollFocusedPaneToEdge("top"),
   "pane.scrollToBottom": () => void scrollFocusedPaneToEdge("bottom"),
+  "run.play": () => triggerRunAction("play"),
+  "run.hotReload": () => triggerRunAction("reload"),
+  "run.hotRestart": () => triggerRunAction("restart"),
   ...RANGE_SHORTCUT_HANDLERS,
 };
 

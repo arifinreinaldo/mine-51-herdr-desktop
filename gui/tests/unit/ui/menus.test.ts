@@ -12,6 +12,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { wireMenuBar, type MenuBarContext } from "../../../src/ui/menus";
 import { DARK_MODERN_COLORS } from "../../../src/themes/dark-modern";
+import { closeActiveOverlay } from "../../../src/ui/overlay";
 
 function fakeContext(): MenuBarContext {
   const overlayRoot = document.createElement("div");
@@ -206,5 +207,41 @@ describe("wireMenuBar: arrow-key switching between top-level menus (phase 1.5 ga
     dispatchKeydown("ArrowLeft");
     expect(document.querySelectorAll(".menu")).toHaveLength(1);
     expect(viewTitle.classList.contains("is-open")).toBe(true);
+  });
+});
+
+describe("wireMenuBar: menubar ARIA", () => {
+  beforeEach(() => {
+    closeActiveOverlay(); // an earlier test leaves a menu open, and its key listener would claim the arrows
+  });
+
+  it("titles are menu items whose aria-expanded follows the open menu", () => {
+    const [workspaceTitle, tabTitle] = makeTitleEls(["workspace", "tab"]);
+    wireMenuBar([workspaceTitle, tabTitle], fakeContext());
+    for (const el of [workspaceTitle, tabTitle]) {
+      expect(el.getAttribute("role")).toBe("menuitem");
+      expect(el.getAttribute("aria-haspopup")).toBe("menu");
+      expect(el.getAttribute("aria-expanded")).toBe("false");
+    }
+    workspaceTitle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(workspaceTitle.getAttribute("aria-expanded")).toBe("true");
+    tabTitle.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    expect(workspaceTitle.getAttribute("aria-expanded")).toBe("false");
+    expect(tabTitle.getAttribute("aria-expanded")).toBe("true");
+    tabTitle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(tabTitle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("Left and Right on a focused title move focus between titles, with wrap, and open nothing", () => {
+    const ctx = fakeContext();
+    const titles = makeTitleEls(["workspace", "tab", "help"]);
+    for (const el of titles) el.tabIndex = 0;
+    wireMenuBar(titles, ctx);
+    titles[0].focus();
+    titles[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(titles[2]);
+    titles[2].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(titles[0]);
+    expect(ctx.overlayRoot.querySelector(".menu")).toBeNull();
   });
 });

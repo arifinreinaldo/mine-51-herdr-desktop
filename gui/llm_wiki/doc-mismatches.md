@@ -15,6 +15,7 @@ The code is truth. Checked 2026-10-24.
 | `docs/git-mvp-spec.md:3` | "Status: plan" | Implemented. |
 | `docs/file-viewer-spec.md:3` | "Implementation plan: not written yet" | Implemented (commit `b5925979`, `src/appFiles.ts:183`). |
 | `docs/sqlite-inspector-plan.md:3` | "plan only" | Implemented (commit `66ff7e4c`, `src-tauri/src/android_db.rs:922`). |
+| `docs/mock/index.html` | The herdr theme has `block:'#f4b183'` | `src/themes/herdr.ts` `orange` is `#f0883e`. |
 
 ## Branch note
 The task brief named branch `feat/gui-phase1`. The working branch on 2026-10-24 is `feat/git-source-control`. The stash belongs to `feat/gui-phase1`.

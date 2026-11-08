@@ -39,3 +39,14 @@ describe("secondary text contrast (S7)", () => {
     }
   }
 });
+
+// UI/UX critique: in the herdr theme the blocked colour equalled the peach active-tab fill.
+describe("blocked colour vs the active tab fill", () => {
+  for (const theme of BUILT_IN_THEMES) {
+    it(`${theme.label}: herdr.status.blocked differs from tab.activeBackground by at least 1.3:1`, () => {
+      const blocked = resolveThemeColor("herdr.status.blocked", theme.colors, DARK_MODERN_COLORS)!;
+      const fill = resolveThemeColor("tab.activeBackground", theme.colors, DARK_MODERN_COLORS)!;
+      expect(contrastRatio(blocked, fill)).toBeGreaterThanOrEqual(1.3);
+    });
+  }
+});

@@ -211,6 +211,7 @@ export function renderTabStrip(
     tabEl.dataset.tabId = tab.tab_id;
     tabEl.setAttribute("role", "tab");
     tabEl.tabIndex = tab.focused ? 0 : -1;
+    tabEl.setAttribute("aria-selected", String(tab.focused));
     tabEl.addEventListener(
       "click",
       (event) => {
@@ -273,6 +274,14 @@ export function renderTabStrip(
         openTabContextMenu(overlayRoot, rect.left, rect.bottom, tab, labelEl, callbacks);
       } else if (event.key === "Enter") {
         callbacks.onFocusTab(tab.tab_id);
+      } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+        // Manual activation: arrows move focus along the strip, Enter selects.
+        const siblings = Array.from(listEl.querySelectorAll<HTMLElement>(".tab"));
+        const next = siblings[siblings.indexOf(tabEl) + (event.key === "ArrowRight" ? 1 : -1)];
+        if (next) {
+          event.preventDefault();
+          next.focus();
+        }
       }
     });
     // A left click returns focus to the terminal capture (spec §1 "Tab UI

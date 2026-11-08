@@ -320,3 +320,28 @@ describe("openMenu: arrow-key top-level menu switching (phase 1.5 gap #3)", () =
     expect(itemMenus()).toHaveLength(1); // still just the one menu, untouched
   });
 });
+
+describe("openMenu: ARIA roles and states", () => {
+  it("marks checkable, disabled and submenu items for assistive tech", () => {
+    const dispose = openMenu(root, { left: 0, top: 0 }, [
+      { id: "on", label: "On", checked: true },
+      { id: "off", label: "Off", checked: false },
+      { id: "plain", label: "Plain" },
+      { id: "nope", label: "Unavailable", disabled: true },
+      { id: "more", label: "More", submenu: [{ id: "child", label: "Child" }] },
+      { id: "color", label: "Color", swatchSubmenu: { colors: ["#111111"], currentIndex: 0, onPick: () => {} } },
+    ]);
+    const item = (id: string) => root.querySelector<HTMLElement>(`[data-item-id="${id}"]`)!;
+    expect(item("on").getAttribute("role")).toBe("menuitemcheckbox");
+    expect(item("on").getAttribute("aria-checked")).toBe("true");
+    expect(item("off").getAttribute("role")).toBe("menuitemcheckbox");
+    expect(item("off").getAttribute("aria-checked")).toBe("false");
+    expect(item("plain").getAttribute("role")).toBe("menuitem");
+    expect(item("plain").hasAttribute("aria-checked")).toBe(false);
+    expect(item("plain").hasAttribute("aria-disabled")).toBe(false);
+    expect(item("nope").getAttribute("aria-disabled")).toBe("true");
+    expect(item("more").getAttribute("aria-haspopup")).toBe("menu");
+    expect(item("color").hasAttribute("aria-haspopup")).toBe(false);
+    dispose();
+  });
+});

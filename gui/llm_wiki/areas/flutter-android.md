@@ -34,5 +34,6 @@ In a Flutter or native Android workspace, a toolbar lets the user pick a device 
 - `resolve_adb` (`flutter.rs`) also tries `MAC_TOOL_DIRS` last on macOS (`resolve_adb_in` is the test seam). `resolve_flutter` checks `PATH`, then `flutter_extra_dirs`: the Homebrew folders, `~/flutter/bin`, `~/development/flutter/bin`, `~/fvm/default/bin` (`resolve_flutter_in` is the test seam). Both extras are macOS only.
 - Markers: [[shortcut-markers]] (`flutter.rs:359`, `mirror_tools.rs:298`, `mirror_tools.rs:434`).
 - Known limit: the log text of scrcpy is not a contract. A scrcpy update can change the lines that `install_log_event` parses.
+- Keys: Ctrl+Shift+F5, Ctrl+Shift+R and Alt+Shift+R press Run, Hot Reload and Hot Restart. `triggerRunAction` calls `RunToolbar.trigger`, which clicks the button only when it shows and is enabled.
 - Tests: `tests/unit/flutterRunState.test.ts`, `mirrorToolsParams.test.ts`, `screenshotFormat.test.ts`, `recordFormat.test.ts`.
 - Specs: `docs/flutter-run-spec.md`, `docs/mirror-toolbar-spec.md`, `docs/screenshot-spec.md`, `docs/record-spec.md`.
