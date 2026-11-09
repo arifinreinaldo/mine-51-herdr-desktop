@@ -412,19 +412,36 @@ fn match_flutter_dir(dir: &Path) -> Option<FlutterProject> {
     })
 }
 
-/// A native Android project: `settings.gradle(.kts)` beside
-/// `app/src/main/AndroidManifest.xml`. The name is the folder name.
-// shortcut: only the `app` module is checked; read settings.gradle's includes if other module names show up.
+/// Whether any module folder of `dir` (`app`, `androidApp`, ...) holds
+/// `src/main/AndroidManifest.xml`.
+fn has_module_manifest(dir: &Path) -> bool {
+    let is_manifest = |module: &Path| {
+        module
+            .join("src")
+            .join("main")
+            .join("AndroidManifest.xml")
+            .is_file()
+    };
+    is_manifest(&dir.join("app"))
+        || std::fs::read_dir(dir).is_ok_and(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    !name.starts_with('.') && !SKIPPED_SUBFOLDERS.contains(&name.as_str())
+                })
+                .any(|e| is_manifest(&e.path()))
+        })
+}
+
+/// A native Android project: `settings.gradle(.kts)` beside a module with
+/// `src/main/AndroidManifest.xml`. The name is the folder name.
 fn match_android_dir(dir: &Path) -> Option<FlutterProject> {
     let settings = ["settings.gradle", "settings.gradle.kts"]
         .iter()
         .any(|f| dir.join(f).is_file());
-    let manifest = dir
-        .join("app")
-        .join("src")
-        .join("main")
-        .join("AndroidManifest.xml");
-    if !settings || !manifest.is_file() {
+    if !settings || !has_module_manifest(dir) {
         return None;
     }
     Some(FlutterProject {
@@ -891,6 +908,18 @@ mod tests {
         let root = scratch("android-groovy");
         write_android(&root, "settings.gradle");
         assert_eq!(find_run_project(&root).unwrap().kind, ProjectKind::Android);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_android_module_not_named_app_also_matches() {
+        let root = scratch("android-module");
+        let main = root.join("androidApp").join("src").join("main");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::write(main.join("AndroidManifest.xml"), b"<manifest/>").unwrap();
+        std::fs::write(root.join("settings.gradle.kts"), b"").unwrap();
+        let found = find_run_project(&root).unwrap();
+        assert_eq!(found.kind, ProjectKind::Android);
         let _ = std::fs::remove_dir_all(&root);
     }
 

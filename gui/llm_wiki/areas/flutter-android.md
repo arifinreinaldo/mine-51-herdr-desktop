@@ -5,7 +5,7 @@ In a Flutter or native Android workspace, a toolbar lets the user pick a device 
 
 ## Key files
 - `src-tauri/src/flutter.rs` - `flutter_project` (line 416), `android_devices` (235, adb), `flutter_devices` (311), `flutter_flavors` (581), `flutter_run_alive` (592). `parse_flavors` (line 463). `is_valid_device_id` (line 65).
-- `src-tauri/src/flutter.rs:357-360` - `match_android_dir` detects a native Android project.
+- `src-tauri/src/flutter.rs:415-453` - `match_android_dir` detects a native Android project: `settings.gradle(.kts)` plus `src/main/AndroidManifest.xml` in `app` or in any other module folder (`has_module_manifest`).
 - `src/flutter/flutterApi.ts` - all typed wrappers, including mirror, screenshot, record and database calls. `src/flutter/runState.ts` - `onPlay`, `onStop`, `reconcile` (lines 17-29), `isValidFlavor` (line 42).
 - `src/appFlutterRun.ts` - `wireFlutterRun` (line 614). `src/ui/runToolbar.ts` - `createRunToolbar` (line 63). The Explorer button (`run-btn--explorer`, "Browse device files") opens [[device-explorer]]. `src/ui/flavorPicker.ts` - flavor menu.
 - `src-tauri/src/android.rs` - `android_mirror` (line 125, starts scrcpy), `start_scrcpy` (81, takes an `on_spawn` callback), `install_scrcpy` (144), `android_screenshot` (315), `screenshot_copy` (339), `screenshot_save` (352).

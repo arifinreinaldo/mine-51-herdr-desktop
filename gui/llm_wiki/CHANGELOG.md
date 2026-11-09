@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-09 - native Android modules not named app
+- `flutter.rs` `has_module_manifest`: `match_android_dir` accepts any module folder with `src/main/AndroidManifest.xml`, not only `app`. A Compose Multiplatform project with `androidApp` now gets the Android toolbar. Test `an_android_module_not_named_app_also_matches`.
+
 ## 2026-11-08 - web-page consent for Ctrl+click
 - `open_local_path` (`commands.rs`) takes `confirmed: Option<bool>`. A real `.html` or `.htm` file fails the allowlist, so `needs_consent` returns the `needs_consent` error code with the file name. It opens only when `confirmed` is true. Other blocked types still return `unsafe_path`.
 - `is_safe_local_file` and `needs_consent` share `local_file_ok`. The drive-letter, stream and symlink checks apply to both. Constants `ALLOWED` and `CONSENT` hold the extensions. Windows test `web_pages_ask_for_consent_and_other_types_never_do`.
