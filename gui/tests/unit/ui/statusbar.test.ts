@@ -266,6 +266,64 @@ describe("renderUsageStatusItem: ctx item", () => {
   });
 });
 
+function withModel(kind: SessionMatch["kind"], displayName: string | null): Partial<UsageState> {
+  const overrides = withSession(kind, 10);
+  overrides.session!.session.model.display_name = displayName;
+  return overrides;
+}
+
+describe("renderUsageStatusItem: model badge", () => {
+  it("shows the focused pane's model as the item's first element", () => {
+    renderUsageStatusItem(el, overlayRoot, usage(withModel("pane", "Sonnet 5.5")), NOW);
+    const first = el.firstElementChild;
+    expect(first?.classList.contains("usage-model")).toBe(true);
+    expect(first?.textContent).toBe("Sonnet 5.5");
+  });
+
+  it("shows for a cwd match, trimmed", () => {
+    renderUsageStatusItem(el, overlayRoot, usage(withModel("cwd", "  Opus 5.5 ")), NOW);
+    expect(el.querySelector(".usage-model")?.textContent).toBe("Opus 5.5");
+  });
+
+  it("still shows while the 5h window reads reset", () => {
+    renderUsageStatusItem(
+      el,
+      overlayRoot,
+      usage({ ...withModel("pane", "Opus 5.5"), five_hour: { used_pct: 40, resets_at: NOW - 1 } }),
+      NOW,
+    );
+    expect(el.firstElementChild?.textContent).toBe("Opus 5.5");
+    expect(el.textContent).toContain("5h — reset");
+  });
+
+  it("is hidden for a latest match, a null, empty or blank name, and no session", () => {
+    for (const overrides of [
+      withModel("latest", "Opus 5.5"),
+      withModel("pane", null),
+      withModel("pane", ""),
+      withModel("pane", "   "),
+      { session: null },
+      {},
+    ]) {
+      renderUsageStatusItem(el, overlayRoot, usage(overrides), NOW);
+      expect(el.querySelector(".usage-model")).toBeNull();
+    }
+  });
+
+  it("is hidden while usage data is missing or unreadable", () => {
+    renderUsageStatusItem(el, overlayRoot, usage({ ...withModel("pane", "Opus 5.5"), status: "missing" }), NOW);
+    expect(el.querySelector(".usage-model")).toBeNull();
+    renderUsageStatusItem(el, overlayRoot, usage({ ...withModel("pane", "Opus 5.5"), status: "invalid" }), NOW);
+    expect(el.querySelector(".usage-model")).toBeNull();
+  });
+
+  it("drops the badge when the session goes away on a re-render", () => {
+    renderUsageStatusItem(el, overlayRoot, usage(withModel("pane", "Opus 5.5")), NOW);
+    renderUsageStatusItem(el, overlayRoot, usage(), NOW + 30);
+    expect(el.querySelector(".usage-model")).toBeNull();
+  });
+});
+
 describe("renderUsageStatusItem: popover blocks", () => {
   function openBlocks(overrides: Partial<UsageState>): HTMLElement[] {
     renderUsageStatusItem(el, overlayRoot, usage(overrides), NOW);

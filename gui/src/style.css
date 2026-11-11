@@ -967,6 +967,15 @@ body.has-workspace-colors #tab-strip {
   background: var(--statusBarItem-errorBackground);
 }
 
+/* currentColor tint: stays readable on the amber/red is-warning/is-danger item. */
+.usage-model {
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
 .usage-ctx {
   margin-left: 6px;
   padding: 0 4px;

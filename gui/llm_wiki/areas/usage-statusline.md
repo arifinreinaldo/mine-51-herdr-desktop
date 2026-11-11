@@ -35,6 +35,7 @@ The status bar shows Claude plan usage and the context use of the focused pane. 
 - The cwd compare changes `\` to `/`, strips the trailing `/`, and lowercases. This can match falsely on case-sensitive paths.
 - `renderUsageBarNow` passes `{ ...usage, session }` to `renderUsageStatusItem`. `wireUsageRefresh` re-renders when `focused_pane_id` changes.
 - The ctx rule: `renderUsageStatusItem` shows `ctx NN%` for kinds `pane` and `cwd`. It hides ctx for kind `latest`, and when `context.used_pct` is `null`.
+- The model rule: `renderUsageStatusItem` shows `model.display_name` (for example `Opus 5.5`) as a `.usage-model` badge. The badge is the first child, left of the pulse icon. It uses the same kinds as ctx. It hides when the trimmed name is empty.
 - The popover has an `ACCOUNT` block with the 5-hour and Weekly rows only. A second block shows Context, Cost and Lines. Its title is `THIS PANE` (kind `pane`) or `LAST ACTIVE SESSION`.
 - Each block shows `as of Nm ago` from its own `captured_at`. The popover does not dim old blocks.
 
@@ -47,7 +48,7 @@ The status bar shows Claude plan usage and the context use of the focused pane. 
 - The install runs only after an explicit click.
 - The tap script has no version marker. The `Update tap` button is the only way to refresh an installed script.
 - `HERDR_PANE_ID` can be stale after `pane.move` or a herdr restart. The mapping then falls back to cwd or latest. A pane id reuse can show an old session (under 24 h).
-- If the legacy file is missing or invalid, `renderUsageStatusItem` shows no ctx and no popover.
+- If the legacy file is missing or invalid, `renderUsageStatusItem` shows no ctx, no model badge and no popover.
 - macOS usage setup is not complete. Parts sit in the stash ([[macos-port]]).
 
 ## Deferred

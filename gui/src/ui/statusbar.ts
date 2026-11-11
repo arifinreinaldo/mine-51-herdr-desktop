@@ -325,6 +325,17 @@ export function renderUsageStatusItem(
     return;
   }
 
+  // `latest` is some other pane's session: its model and context would mislead here.
+  const focusedSession = usage.session && usage.session.kind !== "latest" ? usage.session.session : null;
+
+  const modelName = focusedSession?.model.display_name?.trim();
+  if (modelName) {
+    const model = document.createElement("span");
+    model.className = "usage-model";
+    model.textContent = modelName;
+    el.appendChild(model);
+  }
+
   const icon = document.createElement("i");
   icon.className = "codicon codicon-pulse";
   el.appendChild(icon);
@@ -338,8 +349,7 @@ export function renderUsageStatusItem(
     if (label) el.append(label);
   }
 
-  // `latest` is some other pane's session: its context would mislead here.
-  const ctxPct = usage.session && usage.session.kind !== "latest" ? usage.session.session.context.used_pct : null;
+  const ctxPct = focusedSession?.context.used_pct ?? null;
   if (ctxPct !== null) {
     const ctx = document.createElement("span");
     ctx.className = `usage-ctx is-${usageColor(ctxPct)}`;
