@@ -23,4 +23,5 @@ The frontend draws the herdr grid on a canvas. Theme colors set the 16 ANSI colo
 - The herdr blocked colour is `#f0883e` (`src/themes/herdr.ts` `orange`). `contrast.test.ts` keeps blocked at 1.3:1 or more against `tab.activeBackground`.
 - Wire color packing is fixed. Index order follows the wire format (`src/colors.ts:11-17`).
 - A hidden window pauses painting (`src/main.ts:165-168`).
+- The cursor blinks by default (DECSCUSR 0, `cursorShapeFromParam` in `src/decoder.ts`). Claude Code draws its prompt caret with the real cursor and sets no shape, so its caret blinks. `setGrid` calls `restartCursorBlink` when the cursor moves or changes visibility. The cursor then stays on for a full 530 ms phase, so an arrow key never hides it. Test: `tests/unit/render/cursorBlink.test.ts`.
 - Tests: `tests/unit/colors.test.ts`, `tests/unit/golden.test.ts`, `tests/golden/`.

@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-11 - cursor stays visible while it moves
+- `TerminalRenderer.setGrid` restarts the blink in its "on" phase when the cursor moves (`restartCursorBlink`, `src/render/renderer.ts`). Before, a Right arrow in a Claude Code prompt could land in the "off" phase and hide the caret for up to 530 ms. Page: `areas/render-themes.md`.
+
 ## 2026-11-09 - native Android modules not named app
 - `flutter.rs` `has_module_manifest`: `match_android_dir` accepts any module folder with `src/main/AndroidManifest.xml`, not only `app`. A Compose Multiplatform project with `androidApp` now gets the Android toolbar. Test `an_android_module_not_named_app_also_matches`.
 

@@ -187,9 +187,10 @@ export class TerminalRenderer {
   private namedPalette: string[] = [];
   /** P1 #15 "Rendering": whether a blinking cursor is in its "on" phase
    * right now. Irrelevant (never consulted) for a non-blinking cursor --
-   * `paintCursor` only reads it when `grid.cursor.blink` is true, so this
-   * never needs resetting except for a crisper first paint on focus. */
+   * `paintCursor` only reads it when `grid.cursor.blink` is true.
+   * `restartCursorBlink` sets it back to "on". */
   private cursorBlinkOn = true;
+  private cursorBlinkTimer = 0;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -212,7 +213,18 @@ export class TerminalRenderer {
     // instance, created once in `main.ts`), same as this codebase's other
     // persistent intervals (the 30s age refresh, the 2s usage poll) -- there
     // is nothing to tear down since the renderer itself never is.
-    window.setInterval(() => this.tickCursorBlink(), CURSOR_BLINK_INTERVAL_MS);
+    this.restartCursorBlink();
+  }
+
+  /** Shows the cursor now and starts a full "on" phase. Real terminals do
+   * this on each cursor move, so a moving cursor never lands in an "off"
+   * phase. Claude Code moves the real cursor through its prompt and sets no
+   * DECSCUSR shape, so without this the caret hides for up to 530ms after
+   * an arrow key. */
+  private restartCursorBlink(): void {
+    this.cursorBlinkOn = true;
+    window.clearInterval(this.cursorBlinkTimer);
+    this.cursorBlinkTimer = window.setInterval(() => this.tickCursorBlink(), CURSOR_BLINK_INTERVAL_MS);
   }
 
   /** Toggles the blink phase and repaints the cursor's row, but only when a
@@ -251,7 +263,7 @@ export class TerminalRenderer {
     this.focused = focused;
     // P1 #15: start every focus gain from the "on" phase, so the cursor is
     // never invisible the instant focus returns.
-    if (focused) this.cursorBlinkOn = true;
+    if (focused) this.restartCursorBlink();
     if (this.grid?.cursor) this.markDirty([this.grid.cursor.y]);
   }
 
@@ -289,6 +301,13 @@ export class TerminalRenderer {
       this.grid !== null && (grid.width !== this.grid.width || grid.height !== this.grid.height);
     const previousCursor = this.grid?.cursor ?? null;
     this.grid = grid;
+    const cursor = grid.cursor;
+    if (
+      cursor &&
+      (cursor.x !== previousCursor?.x || cursor.y !== previousCursor?.y || cursor.visible !== previousCursor?.visible)
+    ) {
+      this.restartCursorBlink();
+    }
     if (dimensionsChanged) {
       this.markDirty("all");
       return;
