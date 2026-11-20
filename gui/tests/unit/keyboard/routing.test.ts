@@ -188,6 +188,22 @@ describe("routeKeydown", () => {
     expect(handlers.terminalKeys).toEqual([]);
   });
 
+  it("Alt+Left with terminal focus switches tab and is not sent to the terminal", () => {
+    const capture = fakeElement();
+    const handlers = fakeHandlers();
+    routeKeydown(fakeEvent({ altKey: true, code: "ArrowLeft" }), capture, capture, handlers);
+    expect(handlers.shortcuts).toEqual(["tab.previous"]);
+    expect(handlers.terminalKeys).toEqual([]);
+  });
+
+  it("Alt+Arrow from another widget (tree, select) is not claimed", () => {
+    const capture = fakeElement();
+    const other = fakeElement();
+    const handlers = fakeHandlers();
+    routeKeydown(fakeEvent({ altKey: true, code: "ArrowDown" }), capture, other, handlers);
+    expect(handlers.shortcuts).toEqual([]);
+  });
+
   it("step 3: plain Ctrl+K still reaches the terminal, unclaimed", () => {
     const capture = fakeElement();
     const handlers = fakeHandlers();

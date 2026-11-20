@@ -68,15 +68,17 @@ const NAMED_SHORTCUTS: readonly ShortcutAction[] = [
     id: "workspace.next",
     menu: "Workspace",
     label: "Next Workspace",
-    display: "Ctrl+Shift+↓",
+    display: "Ctrl+Shift+↓ / Alt+↓",
     combo: combo(true, true, false, "ArrowDown"),
+    altCombos: [combo(false, false, true, "ArrowDown")],
   },
   {
     id: "workspace.previous",
     menu: "Workspace",
     label: "Previous Workspace",
-    display: "Ctrl+Shift+↑",
+    display: "Ctrl+Shift+↑ / Alt+↑",
     combo: combo(true, true, false, "ArrowUp"),
+    altCombos: [combo(false, false, true, "ArrowUp")],
   },
   {
     id: "tab.new",
@@ -104,15 +106,17 @@ const NAMED_SHORTCUTS: readonly ShortcutAction[] = [
     id: "tab.next",
     menu: "Tab",
     label: "Next Tab",
-    display: "Ctrl+Tab",
+    display: "Ctrl+Tab / Alt+→",
     combo: combo(true, false, false, "Tab"),
+    altCombos: [combo(false, false, true, "ArrowRight")],
   },
   {
     id: "tab.previous",
     menu: "Tab",
     label: "Previous Tab",
-    display: "Ctrl+Shift+Tab",
+    display: "Ctrl+Shift+Tab / Alt+←",
     combo: combo(true, true, false, "Tab"),
+    altCombos: [combo(false, false, true, "ArrowLeft")],
   },
   {
     id: "tab.moveLeft",
@@ -562,12 +566,20 @@ export function findShortcut(
 
 const LETTER_CODE = /^Key[A-Z]$/;
 const ALLOWED_CTRL_ONLY_CODES = new Set(["Tab", "Equal", "Minus", "Digit0", "Comma", "Backquote"]);
-/** The keyboard shortcuts feature's two new alt-only classes: `Alt+1..9`
- * (tab/workspace "focus by index") and `Alt+\`` (toggle previous tab).
+/** The alt-only classes: `Alt+1..9` (tab "focus by index"), `Alt+\``
+ * (toggle previous tab) and `Alt+Arrow` (tab/workspace switch; the router
+ * claims it only while the terminal has focus).
  * `Ctrl+Shift+1..9`, `Ctrl+Shift+E`, and `Ctrl+Shift+/` need no addition
  * here -- they already fall under the pre-existing `Ctrl+Shift+*` class
  * below. */
-const ALLOWED_ALT_ONLY_CODES = new Set<string>([...DIGIT_CODES, "Backquote"]);
+const ALLOWED_ALT_ONLY_CODES = new Set<string>([
+  ...DIGIT_CODES,
+  "Backquote",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+]);
 /** The terminal-parity spec's one new bare-`Shift+<key>` class: Paste
  * (`Shift+Insert`) and the four scrollback keys (`Shift+PgUp`/`PgDn`/
  * `Home`/`End`). `Ctrl+Shift+C`/`F`/`K`/`Space` need no addition here --
@@ -588,7 +600,7 @@ function isAllowedCombo(c: KeyCombo, action: ShortcutAction): boolean {
   if (ctrl && shift && !alt) return true; // Ctrl+Shift+* (incl. Ctrl+Shift+Tab, +1..9, +E, +/)
   if (alt && shift && !ctrl) return true; // Alt+Shift+*
   if (ctrl && !shift && !alt && ALLOWED_CTRL_ONLY_CODES.has(code)) return true; // Ctrl+Tab/=/-/0/,
-  if (alt && !shift && !ctrl && ALLOWED_ALT_ONLY_CODES.has(code)) return true; // Alt+1..9, Alt+`
+  if (alt && !shift && !ctrl && ALLOWED_ALT_ONLY_CODES.has(code)) return true; // Alt+1..9, Alt+`, Alt+Arrow
   if (shift && !ctrl && !alt && ALLOWED_SHIFT_ONLY_CODES.has(code)) return true; // Shift+Insert/PgUp/PgDn/Home/End
   if (!ctrl && !shift && !alt && (code === "F2" || code === "Enter") && action.requiresTabFocus) return true; // F2 (Enter on macOS), tab focus only
   return false;

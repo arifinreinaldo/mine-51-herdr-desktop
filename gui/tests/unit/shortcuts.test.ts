@@ -36,9 +36,11 @@ describe("SHORTCUTS", () => {
   it("has no duplicate key combos", () => {
     const seen = new Set<string>();
     for (const action of SHORTCUTS) {
-      const key = `${action.combo.ctrl}-${action.combo.shift}-${action.combo.alt}-${action.combo.code}`;
-      expect(seen.has(key), `duplicate combo for ${action.id}: ${key}`).toBe(false);
-      seen.add(key);
+      for (const c of [action.combo, ...(action.altCombos ?? [])]) {
+        const key = `${c.ctrl}-${c.shift}-${c.alt}-${c.meta ?? false}-${c.code}`;
+        expect(seen.has(key), `duplicate combo for ${action.id}: ${key}`).toBe(false);
+        seen.add(key);
+      }
     }
   });
 
@@ -141,6 +143,16 @@ describe("findShortcut: keyboard shortcuts feature", () => {
     expect(
       findShortcut({ ctrlKey: false, shiftKey: false, altKey: true, code: "Backquote" }, false)?.id,
     ).toBe("tab.togglePrevious");
+  });
+
+  it("Alt+Left/Right switch tabs, Alt+Up/Down switch workspaces", () => {
+    const alt = (code: string) => findShortcut({ ctrlKey: false, shiftKey: false, altKey: true, code }, false)?.id;
+    expect(alt("ArrowLeft")).toBe("tab.previous");
+    expect(alt("ArrowRight")).toBe("tab.next");
+    expect(alt("ArrowUp")).toBe("workspace.previous");
+    expect(alt("ArrowDown")).toBe("workspace.next");
+    // Alt+Shift+Arrow stays unclaimed.
+    expect(findShortcut({ ctrlKey: false, shiftKey: true, altKey: true, code: "ArrowLeft" }, false)).toBeUndefined();
   });
 
   it("Ctrl+Shift+E resolves to view.focusSidebar", () => {

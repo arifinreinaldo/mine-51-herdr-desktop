@@ -111,7 +111,10 @@ export function routeKeydown(
   const found = findShortcut(event, hasTabFocus);
   const terminalOnly =
     found && (TERMINAL_ONLY_IDS.has(found.id) || (IS_MAC && TERMINAL_ONLY_MAC_IDS.has(found.id)));
-  const shortcut = terminalOnly && activeElement !== keyboardCaptureEl ? undefined : found;
+  // Plain Alt+Arrow (tab/workspace switch) is claimed only from the terminal: tree, menu, list and
+  // <select> widgets use the same keys, and their own handlers would double-fire.
+  const altArrow = event.altKey && !event.ctrlKey && !event.shiftKey && event.code.startsWith("Arrow");
+  const shortcut = (terminalOnly || altArrow) && activeElement !== keyboardCaptureEl ? undefined : found;
   if (shortcut) {
     event.preventDefault();
     // `closest?.`: the unit tests pass plain objects, not DOM elements.
