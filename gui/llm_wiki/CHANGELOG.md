@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-20 - Alt+arrow tab and workspace shortcuts
+- Alt+Left/Right switch tabs and Alt+Up/Down switch workspaces on Windows (`altCombos` in `src/shortcuts.ts`, arrows added to `ALLOWED_ALT_ONLY_CODES`). `routeKeydown` claims them only while the terminal has focus. Tests: `shortcuts.test.ts`, `keyboard/routing.test.ts`. Page: `areas/keyboard.md`.
+
 ## 2026-11-11 - cursor stays visible while it moves
 - `TerminalRenderer.setGrid` restarts the blink in its "on" phase when the cursor moves (`restartCursorBlink`, `src/render/renderer.ts`). Before, a Right arrow in a Claude Code prompt could land in the "off" phase and hide the caret for up to 530 ms. Page: `areas/render-themes.md`.
 
