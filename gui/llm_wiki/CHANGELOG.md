@@ -2,6 +2,10 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-23 - usage reconcile fixes
+- Fixed the shared-command test (it no longer inherits `HERDR_PANE_ID`). `parse_session_json` now rejects a non-object `/session`. Burn samples append only when `pct` changes. The burn ETA is `null` when it is past or the data is stale. Page: `areas/usage-statusline.md`.
+- Dropped branch B's flat v2 schema and its "Last session" block. The per-session file keeps one contract.
+
 ## 2026-11-23 - usage reconcile
 - Merged `perf/gui-optimize` into the per-session usage work. The per-session file contract is `{captured_at, pane_id, session}` (tap `herdr-usage-tap v3`). From the other branch: `5h no data`, stale dim, burn-rate ETA, `Today` cost row (sums `cost.usd` by `captured_at`) and the `scriptOutdated` wizard flag. Page: `areas/usage-statusline.md`.
 

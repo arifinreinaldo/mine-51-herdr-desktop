@@ -20,7 +20,7 @@ The status bar shows Claude plan usage and the context use of the focused pane. 
 - Contract: `{"captured_at":<epoch s>,"pane_id":"<HERDR_PANE_ID>"|null,"session":<raw stdin object>}`.
 - The id must match `^[A-Za-z0-9_-]{1,128}$`. Otherwise the tap writes no session file. `is_valid_session_id` applies the same rule.
 - The pane rule is `^[A-Za-z0-9:_-]{1,128}$`. Otherwise `pane_id` is `null`.
-- The tap writes a temporary file `<id>.json.tmp-<pid>`, then renames it. The ps1 tap writes only when stdin is a JSON object .
+- The tap writes a temporary file `<id>.json.tmp-<pid>`, then renames it. The ps1 tap writes only when stdin is a JSON object.
 - The tap writes the session file before the legacy file. The poll loop wakes only on the legacy file mtime.
 - `parse_session_json` uses `serde_json::Value` pointer lookups. A missing or retyped field becomes `None`. A non-object root gives `None`.
 - Raw field names come from https://code.claude.com/docs/en/statusline: `cwd` (else `workspace.current_dir`), `model.display_name`, `effort.level`, `fast_mode`, `context_window.used_percentage`, `context_window.context_window_size`, `cost.total_*`.
@@ -61,7 +61,14 @@ The status bar shows Claude plan usage and the context use of the focused pane. 
 - The `Update tap` button is the only way to refresh an installed script. It shows only when the marker is missing.
 - `HERDR_PANE_ID` can be stale after `pane.move` or a herdr restart. The mapping then falls back to cwd or latest. A pane id reuse can show an old session (under 24 h).
 - If the legacy file is missing or invalid, `renderUsageStatusItem` shows no ctx, no model badge and no popover.
-- macOS usage setup is not complete. Parts sit in the stash ([[macos-port]]).
+- `parse_session_json` returns `None` when `/session` is not a JSON object. A flat v2 file therefore never parses as an empty session.
+- `Today` adds each session's cumulative cost when its last capture is today. A session begun yesterday counts in full.
+
+## Privacy
+- Each per-session file holds the raw `statusLine` JSON. It includes `cwd`, `transcript_path` and the workspace dirs.
+- The file stays in `~/.claude`. Cowbell never sends it over the wire.
+- `usage.rs` extracts only the whitelisted fields.
+- Never put `~/.claude` under git.
 
 ## Deferred
 - P3 is not built: prompt cache (warm, ttl, hit ratio) and `pr` (number, url, review state). The raw stdin already holds them. Only `usage.rs` and the frontend need changes.

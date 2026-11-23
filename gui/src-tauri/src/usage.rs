@@ -197,10 +197,11 @@ fn str_at(v: &Value, ptr: &str) -> Option<String> {
 
 /// Parses one session file: `{"captured_at":N,"pane_id":"..."|null,"session":{raw}}`.
 /// Uses pointer lookups, so a retyped or missing field becomes `None` and never
-/// rejects the file. Malformed JSON or a non-object root gives `None`.
+/// rejects the file. Malformed JSON, a non-object root or a non-object
+/// `session` (such as a flat v2 file) gives `None`.
 pub fn parse_session_json(session_id: &str, json: &str) -> Option<SessionUsage> {
     let root: Value = serde_json::from_str(json).ok()?;
-    if !root.is_object() {
+    if !root.is_object() || !root.get("session").is_some_and(Value::is_object) {
         return None;
     }
     Some(SessionUsage {
@@ -444,8 +445,19 @@ mod tests {
     }
 
     #[test]
+    fn a_flat_v2_file_or_missing_session_is_rejected() {
+        for json in [
+            r#"{"captured_at":1,"model":"Opus","cost_usd":1.0}"#,
+            "{}",
+            r#"{"session":null}"#,
+        ] {
+            assert_eq!(parse_session_json("x", json), None, "{json}");
+        }
+    }
+
+    #[test]
     fn a_session_with_every_field_missing_parses_to_nones() {
-        for json in ["{}", r#"{"session":{}}"#, r#"{"session":null}"#] {
+        for json in [r#"{"session":{}}"#, r#"{"session":{"model":5}}"#] {
             let s = parse_session_json("x", json).unwrap();
             assert_eq!(
                 s,

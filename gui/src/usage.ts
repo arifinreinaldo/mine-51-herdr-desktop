@@ -272,13 +272,14 @@ export const USAGE_SAMPLE_LIMIT = 12;
 /** The samples must span at least this long (seconds) before a rate counts. */
 export const USAGE_ETA_MIN_SPAN_SECONDS = 120;
 
-/** Appends a sample and returns the new list. A repeated or older `t` is
- * ignored; a lower `pct` than the last means the window reset, so the list
+/** Appends a sample and returns the new list. A repeated or older `t`, or an
+ * unchanged `pct`, is ignored; a lower `pct` than the last means the window reset, so the list
  * restarts from this sample. Keeps the newest `USAGE_SAMPLE_LIMIT`. */
 export function addUsageSample(samples: UsageSample[], t: number, pct: number): UsageSample[] {
   const last = samples[samples.length - 1];
   if (last && t <= last.t) return samples;
   if (last && pct < last.pct) return [{ t, pct }];
+  if (last && pct === last.pct) return samples; // unchanged pct adds no information
   return [...samples, { t, pct }].slice(-USAGE_SAMPLE_LIMIT);
 }
 
@@ -292,7 +293,7 @@ export function formatBurnEta(samples: UsageSample[], window: UsageWindow, now: 
   const rate = (last.pct - first.pct) / (last.t - first.t); // percent per second
   if (rate <= 0 || last.pct >= 100) return null;
   const hitsAt = last.t + (100 - last.pct) / rate;
-  if (hitsAt >= window.resets_at) return null;
+  if (hitsAt >= window.resets_at || hitsAt <= now || isUsageStale(last.t, now)) return null;
   return `at this pace: 100% in ~${formatDuration(hitsAt - now)}`;
 }
 

@@ -165,4 +165,25 @@ describe("burn-rate ETA", () => {
     expect(samples).toHaveLength(12);
     expect(samples[0].t).toBe(NOW + 8);
   });
+
+  it("ignores a sample whose pct did not change", () => {
+    let samples = addUsageSample([], NOW, 5);
+    samples = addUsageSample(samples, NOW + 60, 5);
+    expect(samples).toEqual([{ t: NOW, pct: 5 }]);
+    samples = addUsageSample(samples, NOW + 120, 6);
+    expect(samples).toHaveLength(2);
+  });
+
+  it("returns no ETA when the projected hit time is already past", () => {
+    const samples = [{ t: NOW - 600, pct: 10 }, { t: NOW - 300, pct: 50 }];
+    const window = { used_pct: 50, resets_at: NOW + 5 * 3600 };
+    // 40% per 300 s: 100% lands at NOW + 75.
+    expect(formatBurnEta(samples, window, NOW + 80)).toBeNull();
+  });
+
+  it("returns no ETA from stale samples", () => {
+    const samples = [{ t: NOW - 7200, pct: 10 }, { t: NOW - 3600, pct: 20 }];
+    const window = { used_pct: 20, resets_at: NOW + 5 * 3600 };
+    expect(formatBurnEta(samples, window, NOW)).toBeNull();
+  });
 });

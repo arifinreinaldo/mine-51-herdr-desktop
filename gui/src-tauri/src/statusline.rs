@@ -1280,11 +1280,14 @@ mod tests {
         let out = home.join("fallback.out");
         let fallback = format!("cat > {}", out.display());
         let command = shared_command(Some(&fallback));
-        let run = |input: &str| {
-            let mut child = Command::new("sh")
-                .arg("-c")
-                .arg(&command)
-                .env("HOME", &home)
+        let run_with = |input: &str, pane: Option<&str>| {
+            let mut cmd = Command::new("sh");
+            cmd.arg("-c").arg(&command).env("HOME", &home);
+            match pane {
+                Some(p) => cmd.env("HERDR_PANE_ID", p),
+                None => cmd.env_remove("HERDR_PANE_ID"),
+            };
+            let mut child = cmd
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .spawn()
@@ -1297,6 +1300,7 @@ mod tests {
                 .unwrap();
             child.wait_with_output().unwrap()
         };
+        let run = |input: &str| run_with(input, None);
 
         // No script on this machine: the previous command runs, with the same stdin.
         run("{\"x\":1}");
@@ -1338,6 +1342,12 @@ mod tests {
         assert_eq!(session["session"]["model"]["display_name"], "Opus");
         assert!(session["pane_id"].is_null(), "{session}");
         assert!(session["captured_at"].is_number());
+
+        // With HERDR_PANE_ID set, the pane id lands in the session file.
+        run_with(full, Some("w1:p2"));
+        let session: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&session_file).unwrap()).unwrap();
+        assert_eq!(session["pane_id"], "w1:p2", "{session}");
 
         // An unsafe session_id writes no session file; rate_limits still updates.
         run(r#"{"session_id":"../evil","rate_limits":{}}"#);
