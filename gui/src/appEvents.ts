@@ -10,6 +10,7 @@ import { appState, doneDetector, statusAge, tabMru } from "./appState";
 import { openOrRefreshAgentPopover, refreshAgentPopoverIfOpen, renderStatusBarNow, renderUsageBarNow } from "./appStatusBar";
 import { renderTabsNow, updateSeenDoneTabs } from "./appTabStrip";
 import { renderSidebarNow } from "./appSidebarPanel";
+import { recordUsageSamples } from "./usage";
 import type { RawSnapshot, UsageEventPayload } from "./appTypes";
 import { handleDoneTransitions, handleSemanticNotification, toDetectionAgents, type RawSemanticNotification } from "./appDoneNotifications";
 import { showCopiedNotice } from "./copyNotice";
@@ -65,6 +66,7 @@ export async function wireEvents(): Promise<void> {
   });
   await listen<UsageEventPayload>("usage", (event) => {
     appState.usagePayload = event.payload;
+    recordUsageSamples(event.payload);
     renderUsageBarNow();
   });
   await listen<{ status: string; socketPath: string; serverVersion: string | null }>("connection-status", (event) => {

@@ -128,6 +128,34 @@ describe("renderUsageStatusItem: open/close across many re-renders (finding #10)
   });
 });
 
+describe("usage popover Today cost row", () => {
+  const open = (state: UsageState): string => {
+    renderUsageStatusItem(el, overlayRoot, state, NOW);
+    el.dispatchEvent(new MouseEvent("click"));
+    return overlayRoot.querySelector(".usage-popover")?.textContent ?? "";
+  };
+  const withCost = (id: string, capturedAt: number, usd: number | null) => ({
+    session_id: id,
+    pane_id: null,
+    captured_at: capturedAt,
+    cwd: null,
+    model: { display_name: null },
+    effort_level: null,
+    fast_mode: null,
+    context: { used_pct: null, size: null },
+    cost: { usd, duration_ms: null, api_duration_ms: null, lines_added: null, lines_removed: null },
+  });
+
+  it("shows no Today row without sessions", () => {
+    expect(open(usage())).not.toContain("Today");
+  });
+
+  it("sums the cost of today's sessions into the ACCOUNT block", () => {
+    const text = open(usage({ sessions: [withCost("a", NOW - 60, 1), withCost("b", NOW - 30, 2.5)] }));
+    expect(text).toContain("Today$3.50");
+  });
+});
+
 // UX pass 1 spec §4 "Honest disconnected state": counts dim and gain an
 // "as of HH:MM" suffix while not connected.
 describe("renderAgentCounts (UX pass 1 spec §4)", () => {
@@ -353,5 +381,25 @@ describe("renderUsageStatusItem: popover blocks", () => {
     const blocks = openBlocks({});
     expect(blocks).toHaveLength(1);
     expect(blocks[0].textContent).toContain("ACCOUNT");
+  });
+});
+
+describe("renderUsageStatusItem: no data and stale (usage phase 1)", () => {
+  it("empty rate_limits renders no meter and a no-data label", () => {
+    renderUsageStatusItem(el, overlayRoot, usage({ five_hour: null, seven_day: null }), NOW);
+    expect(el.querySelector(".usage-meter")).toBeNull();
+    expect(el.textContent).toContain("5h no data");
+    expect(el.textContent).not.toContain("0%");
+  });
+
+  it("dims and titles the item once captured_at is older than 15 minutes", () => {
+    renderUsageStatusItem(el, overlayRoot, usage({ captured_at: NOW - 900 }), NOW);
+    expect(el.classList.contains("is-stale")).toBe(false); // exactly 15m is fresh
+    renderUsageStatusItem(el, overlayRoot, usage({ captured_at: NOW - 901 }), NOW);
+    expect(el.classList.contains("is-stale")).toBe(true);
+    expect(el.title).toBe("as of 15m ago");
+    renderUsageStatusItem(el, overlayRoot, usage({ captured_at: NOW }), NOW);
+    expect(el.classList.contains("is-stale")).toBe(false);
+    expect(el.title).toBe("");
   });
 });

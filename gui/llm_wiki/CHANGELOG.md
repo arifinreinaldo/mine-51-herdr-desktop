@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-23 - usage reconcile
+- Merged `perf/gui-optimize` into the per-session usage work. The per-session file contract is `{captured_at, pane_id, session}` (tap `herdr-usage-tap v3`). From the other branch: `5h no data`, stale dim, burn-rate ETA, `Today` cost row (sums `cost.usd` by `captured_at`) and the `scriptOutdated` wizard flag. Page: `areas/usage-statusline.md`.
+
 ## 2026-11-20 - Alt+arrow tab and workspace shortcuts
 - Alt+Left/Right switch tabs and Alt+Up/Down switch workspaces on Windows (`altCombos` in `src/shortcuts.ts`, arrows added to `ALLOWED_ALT_ONLY_CODES`). `routeKeydown` claims them only while the terminal has focus. Tests: `shortcuts.test.ts`, `keyboard/routing.test.ts`. Page: `areas/keyboard.md`.
 
@@ -31,6 +34,15 @@
 - `usage.ts`: `sessionForPane` (pane, unique cwd, latest) and the session formatters. `statusbar.ts`: `ctx NN%` for kinds `pane` and `cwd`; popover `ACCOUNT` block (5-hour, Weekly) plus a session block, each with `as of Nm ago`. `appStatusBar.ts` feeds the focused pane's session.
 - `stepUsage.ts`: new `Update tap` button (the tap has no version marker). P3 (prompt cache, pr) deferred.
 - `areas/usage-statusline.md` rewritten with fresh line refs; `code_map.md` rows still correct. Tests: `scripts/test-statusline.ps1`, `usagePopover.test.ts`, `statusbar.test.ts`.
+
+## 2026-11-05 - usage phase 2
+- The tap writes per-session files `~/.claude/herdr-usage/<session_id>.json` (whitelist: model, cost, lines, context). `usage.rs` adds `sessions` to the `usage` event. The popover shows `Last session` and `Today` cost. Tap scripts carry `herdr-usage-tap v2`; `statusline_status` returns `scriptOutdated` and the wizard offers `Update script`. `areas/usage-statusline.md` updated. Tests: `usage.rs`, `statusline.rs` sh test, `tests/unit/usagePopover.test.ts`, `tests/unit/ui/statusbar.test.ts`.
+
+## 2026-11-05 - usage phase 1
+- The status bar shows `5h no data` when the limits are missing. Before, it drew a false 0% meter. It dims and shows `as of N m ago` after 15 minutes without a fresh sample (`isUsageStale`). The popover shows a burn-rate ETA from in-memory samples (`addUsageSample`, `formatBurnEta`). `areas/usage-statusline.md` updated; the stale `lib.rs:264` reference is now `:291`. Tests in `tests/unit/usage.test.ts` and `tests/unit/ui/statusbar.test.ts`.
+
+## 2026-11-05 - Cowbell 0.2.0
+- Version moves from 0.1.0 to 0.2.0 in `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `Cargo.lock`. The release adds gui CI, flutter and adb fallbacks on macOS, incremental Find File ranking and one shared snapshot listener.
 
 ## 2026-11-01 - snapshot bus and per-region render skip
 - New `src/snapshotBus.ts` (`subscribeSnapshot`, `publishSnapshot`). `appEvents.ts` holds the one `snapshot` listener; four modules subscribe. `renderTabsNow` and `renderSidebarNow` skip when their JSON key is unchanged; `main.ts` render-guard release passes `force=true`. `areas/workspace-ui.md` updated; test `tests/unit/snapshotBus.test.ts`.

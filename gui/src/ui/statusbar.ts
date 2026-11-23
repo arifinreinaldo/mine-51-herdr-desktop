@@ -5,7 +5,9 @@ import { focusKeyboardCapture } from "../keyboard/focusCapture";
 import type { HighlightCard } from "../notifications/doneDetector";
 import { formatAge } from "../notifications/statusAge";
 import {
+  burnEtaFor,
   formatAsOfLabel,
+  formatCost,
   formatFiveHourPopoverRow,
   formatFiveHourStatusBarLabel,
   formatContextRow,
@@ -14,6 +16,8 @@ import {
   formatPct,
   formatSessionHeader,
   formatWeeklyPopoverRow,
+  isUsageStale,
+  todayCost,
   usageColor,
   worstActivePct,
   type UsageState,
@@ -160,6 +164,14 @@ function appendUsageRow(block: HTMLElement, label: string, value: string | null,
   if (meterPct !== null) renderUsageMeterInto(block, "usage-popover__bar", meterPct);
 }
 
+function appendBurnEta(block: HTMLElement, eta: string | null): void {
+  if (!eta) return;
+  const line = document.createElement("div");
+  line.className = "usage-popover__eta";
+  line.textContent = eta;
+  block.appendChild(line);
+}
+
 function openUsagePopover(
   overlayRoot: HTMLElement,
   anchor: HTMLElement,
@@ -176,7 +188,11 @@ function openUsagePopover(
 
   const account = appendUsageBlock(popover, "ACCOUNT", usage.captured_at, now);
   appendUsageRow(account, "5-hour", formatFiveHourPopoverRow(usage.five_hour, now), usage.five_hour?.used_pct ?? 0);
+  appendBurnEta(account, burnEtaFor("five_hour", usage.five_hour, now));
   appendUsageRow(account, "Weekly", formatWeeklyPopoverRow(usage.seven_day, now), usage.seven_day && usage.seven_day.resets_at >= now ? usage.seven_day.used_pct : 0);
+  appendBurnEta(account, burnEtaFor("seven_day", usage.seven_day, now));
+  const today = todayCost(usage.sessions, now);
+  if (today !== null) appendUsageRow(account, "Today", formatCost(today), null);
 
   if (usage.session) {
     const { session } = usage.session;
@@ -306,7 +322,7 @@ export function renderUsageStatusItem(
   onSetup?: () => void,
 ): void {
   el.textContent = "";
-  el.classList.remove("is-warning", "is-danger", "is-actionable");
+  el.classList.remove("is-warning", "is-danger", "is-actionable", "is-stale");
   el.removeAttribute("role");
   el.removeAttribute("title");
 
@@ -340,11 +356,15 @@ export function renderUsageStatusItem(
   icon.className = "codicon codicon-pulse";
   el.appendChild(icon);
 
-  if (usage.five_hour && usage.five_hour.resets_at < now) {
+  if (!usage.five_hour) {
+    // No rate_limits in the file: say so rather than draw a false 0% meter.
+    el.append("5h no data");
+    el.title = "No rate limit data from Claude Code yet";
+  } else if (usage.five_hour.resets_at < now) {
     el.append("5h — reset");
   } else {
     el.append("5h");
-    renderUsageMeterInto(el, "usage-meter", usage.five_hour?.used_pct ?? 0);
+    renderUsageMeterInto(el, "usage-meter", usage.five_hour.used_pct);
     const label = formatFiveHourStatusBarLabel(usage.five_hour, now);
     if (label) el.append(label);
   }
@@ -355,6 +375,11 @@ export function renderUsageStatusItem(
     ctx.className = `usage-ctx is-${usageColor(ctxPct)}`;
     ctx.textContent = `ctx ${formatPct(ctxPct)}%`;
     el.appendChild(ctx);
+  }
+
+  if (isUsageStale(usage.captured_at, now)) {
+    el.classList.add("is-stale");
+    el.title = formatAsOfLabel(usage.captured_at, now) ?? "";
   }
 
   const worst = worstActivePct(usage, now);

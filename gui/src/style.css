@@ -963,6 +963,10 @@ body.has-workspace-colors #tab-strip {
   color: #ffffff; /* 6.25:1 on the warning amber; the inherited grey was 3.89:1 */
 }
 
+#status-usage.is-stale {
+  opacity: 0.55;
+}
+
 #status-usage.is-danger {
   background: var(--statusBarItem-errorBackground);
 }
@@ -1286,6 +1290,11 @@ body.has-workspace-colors #tab-strip {
 .usage-popover__row {
   display: flex;
   justify-content: space-between;
+}
+
+.usage-popover__eta {
+  margin: -6px 0 10px;
+  color: var(--descriptionForeground);
 }
 
 .usage-popover__bar {

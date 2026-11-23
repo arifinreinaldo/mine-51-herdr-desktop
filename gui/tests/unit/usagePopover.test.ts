@@ -19,6 +19,7 @@ import {
   formatTokens,
   formatWeeklyPopoverRow,
   sessionForPane,
+  todayCost,
   type SessionUsage,
 } from "../../src/usage";
 
@@ -236,5 +237,31 @@ describe("renderUsageBarNow feeds the focused pane's session to the status item"
     publishSnapshot(snapshot("w1:p2"));
     expect(mocks.render).toHaveBeenCalledTimes(2);
     expect(mocks.render.mock.calls[1][2].session.session.session_id).toBe("b");
+  });
+});
+
+const epoch = (y: number, m: number, d: number, h: number) => Math.floor(new Date(y, m, d, h).getTime() / 1000);
+
+describe("todayCost", () => {
+  const now = epoch(2026, 5, 10, 15);
+  const cost = (captured_at: number | null, usd: number | null) =>
+    session({ captured_at, cost: { ...session().cost, usd } });
+
+  it("sums only sessions captured on the local date of now", () => {
+    const sessions = [
+      cost(epoch(2026, 5, 10, 0), 1),
+      cost(epoch(2026, 5, 10, 14), 2.5),
+      cost(epoch(2026, 5, 9, 23), 100),
+      cost(epoch(2026, 5, 10, 9), null),
+    ];
+    expect(todayCost(sessions, now)).toBe(3.5);
+  });
+
+  it("is null with no sessions, no cost, or only other days", () => {
+    expect(todayCost(undefined, now)).toBeNull();
+    expect(todayCost([], now)).toBeNull();
+    expect(todayCost([cost(epoch(2026, 5, 10, 9), null)], now)).toBeNull();
+    expect(todayCost([cost(epoch(2026, 5, 8, 9), 5)], now)).toBeNull();
+    expect(todayCost([cost(null, 5)], now)).toBeNull();
   });
 });

@@ -13,6 +13,8 @@ interface StatuslineStatusWire {
   /** settings.json is a symlink (shared with a dotfiles repo or another
    * machine); this is the file it points to. */
   sharedTarget: string | null;
+  /** class is "herdr" but the installed script is older than the bundled one. */
+  scriptOutdated?: boolean;
 }
 
 function renderConsent(container: HTMLElement, detail: string, onConfirm: () => void, onCancel: () => void): void {
@@ -61,17 +63,18 @@ export function renderUsageStep(
     if (status.class === "herdr") {
       summary.statuslineInstalled = true;
       body.appendChild(el("p", undefined, "herdr's usage tap is already installed."));
-      // The installed tap script has no version marker, so it is never refreshed on its own.
-      const updateBtn = button("Update tap", () => {
-        updateBtn.remove();
-        renderConsent(
-          body,
-          "Copy this version's usage tap script to ~/.claude/statusline/ (and set statusLine to run it). No new backup is made.",
-          () => void runInstall(body),
-          () => render(),
-        );
-      });
-      body.appendChild(updateBtn);
+      if (status.scriptOutdated) {
+        const updateBtn = button("Update tap", () => {
+          updateBtn.remove();
+          renderConsent(
+            body,
+            "Copy this version's usage tap script to ~/.claude/statusline/ (and set statusLine to run it). No new backup is made.",
+            () => void runInstall(body),
+            () => render(),
+          );
+        });
+        body.appendChild(updateBtn);
+      }
       body.appendChild(undoRow());
       body.appendChild(footerRow(true));
       container.appendChild(body);

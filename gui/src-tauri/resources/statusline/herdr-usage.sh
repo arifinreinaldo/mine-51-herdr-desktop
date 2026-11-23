@@ -9,6 +9,7 @@
 # lets its stdout through unmodified. Needs jq or python3; with neither, it
 # writes an empty rate_limits object. Always exits 0 so a broken tap can never
 # break Claude Code's UI.
+# herdr-usage-tap v3: per-session file holds the raw statusLine JSON plus pane id.
 
 # Git Bash on Windows sets HOME; USERPROFILE is the fallback.
 claude_dir="${HOME:-$USERPROFILE}/.claude"

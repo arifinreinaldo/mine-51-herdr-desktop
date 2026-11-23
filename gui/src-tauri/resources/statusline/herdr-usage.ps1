@@ -14,6 +14,7 @@
 #
 # Never throws: the whole body is one try/catch, and the script always
 # exits 0 so a broken statusLine can never break Claude Code's UI.
+# herdr-usage-tap v3: per-session file holds the raw statusLine JSON plus pane id.
 
 try {
     # Read stdin as raw bytes. Never `$input` or `[Console]::In`: under
