@@ -831,9 +831,13 @@ mod safe_web_url_tests {
         assert!(!needs_consent(&xlsx)); // already allowed, no prompt
         assert!(!needs_consent(&dir.join("herdr_consent_missing.html"))); // must exist
         let name = html.to_str().unwrap();
-        assert!(!needs_consent(std::path::Path::new(&format!("{name}:s.txt")))); // alternate data stream
-        assert!(!needs_consent(std::path::Path::new(&format!(r"\\?\{name}")))); // verbatim prefix
-        // An `.html` symlink to a `.bat`: the name passes, the target must not.
+        assert!(!needs_consent(std::path::Path::new(&format!(
+            "{name}:s.txt"
+        )))); // alternate data stream
+        assert!(!needs_consent(std::path::Path::new(&format!(
+            r"\\?\{name}"
+        )))); // verbatim prefix
+              // An `.html` symlink to a `.bat`: the name passes, the target must not.
         let link = dir.join("herdr_consent_link.html");
         let _ = std::fs::remove_file(&link);
         if std::os::windows::fs::symlink_file(&bat, &link).is_ok() {
