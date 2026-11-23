@@ -442,20 +442,28 @@ interface MacEntry {
 
 const MAC_ENTRIES: Readonly<Record<string, MacEntry>> = {
   "workspace.new": { combo: cmd("KeyN") },
-  "workspace.next": { combo: cmd("ArrowDown", { shift: true }) },
-  "workspace.previous": { combo: cmd("ArrowUp", { shift: true }) },
+  "workspace.next": {
+    combo: cmd("ArrowDown", { shift: true }),
+    display: "⇧⌘↓ / ⌥↓",
+    altCombos: [combo(false, false, true, "ArrowDown")],
+  },
+  "workspace.previous": {
+    combo: cmd("ArrowUp", { shift: true }),
+    display: "⇧⌘↑ / ⌥↑",
+    altCombos: [combo(false, false, true, "ArrowUp")],
+  },
   "tab.new": { combo: cmd("KeyT") },
   "tab.close": { combo: cmd("KeyW") },
   "tab.rename": { combo: combo(false, false, false, "Enter") }, // tab focus only, like Finder
   "tab.next": {
     combo: cmd("BracketRight", { shift: true }),
-    display: "⇧⌘] / ⌃Tab",
-    altCombos: [combo(true, false, false, "Tab")],
+    display: "⇧⌘] / ⌃Tab / ⌥→",
+    altCombos: [combo(true, false, false, "Tab"), combo(false, false, true, "ArrowRight")],
   },
   "tab.previous": {
     combo: cmd("BracketLeft", { shift: true }),
-    display: "⇧⌘[ / ⌃⇧Tab",
-    altCombos: [combo(true, true, false, "Tab")],
+    display: "⇧⌘[ / ⌃⇧Tab / ⌥←",
+    altCombos: [combo(true, true, false, "Tab"), combo(false, false, true, "ArrowLeft")],
   },
   "tab.togglePrevious": { combo: combo(true, false, false, "Backquote") }, // Cmd+` is the system's window switcher
   "pane.splitRight": { combo: cmd("KeyD") },

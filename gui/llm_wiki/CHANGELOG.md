@@ -2,6 +2,9 @@
 
 > One line per wiki update. Newest on top.
 
+## 2026-11-23 - Option+Arrow on macOS
+- Option+Left/Right switch tabs and Option+Up/Down switch workspaces on macOS, as on Windows. Option+Arrow no longer sends the shell word-jump. Page: `areas/keyboard.md`.
+
 ## 2026-11-23 - usage reconcile fixes
 - Fixed the shared-command test (it no longer inherits `HERDR_PANE_ID`). `parse_session_json` now rejects a non-object `/session`. Burn samples append only when `pct` changes. The burn ETA is `null` when it is past or the data is stale. Page: `areas/usage-statusline.md`.
 - Dropped branch B's flat v2 schema and its "Last session" block. The per-session file keeps one contract.

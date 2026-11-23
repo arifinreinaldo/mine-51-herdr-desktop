@@ -276,9 +276,9 @@ describe("macOS shortcut table", () => {
   });
   const allCombos = (a: (typeof mac)[number]) => [a.combo, ...(a.altCombos ?? [])];
 
-  it("never claims plain Option, and Ctrl only for tab cycling and previous-tab", () => {
+  it("claims plain Option only for the four arrows, and Ctrl only for tab cycling and previous-tab", () => {
     const optionOnly = mac.flatMap(allCombos).filter((c) => c.alt && !c.meta);
-    expect(optionOnly).toEqual([]);
+    expect(optionOnly.map((c) => c.code).sort()).toEqual(["ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp"]);
     const ctrl = mac.flatMap((a) => allCombos(a).filter((c) => c.ctrl).map(() => a.id)).sort();
     expect(ctrl).toEqual(["tab.next", "tab.previous", "tab.togglePrevious"]);
   });
@@ -289,6 +289,19 @@ describe("macOS shortcut table", () => {
       allCombos(a).map((c) => JSON.stringify([c.ctrl, c.shift, c.alt, !!c.meta, c.code, !!a.requiresTabFocus])),
     );
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("Option+Arrow switches tabs and workspaces; Cmd+Option+Arrow still focuses panes", () => {
+    const at = (code: string, mods: Parameters<typeof press>[1]) => {
+      const e = press(code, mods);
+      return mac.find((a) => [a.combo, ...(a.altCombos ?? [])].some((c) => matchesCombo(c, e)))?.id;
+    };
+    expect(at("ArrowLeft", { altKey: true })).toBe("tab.previous");
+    expect(at("ArrowRight", { altKey: true })).toBe("tab.next");
+    expect(at("ArrowUp", { altKey: true })).toBe("workspace.previous");
+    expect(at("ArrowDown", { altKey: true })).toBe("workspace.next");
+    expect(at("ArrowLeft", { altKey: true, metaKey: true })).toBe("pane.focusLeft");
+    expect(at("ArrowDown", { altKey: true, metaKey: true })).toBe("pane.focusDown");
   });
 
   it("keeps ids unique and every non-extra id inside the Windows table", () => {
